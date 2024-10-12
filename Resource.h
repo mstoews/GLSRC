@@ -1,0 +1,5 @@
+
+#define IDS_GLACCTS	1004
+#define IDS_FROM	1003
+#define IDS_WHERE	1002
+#define IDS_SELECT	1001

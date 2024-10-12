@@ -1,0 +1,19 @@
+;------------------------------------------------
+;   Main invoice
+;   
+;   Copyright © 1994. All Rights Reserved.
+;
+;   SUBSYSTEM:    invoice.exe Module Defintion File
+;   FILE:         invocapp.def
+;   AUTHOR:       
+;
+;------------------------------------------------
+
+NAME invoice
+
+DESCRIPTION 'invoice Application - Copyright © 1994. All Rights Reserved.'
+EXETYPE     WINDOWS
+CODE        PRELOAD MOVEABLE DISCARDABLE
+DATA        PRELOAD MOVEABLE MULTIPLE
+HEAPSIZE    4096
+STACKSIZE   8192

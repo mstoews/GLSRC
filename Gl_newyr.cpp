@@ -1,0 +1,2 @@
+lance$qm8TMessageˆL$@TGlWindow@GLManAccounts$qm8TMessageˆ
+L@TGlWindow@GLFinRE$qm8TMessageˆL@TGlWindow@GLFinFA$qm8TMessageˆL@TGlWindow@GLFinDep$qm8TMessageˆL#@TGlWindow@GLPrtPrePost$qm8TMessageˆL$@TGlWindow@GLDeleteBatch$qm8TMessageˆL#@TGlWindow@GLCloseMonth$qm8TMessageˆL'@TGlWindow@GLPrtSlipSummary$qm8TMessageˆL @TGlWindow@GLPrtSlip$qm8TMessageˆL&@TGlWindow@GLPrtSlipDetail$qm8TMessageˆL%@TGlWindow@GLTrialBalance$qm8TMessageˆL$@TGlWindow@GLTrialByDept$qm8TMessageˆ L!@TGlWindow@
