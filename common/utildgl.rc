@@ -1,0 +1,21 @@
+/****************************************************************************
+
+
+utildgl.rc
+
+produced by Borland Resource Workshop
+
+
+*****************************************************************************/
+
+
+STRINGTABLE 
+{
+ 10, "An error occurred while attempting to close the file %s."
+ 20, "An error occurred while attempting to create the file %s."
+ 60, "An error occurred while attempting to open the data file or index file for %s."
+ 330, "The tag name specified for the file %s can not be found."
+ 331, "A %s error occurred with file %s.\nCheck the file for reindexing or exclusive locks by another user."
+ 332, "A index error has occurred while indexing the file %s.\nCheck to make sure the hard disk is not full."
+}
+
