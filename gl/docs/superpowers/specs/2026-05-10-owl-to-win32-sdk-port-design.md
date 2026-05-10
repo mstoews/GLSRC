@@ -1,0 +1,675 @@
+# Spec #1 — OWL-to-Win32 SDK Port: Foundation, Data Layer, Chart of Accounts
+
+**Status:** Draft
+**Date:** 2026-05-10
+**Scope:** First spec of a multi-spec migration of the 1994 Tegara Corporation General Ledger / AP / AR accounting application from Borland OWL (Win16-era) to a strict Win32 SDK, MSVC x64, Unicode application.
+
+---
+
+## 1. Goals & Non-Goals
+
+### 1.1 Goals (Spec #1 deliverables)
+
+A working `gl.exe` that demonstrates the migration foundation end-to-end:
+
+1. Compilable MSVC x64 Unicode `gl.exe`.
+2. MDI frame chrome equivalent to the original (menu, vertical toolbar, status bar with company name + accounting period).
+3. Login flow against the new SQLite-backed access table.
+4. Company profile load on the new SQLite-backed company table.
+5. **Full Chart of Accounts CRUD round-trip** end-to-end:
+   - Add, modify, delete an account.
+   - Navigate (top / bottom / next / prev) by ACCT_NO and DESCRIP indexes.
+   - Persistence across process restarts.
+6. Custom controls reimplemented at the binary-compatible class-name level: `tbPic`, `tbDate`, `tbFloat`, `tbInteger`, `tbSuperBtn`.
+7. `dbf2sqlite` migration utility supporting the tables required by Spec #1: `accessm`, `access.psw`, the company-profile table, `glaccts`.
+8. Mini-framework (`win32fx`) reusable as-is by AP and AR module ports in later specs.
+
+### 1.2 Non-Goals
+
+The following are **explicitly out of scope** for Spec #1:
+
+- AP and AR modules (Specs #5 and #6).
+- Reporting (Crystal Reports Print Engine replacement; Spec #3). Where the original launches a report, this port shows a "not yet ported" placeholder dialog.
+- Help system (`gl.hbk`).
+- Backup / restore.
+- BWCC and CTL3D theming (deleted, not replaced).
+- Full `.rc` port — only the resources Spec #1 needs are included in the build.
+- TBOWL grid controls (used by AP/AR batch entry) — deferred until those modules demand them.
+- Multi-user concurrency and any record/file locking — Spec #1 is single-user.
+- Backup / restore.
+
+### 1.3 Accepted Risks
+
+- Most of `gl.rc` and all of `gl_new.rc` are excluded from the build until later specs. The pruned `gl.rc` for Spec #1 lives alongside the original in version control; the original stays for reference.
+- TBOWL grid controls are not implemented; any dialog that references them will not be in the Spec #1 build.
+
+---
+
+## 2. Architecture & Project Layout
+
+### 2.1 Solution structure
+
+The existing repository has this top-level layout:
+
+```
+GLSRC/
+├── include/                ← shared headers (db_accts.h, other db_*.h, definitions)
+├── gl/                     ← General Ledger module sources (cwd of this sandbox = /work)
+├── ap/                     ← Accounts Payable sources
+└── ar/                     ← Accounts Receivable sources
+```
+
+Spec #1 adds four new top-level project directories alongside the existing module directories. The Visual Studio solution `gl.sln` lives at `GLSRC/gl.sln`:
+
+```
+GLSRC/
+├── gl.sln                  ← NEW — solution file
+├── include/                ← existing — added to every project's IncludePath
+├── gl/                     ← existing — Spec #1 modifies (App.cpp, ManilaGL, ports, res/)
+├── ap/                     ← existing — untouched in Spec #1
+├── ar/                     ← existing — untouched in Spec #1
+├── win32fx/                ← NEW (static lib) — Mini-framework
+├── cb4sqlite/              ← NEW (static lib) — CodeBase compatibility shim over SQLite
+├── cb4sqlite_tests/        ← NEW (console EXE) — Layer-1 + Layer-2 test harness (Catch2)
+├── dbf2sqlite_core/        ← NEW (static lib) — Migration core (DBF parse, schema gen, header gen)
+└── dbf2sqlite/             ← NEW (console EXE) — Thin CLI wrapper around dbf2sqlite_core
+```
+
+**Include path:** all projects add `..\include` (relative to project) to `IncludePath`. The existing schema headers (`db_accts.h`, `db_acces.h` if present, future `db_*.h` from the M2 generator) live there; ports built in Spec #1 `#include "db_accts.h"` exactly as the original code does.
+
+Static linking only. No DLLs. Single-exe distribution.
+
+**Build artifact layout:** all projects emit to `$(SolutionDir)x64\$(Configuration)\` (i.e., `GLSRC/x64/Debug/` or `GLSRC/x64/Release/`). Static libs land alongside EXEs; `gl.exe` references them by relative path during link.
+
+### 2.2 `win32fx/` (static lib)
+
+```
+win32fx/
+├── Window.h/.cpp           — HWND-owning base class, message dispatch
+├── Dialog.h/.cpp           — Modal/modeless base class
+├── MsgMap.h                — BEGIN_MSG_MAP / ON_MSG / END_MSG_MAP macros
+├── HandleGuard.h           — RAII for HMENU/HFONT/HBITMAP/HBRUSH/HPEN/HRGN/HICON
+├── StringUtil.h/.cpp       — LoadResString, Format, Utf8ToWide, WideToUtf8, Trim
+├── MdiFrame.h/.cpp         — MDI frame helper (menu, accelerator, MDICLIENT)
+├── Toolbar.h/.cpp          — Top toolbar
+├── VerticalToolbar.h/.cpp  — Left vertical toolbar (manila tabs equivalent)
+├── StatusBar.h/.cpp        — Bottom status bar
+└── controls/
+    ├── PicEdit.h/.cpp       — tbPic   (mask-validated edit)
+    ├── DateEdit.h/.cpp      — tbDate  (date edit)
+    ├── FloatEdit.h/.cpp     — tbFloat (one-decimal numeric edit)
+    ├── IntEdit.h/.cpp       — tbInteger (integer-only edit)
+    └── SuperBtn.h/.cpp      — tbSuperBtn (themed/owner-draw button)
+```
+
+### 2.3 `cb4sqlite/` (static lib)
+
+```
+cb4sqlite/
+├── Code4.h/.cpp            — Database session
+├── Data4.h/.cpp            — Cursor (per-table sqlite3_stmt*)
+├── Field4.h/.cpp           — Field accessor
+├── Date4.h/.cpp            — Date helpers
+├── Schema.h/.cpp           — Table/column metadata
+├── Relate4set.h/.cpp       — Multi-cursor join helper
+├── Errors.h                — cb4sqlite::Error : std::runtime_error
+├── sqlite3.c / sqlite3.h   — Vendored amalgamation
+└── tools/
+    └── dbf2sqlite/         — Console EXE migration utility
+        ├── main.cpp
+        ├── DbfReader.h/.cpp     — Vendored BSD-licensed DBF reader
+        └── IndexTranslator.cpp  — .ndx/.cdx expression → ORDER BY
+```
+
+### 2.4 `gl/` (the EXE)
+
+```
+gl/
+├── App.cpp                  — WinMain, globals, init/shutdown
+├── ManilaGL.h/.cpp          — MDI frame subclass; menu/toolbar wiring
+├── Login.h/.cpp             — gl_acces.cpp port
+├── CompanyProfile.h/.cpp    — gl_profi.cpp port
+├── ChartOfAccounts.h/.cpp   — gl_accts.cpp port (TGLAcctsAdd/Delete)
+├── AccountList.h/.cpp       — gl_acctl.cpp port (TAccountList)
+├── stubs/
+│   ├── ReportingStubs.cpp   — "not yet ported" message boxes
+│   ├── ApStubs.cpp
+│   └── ArStubs.cpp
+└── res/
+    ├── gl.rc                — Pruned for Spec #1 (see §6)
+    ├── manifest.xml         — v6 common controls + per-monitor DPI v2
+    └── bitmaps/             — Extracted from original hex blobs
+```
+
+### 2.5 Removed dependencies
+
+The following are **deleted** in Spec #1; ports will not include their headers:
+
+- OWL — `tapplication.h`, `tmdiframe.h`, `twindow.h`, `tdialog.h`, `ttoolbar.h`, etc.
+- CodeBase — `d4all.hpp` (replaced by `cb4sqlite/`)
+- Crystal Reports — `crpe.h` (stubbed)
+- BWCC — `bwcc.h`
+- CTL3D — `ctl3d.h`
+- TBOWL / Toolbox DLLs — `tbowl.h`
+- Custom string class — `cstring.h` (replaced by `std::wstring`)
+- DOS / 16-bit headers — `dir.h`, `direct.h`
+- `DBF.DLL` — replaced by static `cb4sqlite`
+
+---
+
+## 3. The Mini-Framework (`win32fx`)
+
+### 3.1 Window base class
+
+`Window` owns an HWND and dispatches messages via a `SetWindowLongPtr(GWLP_USERDATA)` thunk to virtual handlers:
+
+- `OnCreate(LPCREATESTRUCT)`
+- `OnCommand(WORD id, WORD code, HWND hwndCtl)`
+- `OnSize(UINT type, int cx, int cy)`
+- `OnDestroy()`
+- `OnMessage(UINT msg, WPARAM, LPARAM)` — fall-through for everything else
+
+The thunk pattern: subclass calls `Create(...)` which calls `CreateWindowExW` with `this` in `lpParam`; the WndProc on `WM_NCCREATE` stores `this` via `SetWindowLongPtr(GWLP_USERDATA)` and routes subsequent messages to the instance.
+
+### 3.2 Dialog base class
+
+`Dialog` parallels `Window` for modal (`DialogBoxParamW`) and modeless (`CreateDialogParamW`) flows. Same virtual handlers; `OnInitDialog` instead of `OnCreate`.
+
+### 3.3 Message map macros
+
+For the ~5% of cases virtuals don't cover (`WM_NOTIFY`, `WM_CTLCOLOR*`, custom messages):
+
+```cpp
+BEGIN_MSG_MAP(MyDialog)
+    ON_MSG(WM_NOTIFY,    OnNotify)
+    ON_MSG(WM_CTLCOLORBTN, OnCtlColor)
+END_MSG_MAP()
+```
+
+### 3.4 RAII handle wrapper
+
+`HandleGuard<H, Deleter>` template instantiated for `HMENU`, `HFONT`, `HBITMAP`, `HBRUSH`, `HPEN`, `HRGN`, `HICON`. Replaces the OWL `delete window` pattern.
+
+### 3.5 MDI scaffolding
+
+`MdiFrame`, `Toolbar`, `VerticalToolbar`, `StatusBar` are independent `Window` subclasses. `MdiFrame` owns the MDICLIENT child and the menu merging logic (the original `HGLMenu` global is preserved as `extern HMENU HGLMenu`).
+
+### 3.6 Custom-control registration — the critical lever
+
+`win32fx::RegisterCustomControls()` registers WNDCLASS entries with the **original class names**:
+
+```cpp
+WNDCLASSEXW wc = {};
+wc.cbSize        = sizeof(wc);
+wc.style         = CS_DBLCLKS | CS_GLOBALCLASS;
+wc.lpfnWndProc   = &PicEditWndProc;
+wc.cbClsExtra    = 0;
+wc.cbWndExtra    = sizeof(void*);          // for instance-thunk pointer
+wc.hInstance     = hInst;
+wc.hIcon         = nullptr;
+wc.hCursor       = LoadCursorW(nullptr, IDC_IBEAM);
+wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+wc.lpszMenuName  = nullptr;
+wc.lpszClassName = L"tbPic";
+wc.hIconSm       = nullptr;
+RegisterClassExW(&wc);
+// Repeat for tbDate, tbFloat, tbInteger, tbSuperBtn
+// (tbSuperBtn uses IDC_ARROW and a null background — see SuperBtn.cpp)
+```
+
+This means the original `.rc` dialog templates can call `CreateWindowExW(L"tbPic", ...)` unchanged — **~190 KB of resource layout is reused without editing**.
+
+### 3.7 Globals preserved
+
+The original module-level globals (`hInst`, `HGLMenu`, `cb`, `szApp`) are kept as `extern` declarations in `App.cpp`. Not wrapped in singletons or namespaces. Spec #1 prefers compatibility over modernization.
+
+### 3.8 Estimated size
+
+~1200 lines for the framework (including controls). Confirms the "light helpers" decision — heavier than raw Win32, much lighter than MFC/WTL.
+
+---
+
+## 4. `cb4sqlite` Compatibility Shim
+
+### 4.1 Principle
+
+Mirror the `Code4` / `Data4` / `Field4` API surface **only as much as ported `.cpp` files need**. Spec #1 implements the subset used by login + company profile + Chart of Accounts. Unimplemented methods throw:
+
+```cpp
+throw cb4sqlite::Error("cb4sqlite: not implemented in spec #1: <method>");
+```
+
+This is intentional: the shim grows organically as later specs port more screens. We do not pre-implement the entire CodeBase API.
+
+### 4.2 API surface required by Spec #1
+
+The shim mirrors the relevant subset of CodeBase 4 (headers vendored from the original install at `vendor/codebase4/`; no public docs available — surface is reverse-engineered from `d4all.hpp` as ports demand). Sketch of the C++ types:
+
+```cpp
+namespace cb4sqlite {
+
+class Code4 {
+public:
+    Code4();
+    ~Code4();
+    int  open(std::wstring_view dbPath);   // 0 on success
+    void closeAll();
+    void initUndo();
+    sqlite3* handle() noexcept;            // raw handle for tools/tests
+};
+
+class Data4 {
+public:
+    Data4(Code4& env, std::wstring_view tableName);
+    ~Data4();
+    int  top();         int  bottom();      int  skip(long n);
+    int  seek(const char* key);             // ANSI string seek (matches original calls; UTF-8 internally)
+    int  seek(long recordNumber);           // overload for numeric seek (used by AP/AR; harmless for #1)
+    int  append();      int  flush();       // see §4.6 for flush semantics
+    long recCount() noexcept;
+    long recNo()    noexcept;
+    bool eof()      noexcept;
+    int  numFields() const noexcept;
+    int  SetIndex(const char* tagName);
+    int  go(long recordNumber);             // direct positioning (used by TAccountList::HandleListBox)
+    bool isValid() const noexcept;          // false when the table failed to open (used by per-table ctors)
+    void close();
+};
+
+class Field4 {
+public:
+    Field4(Data4& d, int index);                  // 1-based index — matches original
+    Field4(Data4& d, const char* name);
+    const char*  str()  const;                    // returns pointer into row buffer; lifetime = until next nav
+    double       num()  const;
+    long         len()  const noexcept;
+    const char*  name() const noexcept;
+    int  assign(const char* value);
+    int  assign(double value);
+    int  assignDouble(double value);               // explicit-double overload (used by gl_budgt.cpp)
+    int  SetField(HWND hParent, UINT controlId);   // copies field value into a child edit control
+    int  AssignField(HWND hParent, UINT controlId);// reads child edit control value back into the field
+    bool isValid() const noexcept;
+};
+
+class Date4 {
+public:
+    static Date4 today();
+    std::wstring str() const;             // "YYYYMMDD"
+};
+
+class Relate4set {                         // surface used by gl_acctl::TListWindow::Redraw
+public:
+    Relate4set(Data4* parent);
+    int  querySet(const char* expression);  // dBase predicate; spec #1 supports literal-only (e.g. ".NOT. DELETED()")
+    int  top();
+    int  skip(long n);                      // returns r4eof at end (constant: -22 to match original)
+    bool eof() const noexcept;
+    void unlock();                          // no-op in spec #1 (no locking)
+    void free();                            // releases the cursor early
+};
+
+extern Code4 cb;                            // global Code4 instance, mirrors original `cb` in App.cpp
+
+// CodeBase utility helpers used throughout original source
+inline double Str4ptr(const char* s) noexcept {
+    return (s && *s) ? std::atof(s) : 0.0;
+}
+inline long   Str4long(const char* s) noexcept {
+    return (s && *s) ? std::atol(s) : 0L;
+}
+
+} // namespace cb4sqlite
+
+// The original code calls Str4ptr/Str4long unqualified at global scope.
+// To keep ports' diff small, expose them in the global namespace too:
+using cb4sqlite::Str4ptr;
+using cb4sqlite::Str4long;
+```
+
+Methods not listed here throw `cb4sqlite::Error("not implemented in spec #1: <method>")`.
+
+**Per-table subclasses — hand-written authoritative.** The original code uses subclasses like `Tglaccts : public Data4` with named `Field4*` members (`accounts`, `dept`, `descript`, `budget1..budget12`, `previous1..previous12`, `period1..period12`, `openbal`, `curr_bal`, `category`, `type`, `fdescript`). Those subclasses live in `include/db_*.h` headers and are **hand-written, authoritative, and kept as-is**. The verified shape of `Tglaccts` (44 fields, plus convenience methods like `Open_bal()`, `dPeriod1..12()`, `dBudget1..12()`, `dPrevious1..12()`, `dPeriod(account, dept, period)`, `UpdateAccount(seek, period, debit, credit)`) is the ground truth for Spec #1.
+
+**Field constructor pattern.** The hand-written headers use the **string-name-based** `Field4` ctor: `new Field4(*(Data4*)this, "account")` — not 1-based index. The shim's Field4 must support both forms (per §4.2 declaration above), but the column-name form is the dominant pattern for new headers.
+
+**Methods declared on per-table subclasses but defined elsewhere.** Some convenience methods on `Tglaccts` (e.g., `dPeriod(...)`, `UpdateAccount(...)`) are declared in `db_accts.h` but defined in module-specific .cpp files (`ap_post.cpp`). Spec #1 does **not** invoke them, so the Spec #1 build does not link them. The headers compile cleanly without those .cpp files.
+
+**Generator role (M2 of plan) — incremental.** The `dbf2sqlite` tool can also emit `db_<table>.h` headers for tables that **do not** already have a hand-written header in `include/`. Policy:
+
+- If `include/db_<table>.h` exists → leave it untouched. The hand-written header is authoritative.
+- If `include/db_<table>.h` is absent → emit a generator-default header at `include/db_<table>.h` based on the dBase schema. Same `Data4`-subclass pattern. Future hand edits welcomed.
+- The generated header is committed to the repo, not regenerated at build time, so call sites have stable include paths.
+
+This policy preserves hand-tuned helpers (`dPeriod`, `Open_bal`, etc.) while filling in coverage for tables that don't yet have headers.
+
+### 4.3 Storage model
+
+- One SQLite file per company. Path comes from `GLDR.INI` exactly as before, but `.db` instead of a directory of `.dbf` files.
+- Each `.dbf` becomes one SQLite table:
+  - `_rowid INTEGER PRIMARY KEY` replaces dBase recno.
+  - `_deleted INTEGER NOT NULL DEFAULT 0` is the soft-delete flag.
+  - Columns named per dBase fields; types map as below.
+- Type mapping:
+  - `Character` → `TEXT` (values stored as-stored, **right-padded with spaces to declared column width on write**, preserved on read so byte-for-byte compares match the original dBase wire form). Spec #1 commits to right-pad-on-write; alternative interpretations (trim-on-write) break `seek` compatibility.
+  - `Numeric`   → `REAL` or `INTEGER` (decided per field at migration time)
+  - `Date`      → `TEXT('YYYYMMDD')`
+  - `Logical`   → `INTEGER` (0/1)
+- Indexes: each `.ndx` / `.cdx` becomes a `CREATE INDEX` statement. A metadata table `_cb_tags(table_name, tag_name, order_by_sql)` maps `SetIndex()` calls to ORDER BY clauses.
+- **`seek` key-padding rule.** When `Data4::seek(const char* key)` is called, the key is right-padded with spaces to the declared width of the active tag's leading column before comparison (matching CodeBase semantics). Example: column `account CHAR(7)`, call `seek("100")` → padded to `"100    "`, matches a stored value of `"100    "`. Equality compare is on the right-padded form. M1 unit tests verify this exact behavior.
+
+### 4.4 Cursor model
+
+Each `Data4` wraps one `sqlite3_stmt*`. `top()` / `bottom()` / `skip()` / `seek()` re-prepare the statement with the appropriate ORDER BY / WHERE clause. Expensive in raw operations-per-second, but transparent to ported code and well under interactive thresholds for the Chart of Accounts dataset.
+
+### 4.5 `dbf2sqlite` migration tool
+
+Separate console executable; sources at `dbf2sqlite/`. Responsibilities:
+
+1. Parse `.dbf` header + records via a vendored BSD-licensed reader. **Default candidate: `libdbf`** (vendored as `dbf2sqlite/vendor/libdbf/`). Final library choice is an open question (§10).
+2. Generate `CREATE TABLE` from the DBF header (column types per §4.3).
+3. Bulk `INSERT` records inside one transaction.
+4. Parse the indexed expression from each `.ndx` / `.cdx` file. **Only the expressions used by the four Spec #1 tables are supported** — generalized expression evaluation is deferred.
+5. Verify by reopening with `cb4sqlite::Code4` and comparing record counts.
+
+Required Spec #1 tables: `accessm`, `access.psw`, the company-profile table, `glaccts`.
+
+**Command-line interface:**
+
+```
+dbf2sqlite.exe --src <dbf-dir>  --out <company.db>  [--table <name>]...  [--force]
+
+  --src <path>     directory containing .dbf and .ndx/.cdx files
+  --out <path>     destination SQLite file (must not exist unless --force)
+  --table <name>   restrict migration to one table (repeatable). If omitted,
+                   migrates the four Spec #1 tables.
+  --force          overwrite existing destination file
+```
+
+Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` destination write error, `4` schema/index translation error, `5` row-count verification mismatch.
+
+**Test fixture location:** `dbf2sqlite/test/fixtures/glaccts/` contains a 5-row chart-of-accounts `.dbf` plus its `.ndx` files. Originated as a hand-built fixture committed alongside the test (not derived from any production DB).
+
+### 4.6 Semantics & out of scope for Spec #1
+
+**`Data4::flush()` semantics in Spec #1:** every `append()` and field-`assign()` is committed to SQLite immediately as part of an implicit per-statement transaction. `flush()` is therefore a no-op in the success path and exists only so call sites that invoke it for compat compile cleanly. Future specs that introduce explicit batching may make `flush()` issue an explicit `COMMIT`.
+
+**Out of scope for Spec #1:**
+
+- Record / file locking — single-user mode only. The `.db` file is assumed to live on the local disk where `gl.exe` runs (UNC paths are unsupported in Spec #1; see risk #10).
+- Transactions visible at the API (no `Code4::begin()`/`commit()`/`rollback()`).
+- Memo fields.
+- Custom dBase expression evaluator (only literal expressions used by Spec #1 tables are supported).
+- Write-back to `.dbf` (the migration is intentionally one-way).
+
+---
+
+## 5. Unicode & String Strategy
+
+### 5.1 Three-tier rule
+
+- **Tier 1 — Win32 boundary.** Explicit W APIs and `LPCWSTR`. **No `TCHAR`, no `_T()` macros, no `LPTSTR`.** This is a Unicode-only build.
+- **Tier 2 — Internal strings.** `std::wstring` replaces the custom `string` class from `cstring.h`. The `new string(...) / delete` heap-allocation pattern in original `gl.cpp` goes away in favor of stack/value `std::wstring`.
+- **Tier 3 — Fixed buffers.** `WCHAR szApp[20]` etc. preserved as arrays where the original used `char[]`. Don't gratuitously heap-allocate small fixed-size buffers.
+
+### 5.2 Helpers in `win32fx::StringUtil`
+
+- `std::wstring LoadResString(UINT id)`
+- `std::wstring Format(LPCWSTR fmt, ...)` — `swprintf_s` wrapper
+- `std::wstring Utf8ToWide(std::string_view)` — for the SQLite UTF-8 boundary
+- `std::string  WideToUtf8(std::wstring_view)`
+- `std::wstring Trim(std::wstring_view)` — replaces the original `StrTrim`
+
+### 5.3 Resources
+
+- Resource files saved as **UTF-16 LE with BOM**.
+- All strings verbatim English. No localization framework introduced in Spec #1.
+
+### 5.4 INI files
+
+Keep `GetPrivateProfileStringW` / `GetPrivateProfileIntW` for Spec #1. Microsoft has deprecated them, but they still work, have zero dependencies, and existing `GLDR.INI` files work as-is.
+
+### 5.5 Out of scope
+
+- Locale-aware comparisons.
+- `std::format` conversion (sprintf-style preserved).
+- Numeric / currency reformatting (original sprintf format strings preserved).
+
+---
+
+## 6. Resource Strategy & Chart of Accounts Target
+
+### 6.1 Modernize in place — don't rewrite
+
+- Strip `LOADONCALL MOVEABLE DISCARDABLE` (16-bit segment hints; modern `rc.exe` ignores them but we remove them for cleanliness).
+- Extract embedded BITMAP hex blobs to external `.bmp` files via a one-time throwaway extraction script.
+- Magic style numbers (`40962`, `32784`, `9216`, `29696`) on `tb*` controls are **passed through verbatim** to `CreateWindowExW` as the `dwStyle` word — Spec #1 does not branch on individual bits. Document discovered bits in `controls/styles.md` only when a screen demonstrably depends on one.
+- Dialog coordinates (dialog units), control IDs, menu structure, and `STRINGTABLE` entries are **untouched**.
+
+### 6.2 Resource pruning for Spec #1
+
+The pruned `.rc` for Spec #1 — `gl/res/gl.rc` (one file) — is built by **merging** entries from the originals (`gl.rc` and `gl_new.rc`) since some Spec #1 dialogs only exist in `gl_new.rc`:
+
+| Resource | ID | Source file | Notes |
+|----------|-----|-------------|-------|
+| Main toolbar dialog | 1001 | `gl.rc` | |
+| About-box dialog | 1003 | `gl.rc` | |
+| Chart of Accounts inner toolbar | 1032 | `gl.rc` | |
+| Chart of Accounts main dialog | 1033 | `gl.rc` | |
+| Account List dialog | 1034 | `gl.rc` | |
+| Company Profile dialog | 1021 | `gl.rc` | `gl_new.rc` also has 1021 with different size — `gl.rc` is canonical for #1 |
+| Period Dates dialog | 1028 | `gl.rc` | |
+| Login dialog | 1158 | `gl_new.rc` | Not present in `gl.rc` — must come from `gl_new.rc` |
+| Administration dialog | 1159 | `gl_new.rc` | **Note:** appears at lines 4300 and 4320 of `gl_new.rc` — duplicate. Use the entry at line 4300; document the choice. (§10 Q1.1) |
+| Access Menus dialog | 1160 | `gl_new.rc` | |
+| `MANILA` menu | — | `gl.rc` | Top-level frame menu. AP/AR menu items kept (route to stubs); see Q4 below. |
+| `GLE` menu | — | `gl.rc` | Merged onto MANILA when a GL MDI child has focus. |
+| `GLSUB` menu | — | `gl.rc` | Sub-menu activated for inner GL dialogs. |
+| `STRINGTABLE` | — | both | Only the entries referenced by the dialogs/menus above are included. |
+
+**Excluded from the Spec #1 build** (still on disk for reference): the AP / AR menu definitions, the `MEMO` and `SPREAD` menus, all dialogs not listed above. AP/AR menu *items* on MANILA remain (so the user sees the same File menu) and are wired to "not yet ported" stubs.
+
+Original `gl.rc` and `gl_new.rc` files remain in the repo unchanged for reference and for sourcing additional resources in later specs.
+
+### 6.3 The single biggest lever
+
+Custom controls registering with their **original class names** means the dialog manager creates them via `CreateWindowExW(L"tbPic", ...)` and our implementation picks up. **Dialog templates are not edited.**
+
+### 6.4 Bitmap modernization
+
+- One-time script extracts hex-embedded bitmaps to `bitmaps/<id>.bmp`.
+- `.rc` declarations rewritten as `<id> BITMAP "bitmaps/<id>.bmp"`.
+- Visuals look dated (4-bit, 11px) — acceptable for Spec #1; a future spec replaces them with PNG image lists.
+
+### 6.5 Chart of Accounts port targets
+
+| Source file       | Header(s)             | Becomes                                     | Notes                                |
+|-------------------|-----------------------|---------------------------------------------|--------------------------------------|
+| `gl_accts.cpp`    | `gl_accts.h`, `gl_acct.h`, `glclass.h` | `ChartOfAccounts.h/.cpp`           | TGLAcctsAdd, TGLAcctsDelete; dialogs 1033 + 1032 |
+| `gl_acctl.cpp`    | `gl_acctl.h`, `gl_main.h`              | `AccountList.h/.cpp`               | TAccountList; dialog 1034            |
+
+**DB:** `glaccts` table. The only CodeBase tag the Chart of Accounts ports actually use is **`"accounts"`** (verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`). `gl_acctl.cpp::TListWindow::SetFields` accepts a tag name from the caller (`szIndex`), but every Spec #1 caller of `TAccountList` passes the default; no DESCRIP-tag switch is exercised. Other tags on `glaccts` (if present in the original `.cdx`) are migrated for completeness by `dbf2sqlite` but are not required by Spec #1 acceptance.
+
+### 6.6 Translation pattern (OWL → Win32)
+
+OWL's response-table macros become explicit `OnCommand` cases. Example:
+
+```cpp
+// Original (OWL)
+class TGLAcctsAdd : public TDialog {
+    virtual void Search(RTMessage) = [ID_FIRST + ID_GLINQ];
+};
+
+// Ported (Win32 SDK + win32fx)
+class ChartOfAccounts : public fx::Dialog {
+    bool OnCommand(WORD id, WORD code, HWND ctl) override {
+        switch (id) {
+            case ID_GLINQ: OnSearch(); return true;
+            // ...
+        }
+        return false;
+    }
+    void OnSearch();
+};
+```
+
+Method bodies port near-verbatim with the §4 (DB) and §5 (string) transforms applied.
+
+### 6.7 Acceptance criteria — 9 manual checks
+
+1. **Launch / chrome:** `gl.exe` launches and shows the MDI frame with: (a) the menu identical in label/order to the original GLE menu, (b) the vertical "manila" toolbar present on the left, (c) the status bar showing company name (from company-profile table) and current accounting period.
+2. **Chart of Accounts navigation:** GL → Chart of Accounts opens dialog 1033; top / bottom / next / prev navigate `glaccts` rows in the `"accounts"` tag order (matches original; no other tags exercised by these ports).
+3. **Add:** Enter required fields (ACCT_NO, DESCRIP at minimum), click Add/Mod → row appears in SQLite (verify externally with `sqlite3 <co>.db "select * from glaccts"`).
+4. **Modify:** Navigate to a row, edit fields, click Add/Mod → row updated in SQLite (compare row before/after).
+5. **Delete:** Click Delete → `_deleted` flag set in SQLite; navigation skips deleted rows.
+6. **Persistence:** Close `gl.exe`, reopen → all changes from steps 3-5 survive across process restart.
+7. **Account list:** Dialog 1034 lists accounts ordered by `ACCT_NO`. Selecting a row and confirming returns to the parent dialog with the parent's `ACCT_NO` field populated from the selection (other fields refresh from the DB on parent navigation).
+8. **`tb*` validation:** `tbInteger` rejects non-digit input, `tbFloat` enforces at most one decimal point, `tbPic` enforces its mask character-by-character (matches original behavior on the same input strings).
+9. **Framework reusability:** The (future) AP project can compile against `win32fx.lib`, declare a trivial `fx::Dialog` subclass with one `OnCommand` handler, and run it as a modal dialog without modifying any `win32fx/` source. Demonstrated by a 30-line example program in `win32fx/examples/trivial_dialog.cpp`.
+
+---
+
+## 7. Build, Errors, Tests, Risks
+
+### 7.1 Build configuration
+
+- **Tooling:** Hand-written `.vcxproj` files (not CMake — Windows-only, MSVC-only).
+- **Configurations:** `Debug|x64` and `Release|x64` only.
+- **Language:** C++20.
+- **Warnings:** `/W4 /WX /permissive-`.
+- **Defines:** `UNICODE`, `_UNICODE`, `WIN32_LEAN_AND_MEAN`, `NOMINMAX`.
+- **CRT:** Static (`/MT`) for single-exe distribution.
+- **SQLite:** Amalgamation vendored with `SQLITE_THREADSAFE=0`, `SQLITE_OMIT_LOAD_EXTENSION=1`, `SQLITE_DEFAULT_FOREIGN_KEYS=1`.
+- **Subsystem:** `WINDOWS` for `gl.exe`, `CONSOLE` for `dbf2sqlite.exe`.
+- **Release hardening:** `/DYNAMICBASE`, `/NXCOMPAT`, `/guard:cf`, `/sdl`.
+- **Manifest:** v6 common controls + per-monitor DPI v2 from day one.
+
+### 7.2 Error handling
+
+The original code has **three error idioms** mixed together: return codes, `MessageBox` + `exit()`, and silent fall-through. Spec #1 does **per-idiom translation** rather than unifying them:
+
+- **Single dispatch-boundary catch.** `win32fx::Window::WndProc` and `win32fx::Dialog::DlgProc` each wrap their entire body in one `try { ... } catch (const std::exception&) { ... } catch (...) { ... }`. Handler bodies do **not** add their own try/catch except where they intend to recover and continue.
+- `cb4sqlite` shim throws `cb4sqlite::Error` (derives `std::runtime_error`); ported screens propagate, and the dispatch-boundary catch logs + shows a `MessageBox` + returns to the message loop.
+- **`FX_VERIFY(cond, msg)` semantics:** active in both Debug and Release. On failure: in Debug, calls `__debugbreak()` after writing a line to `OutputDebugStringW`; in Release, writes to `OutputDebugStringW` then calls `FatalAppExitW(0, msg)`. It is for programmer-error invariants only — never for user input or recoverable I/O failures.
+- `assert()` remains active in Debug (`NDEBUG` is **not** defined for Debug builds) and is a no-op in Release. Use for cheap invariants where `FX_VERIFY` would be overkill.
+- **Explicitly avoided:** `Result<T>` / `std::expected` / per-call try-catch around every dispatched call — they would fight the original's calling style and inflate the diff with no real safety gain.
+
+### 7.3 Test layers
+
+| Layer | Required for #1 | Description |
+|-------|-----------------|-------------|
+| 1     | Yes             | `cb4sqlite_tests.exe` — **Catch2 v3 single-header**, vendored at `cb4sqlite_tests/vendor/catch2/`. Covers: open/close, append + round-trip, tag ordering, seek, navigation, soft-delete, padding-preserved compare. |
+| 2     | Yes             | `dbf2sqlite` integration test — runs the migration over the 5-row fixture at `dbf2sqlite/test/fixtures/glaccts/`, verifies result with `cb4sqlite` reads. Wired into the same `cb4sqlite_tests.exe` binary as a separate test case. |
+| 3     | Yes             | Manual walkthrough of the 9 acceptance criteria from §6.7, signed off in writing. |
+| 4     | **No**          | UI automation (UIA / AutoIt / WinAppDriver) — heavyweight, deferred to AP/AR specs. |
+| 5     | **No**          | `win32fx` unit tests — proven indirectly by Chart of Accounts working and by the §6.7 #9 reusability example. Adding direct tests deferred. |
+
+### 7.4 Top risks
+
+| # | Severity            | Risk                                                                                     | Mitigation                                                                                            |
+|---|---------------------|------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| 1 | High                | `tb*` reimplementations differ subtly from originals.                                    | Implement minimum behavior; test against Chart of Accounts manually; fix discovered gaps as they appear. |
+| 2 | Medium              | Magic style number bits encode unknown behavior.                                          | Treat unknown bits as no-ops; decode only what the screen demonstrably needs.                          |
+| 3 | Medium              | `Relate4set` complexity in `gl_acctl`.                                                   | Decide per call site: nested `Data4` cursors vs. real SQL `JOIN`.                                     |
+| 4 | Medium              | `.cdx` index expressions like `UPPER(NAME)+ACCT` need an evaluator.                       | Support only what Chart of Accounts uses in Spec #1; defer general expression evaluator.               |
+| 5 | High on hi-DPI      | Pixel-based `MoveWindow` calls misalign on per-monitor DPI displays.                      | Per-monitor v2 manifest from day one; `MulDiv` adjustments at hand-coded pixel sites.                  |
+| 6 | Low (cosmetic)      | Static CRT + SQLite produces ~1.5–2 MB exe vs. original ~600 KB.                          | Accept.                                                                                                |
+| 7 | Medium              | Borland `.rc` dialect rejection by Microsoft `rc.exe`.                                    | Half-day buffer in the schedule for "feed pruned `gl.rc` to `rc.exe`, fix errors."                     |
+| 8 | Low–Medium          | `tbSuperBtn` owner-draw visual matching.                                                 | Themed `BUTTON` first; escalate to owner-draw only if visual gap is unacceptable.                      |
+| 9 | Medium              | Hidden global state (e.g., `extern PTWindowsObject GetObjectPtr`).                       | Surface via `grep` as ports happen; delete or replace per case.                                        |
+| 10| Medium              | SQLite `.db` over UNC / SMB share — known corruption risk under single-user SQLite when the shared file lock is unreliable. Original installs sometimes placed company directories on a network drive. | Spec #1 supports local-disk paths only. If `GLDR.INI` resolves to a UNC path, `Code4::open` returns an error and the login screen shows a "Spec #1: company DB must be on local disk" message. Re-enabling UNC waits on a future spec that adds proper locking. |
+| 11| Medium              | Resource encoding round-trip — re-saving the pruned `gl.rc` in Visual Studio's resource editor can rewrite layout (control order, embedded comment loss) and silently break dialog visuals; Borland Resource Workshop output is also non-canonical. | Edit `gl.rc` only as plain UTF-16 LE text in Spec #1; do **not** open it in the VS resource editor. Add a CI / pre-commit check that rejects layout-changing rewrites. |
+
+### 7.5 Spec #2+ deltas (informational)
+
+What is **expected to change** in later specs:
+
+- New screens added as `fx::Dialog` subclasses.
+- New `tb*` controls **only if** AP grid screens demand them.
+- More `cb4sqlite` API surface (e.g., `Tag4` rebuilds, locking when multi-user is reintroduced).
+- More tables supported by `dbf2sqlite` — and therefore **a new `dbf2sqlite.exe` re-release per spec that adds tables**, since the tool's supported-table set is hardcoded per §4.5. Document the version bump in each future spec.
+- UNC path support in `cb4sqlite` (paired with locking work).
+
+What is **not expected to change**:
+
+- Build configuration.
+- Mini-framework core (`Window` / `Dialog` / `MsgMap` / `HandleGuard`).
+- Unicode strategy.
+- `Window` / `Dialog` base class shape.
+
+### 7.6 Out of scope for the entire migration
+
+- Web / cloud port.
+- Multi-user concurrency.
+- Touch UI.
+- i18n beyond English resources.
+- Replacing SQLite with a server database (the shim is narrow enough to revisit, but not in this migration).
+- Automated UI tests.
+- Performance work beyond what acceptance criteria force.
+
+---
+
+## 8. Codebase orientation
+
+- **Origin:** 1994 Tegara Corporation General Ledger / AP / AR (Borland C++ OWL, Win16-era).
+- **Size:** ~140 `.cpp` files, MDI architecture, three logical modules (GL, AP, AR).
+- **Resources:** `gl.rc` (~190 KB) + `gl_new.rc` (~233 KB), Borland Resource Workshop output, hex-embedded bitmaps, custom controls registered at runtime by `ToolBoxLoadDlls`.
+- **Stack to remove:** OWL, CodeBase 4, Crystal Reports Print Engine, CTL3D, BWCC, TBOWL/Toolbox DLLs, custom `string` class.
+- **Spec #1 source files:** `gl.cpp`, `gl_main.h`, `gl_acces.cpp`, `gl_profi.cpp`, `gl_accts.cpp` / `gl_accts.h`, `gl_acctl.cpp` / `gl_acctl.h`.
+
+---
+
+## 9. Sub-project decomposition (context for future specs)
+
+Spec #1 covers items 1 + 2 of the seven seams identified during decomposition:
+
+1. Foundation / scaffolding (Win32 shell, MDI frame, resource strategy, build, framework). — **Spec #1**
+2. Data layer (CodeBase → SQLite shim + `dbf2sqlite` migration tool). — **Spec #1**
+3. Reporting (Crystal Reports Print Engine replacement — biggest unknown, deferred).
+4. GL module port (remaining screens after Chart of Accounts).
+5. AP module port.
+6. AR module port.
+7. Resource (`.rc`) modernization for unported screens.
+
+---
+
+## 10. Open Questions & Resolutions
+
+This section started as open questions during brainstorming. Most were resolved during a follow-up read of the source. Remaining items are flagged at the end.
+
+### Resolved (locked into spec body)
+
+1. **Login & company-profile dialog IDs.** Verified by `grep` of source:
+   - `TGLAccess` (login) → dialog `1158` in `gl_new.rc` only.
+   - `TGLAdministration` (admin) → dialog `1159` in `gl_new.rc` only (also at line 4320 — likely a duplicate; pick line 4300 and document).
+   - `TAccessMenus` → dialog `1160` in `gl_new.rc` only.
+   - `TGLProfile` (company profile) → dialog `1021` (canonical version in `gl.rc`; `gl_new.rc` also has 1021 at different dimensions — choose `gl.rc`'s version).
+   See §6.2 table.
+
+   1.1. **`gl_new.rc:1159` duplicate disposition.** Two definitions of dialog 1159 exist (lines 4300 and 4320). Pick one for the pruned build. **Decision: use the entry at line 4300** (first occurrence; cross-check fields match the `TGLAdministration` member references in `gl_acces.cpp`).
+
+2. **`glaccts` index tag names.** Verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`. The chart-of-accounts ports use exactly one tag: **`"accounts"`**. `dbf2sqlite` will migrate any other tags present on the source `.cdx` (so the SQLite database stays a faithful representation), but Spec #1 acceptance does not depend on them. See §6.5.
+
+3. **DBF reader library final choice.** **Decision: `libdbf`**, vendored under `dbf2sqlite/vendor/libdbf/`. Alternative `shapelib`/`dbfopen.c` retained as fallback if `libdbf` fails to handle the original `.cdx` layout. See §4.5.
+
+4. **AP / AR menu items in the pruned `gl.rc`.** **Decision: keep MANILA menu items routing to AP/AR; AP and AR sub-menu definitions are excluded from the build.** Items 2210 (Accounts Payable...) and 1002 (Accounts Receivable...) on the MANILA File menu route to "not yet ported" stubs in `ApStubs.cpp` / `ArStubs.cpp`. The standalone `AP` and `AR` `MENU` resource definitions (lines 1457 and 1559 of `gl.rc`) are pruned.
+
+5. **Menu-merge behavior in Spec #1.** Menu merging IS exercised — when Chart of Accounts (or any GL MDI child) has focus, the `GLE` and `GLSUB` menus merge onto the MANILA frame menu. The merge is non-trivial in Spec #1; not identity-only. `MdiFrame::OnMdiChildActivate` must implement the merge correctly. Document the merge points in `win32fx/MdiFrame.cpp`.
+
+### Resolved during plan-writing
+
+7. **Per-monitor DPI test display.** **Decision: 96-DPI only for Spec #1 acceptance.** The per-monitor v2 manifest still ships (cheap insurance against future hi-DPI hardware), but the §6.7 manual walkthrough runs on 96-DPI hardware only. High-DPI is documented as untested and caught in a later spec.
+
+8. **`db_accts.h` location.** **Resolved.** The header lives at `GLSRC/include/db_accts.h` (one directory up from the `gl/` mount point that maps to `/work` in this sandbox). It was not "missing" — the sandbox simply doesn't expose `GLSRC/include/`. Spec §2.1 now reflects the real top-level layout (`GLSRC/{include, gl, ap, ar}` plus the four new project dirs), and the build's `IncludePath` adds `..\include`. The hand-written header is authoritative. Verified `Tglaccts` shape: 44 fields (accounts/dept/descript/fdescript/type/curr_bal/category + budget1..12 + period1..12 + openbal + previous1..12), plus `dPeriod()`/`UpdateAccount()` member methods (defined in `ap_post.cpp` — not link-required for Spec #1 since unused). M2's generator emits `db_<table>.h` only for tables lacking a hand-written header.
+
+### Still open
+
+6. **`tb*` control behavioral envelope.** Required-to-match behaviors for Spec #1:
+   - **Class registration** at original names (locked, §3.6).
+   - **Window styles**: pass-through verbatim (locked, §6.1).
+   - **`WM_GETDLGCODE`**: tbPic/tbDate/tbInteger/tbFloat must return `DLGC_WANTCHARS | DLGC_WANTARROWS` so character validation runs on every keystroke. tbSuperBtn returns `DLGC_BUTTON | DLGC_DEFPUSHBUTTON` as appropriate.
+   - **`WM_NOTIFY` codes**: not used by the original tb* controls (they communicate via `WM_COMMAND` / `EN_*` notifications). Match by emitting the same `EN_CHANGE` / `EN_KILLFOCUS` notifications on edit-derived controls.
+   - **Paint / erase**: themed default; escalate to owner-draw only if visual gap.
+
+   Open question: is the above sufficient, or are there concealed message-flow dependencies (e.g., subclass thunks that swallow specific WM_*)? Decide by porting and observing.
+
