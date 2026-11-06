@@ -92,23 +92,29 @@ Static linking only. No DLLs. Single-exe distribution.
 
 ### 2.2 `win32fx/` (static lib)
 
+As built in M3: public headers in `include/` (on every project's IncludePath via `common.props`), sources in `src/`. See `win32fx/README.md`.
+
 ```
 win32fx/
-├── Window.h/.cpp           — HWND-owning base class, message dispatch
-├── Dialog.h/.cpp           — Modal/modeless base class
-├── MsgMap.h                — BEGIN_MSG_MAP / ON_MSG / END_MSG_MAP macros
-├── HandleGuard.h           — RAII for HMENU/HFONT/HBITMAP/HBRUSH/HPEN/HRGN/HICON
-├── StringUtil.h/.cpp       — LoadResString, Format, Utf8ToWide, WideToUtf8, Trim
-├── MdiFrame.h/.cpp         — MDI frame helper (menu, accelerator, MDICLIENT)
-├── Toolbar.h/.cpp          — Top toolbar
-├── VerticalToolbar.h/.cpp  — Left vertical toolbar (manila tabs equivalent)
-├── StatusBar.h/.cpp        — Bottom status bar
-└── controls/
-    ├── PicEdit.h/.cpp       — tbPic   (mask-validated edit)
-    ├── DateEdit.h/.cpp      — tbDate  (date edit)
-    ├── FloatEdit.h/.cpp     — tbFloat (one-decimal numeric edit)
-    ├── IntEdit.h/.cpp       — tbInteger (integer-only edit)
-    └── SuperBtn.h/.cpp      — tbSuperBtn (themed/owner-draw button)
+├── include/
+│   ├── win32fx.h            — umbrella header; namespace win32fx, alias fx
+│   ├── Window.h             — HWND-owning base class, message dispatch
+│   ├── Dialog.h             — modal/modeless base class
+│   ├── MsgMap.h             — BEGIN_MSG_MAP / ON_MSG / ON_MSG_RANGE / END_MSG_MAP
+│   ├── HandleGuard.h        — RAII for HMENU/HFONT/HBITMAP/HBRUSH/HPEN/HRGN/HICON (+ memory DC)
+│   ├── StringUtil.h         — LoadResString, Format, Utf8ToWide, WideToUtf8, Trim
+│   ├── Verify.h             — FX_VERIFY (§7.2)
+│   ├── MessageLoop.h        — message loop with MDI/accelerator/modeless-dialog translation
+│   ├── MdiFrame.h           — MdiFrame (MDICLIENT, docked bars, OWL CM_* commands) and MdiChild
+│   ├── Toolbar.h            — DialogBar + Toolbar: the top toolbar (dialog 1032)
+│   ├── VerticalToolbar.h    — the module bar (dialog 2057), docked at the bottom like the original
+│   ├── StatusBar.h          — common-controls status bar wrapper
+│   └── controls/CustomControls.h — RegisterCustomControls + the Toolbox calls/messages kept
+├── src/                     — the .cpp files; src/controls/ has PicEdit, DateEdit, FloatEdit,
+│                              IntEdit, SuperBtn, EditBase (shared EDIT superclass), EditRules
+│                              (input rules, plain C++), Register
+├── examples/trivial_dialog/ — standalone consumer (§6.7 #9), not in gl.sln
+└── README.md
 ```
 
 ### 2.3 `cb4sqlite/` (static lib)
@@ -186,9 +192,11 @@ The following are **deleted** in Spec #1; ports will not include their headers:
 - `OnCommand(WORD id, WORD code, HWND hwndCtl)`
 - `OnSize(UINT type, int cx, int cy)`
 - `OnDestroy()`
-- `OnMessage(UINT msg, WPARAM, LPARAM)` — fall-through for everything else
+- `OnMessage(UINT msg, WPARAM, LPARAM, LRESULT& result)` — fall-through for everything else (M3: the `result` out-parameter carries the message result)
 
-The thunk pattern: subclass calls `Create(...)` which calls `CreateWindowExW` with `this` in `lpParam`; the WndProc on `WM_NCCREATE` stores `this` via `SetWindowLongPtr(GWLP_USERDATA)` and routes subsequent messages to the instance.
+Each returns `true` when it handled the message; otherwise `DefaultProc` runs (`DefWindowProcW`, or `DefFrameProcW` / `DefMDIChildProcW` for the MDI classes). The message map (§3.3) is checked first.
+
+The thunk pattern: subclass calls `Create(...)` which calls `CreateWindowExW` with `this` in `lpParam`; the WndProc on `WM_NCCREATE` stores `this` via `SetWindowLongPtr(GWLP_USERDATA)` and routes subsequent messages to the instance. MDI children created with `CreateMDIWindowW` work the same way; their `lpParam` arrives inside the `MDICREATESTRUCT`. After `WM_NCDESTROY` the HWND is detached and `OnFinalMessage()` runs. That is where a window that owns itself does `delete this`, replacing OWL's `new TWindow` pattern, and it is the closest equivalent of OWL's `CleanupWindow`, which ran after `WM_DESTROY` (risk P6).
 
 ### 3.2 Dialog base class
 
@@ -211,11 +219,20 @@ END_MSG_MAP()
 
 ### 3.5 MDI scaffolding
 
-`MdiFrame`, `Toolbar`, `VerticalToolbar`, `StatusBar` are independent `Window` subclasses. `MdiFrame` owns the MDICLIENT child and the menu merging logic (the original `HGLMenu` global is preserved as `extern HMENU HGLMenu`).
+`MdiFrame` (a `Window`) owns the MDICLIENT child and lays it out between docked bars, as the original `TGlWindow::WMSize` did. It handles the OWL `TMDIFrame` commands the MANILA menu still sends (`CM_TILECHILDREN` 24336, `CM_CASCADECHILDREN`, `CM_ARRANGEICONS`, `CM_CLOSECHILDREN`, `CM_EXIT` 24340). The menu merging logic goes in `MdiFrame::OnMdiChildActivate` (plan M5); the original `HGLMenu` global is preserved as `extern HMENU HGLMenu`.
+
+As built (M3), the bars follow the original code, not separate `Window` subclasses:
+- **`Toolbar` and `VerticalToolbar`** are modeless *child dialogs*, built from templates 1032 and 2057 like `TToolBar`/`TVToolBar`. Their `tbSuperBtn` clicks are forwarded to the frame.
+- **`VerticalToolbar`** keeps the plan's name, but the original docks it at the **bottom** of the frame. It holds the GL/AP/AR module buttons and the company, menu-help and period fields (3222–3224).
+- **`StatusBar`** wraps the common-controls status bar. It has its own window procedure, so it is a handle wrapper, not a `Window`.
 
 ### 3.6 Custom-control registration — the critical lever
 
-`win32fx::RegisterCustomControls()` registers WNDCLASS entries with the **original class names**:
+`win32fx::RegisterCustomControls(HINSTANCE)` registers WNDCLASS entries with the **original class names**. The sketch below was the plan; *as built (M3)*, each class is a **superclass** of the system `EDIT` (or `BUTTON`) class. It copies that class's `WNDCLASSEXW`, sets `cbWndExtra` to the base class's value plus one pointer, and puts its own window procedure in front. The dialog code therefore keeps `WM_SETTEXT`/`WM_GETTEXT`/`EN_*`/`BN_CLICKED`, which is how the legacy code talks to these controls. Two Toolbox conventions had to be reproduced:
+- **The template text is the mask** (`"XXXXXXX"`, `"(999) 999 - 9999"`, `"9999999999999.99"`), not the initial text.
+- **The Toolbox style bits are translated** before `EDIT` sees them. Several share values with unrelated `EDIT` styles: `ES_3D` 0x0400 = `ES_OEMCONVERT`, `FS_SEPARATOR` 0x2000 = `ES_NUMBER`.
+
+`win32fx/README.md` has the per-control behaviour.
 
 ```cpp
 WNDCLASSEXW wc = {};
@@ -244,7 +261,7 @@ The original module-level globals (`hInst`, `HGLMenu`, `cb`, `szApp`) are kept a
 
 ### 3.8 Estimated size
 
-~1200 lines for the framework (including controls). Confirms the "light helpers" decision — heavier than raw Win32, much lighter than MFC/WTL.
+~1200 lines for the framework (including controls). Confirms the "light helpers" decision — heavier than raw Win32, much lighter than MFC/WTL. *As built (M3):* about 2,500 lines including the header documentation and the input rules for the five controls.
 
 ---
 
@@ -683,6 +700,12 @@ This section started as open questions during brainstorming. Most were resolved 
    - **Paint / erase**: themed default; escalate to owner-draw only if visual gap.
 
    Open question: is the above sufficient, or are there concealed message-flow dependencies (e.g., subclass thunks that swallow specific WM_*)? Decide by porting and observing.
+
+   *M3 status:* everything above is implemented (`win32fx/README.md`). From `include/toolbox.h` and the legacy call sites:
+   - **Toolbox API the GL code calls:** `FloatGetValue`/`FloatSetValue`, `IntGetValue`/`IntSetValue`, `EPM_SETMASK`/`EPM_SETCALLBACK` (in `gl_accts.cpp`) and `SBM_SETPICT` (the toolbars). These are kept under their original names and message numbers.
+   - **Not used by any legacy code:** the `EN_INVALID*` notifications.
+   - **Not implemented:** `SBS_NOPOINTERFOCUS`, the spin styles and the range calls.
+   - **Still open:** behaviour only the ports in M5/M6 can show.
 
 9. **`db_dept.h` / `Tgldept`.** **Resolved 2026-11-06.** It was missing from `include/`; the user recovered it in an archive unpacked into `ar/`, and it is now `include/db_dept.h` (copied unchanged from `ar/DB_DEPT.H`): `class Tgldept : public Data4` on table `gldept`, tag `depart`, fields `depart` and `descript`. That matches its use in `gl/src/gl_accts.cpp:12,233`, and it compiles against the M0 shim. Nine more missing headers came from the same source (`db_arbtc`, `db_ardst`, `db_btch`, `db_btchd`, `db_cust`, `db_dist`, `db_itemm`, `db_medrp`, `db_srce`). **Caution:** the `ar/` tree is an *older* snapshot. Its copies of headers already in `include/` differ (e.g. `ar/DB_ACCTS.H` lacks `category` and uses 1-based field indexes), so the `include/` versions remain authoritative and only missing headers were taken from `ar/`. Still missing (non-Spec #1): `db_acct.h`, `db_alloc.h`, `db_arjsm.h`, `db_distd.h`, `db_fa.h`, `db_glopn.h`, `db_index.h`, `db_xacct.h`.
 

@@ -1,0 +1,29 @@
+// trivial_dialog.rc - one dialog using every win32fx custom control by its
+// original Toolbox class name, with the original style bits:
+//   0x0400 ES_3D, 0x6400 DS_MMDDYY|ES_3D, 0x2400 FS_SEPARATOR|ES_3D,
+//   0x8010 / 0x8011 SBS_NOPOINTERFOCUS|SBS_TEXTRIGHT_PICTLEFT (|SBS_DEFPUSHBUTTON).
+#include <windows.h>
+#include "resource.h"
+
+IDD_TRIVIAL DIALOGEX 0, 0, 230, 150
+STYLE DS_MODALFRAME | DS_SHELLFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "win32fx trivial dialog"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT       "Instance:", -1, 7, 9, 70, 8
+    LTEXT       "", IDC_NAME, 80, 9, 100, 8
+    LTEXT       "Account (NNNNNNN):", -1, 7, 25, 70, 8
+    CONTROL     "NNNNNNN", IDC_ACCOUNT, "tbPic", 0x0400 | WS_TABSTOP, 80, 23, 60, 12
+    LTEXT       "Phone:", -1, 7, 41, 70, 8
+    CONTROL     "(999) 999 - 9999", IDC_PHONE, "tbPic", 0x0400 | WS_TABSTOP, 80, 39, 80, 12
+    LTEXT       "Date (MM/DD/YY):", -1, 7, 57, 70, 8
+    CONTROL     "", IDC_DATE, "tbDate", 0x6400 | WS_TABSTOP, 80, 55, 45, 12
+    LTEXT       "Amount:", -1, 7, 73, 70, 8
+    CONTROL     "9999999999999.99", IDC_AMOUNT, "tbFloat", 0x2400 | WS_TABSTOP, 80, 71, 80, 12
+    LTEXT       "Quantity (9999):", -1, 7, 89, 70, 8
+    CONTROL     "9999", IDC_QUANTITY, "tbInteger", 0x0400 | WS_TABSTOP, 80, 87, 30, 12
+    CONTROL     "&Ping", IDC_PING, "tbSuperBtn", 0x8010 | WS_TABSTOP, 7, 107, 50, 16
+    LTEXT       "0", IDC_PINGS, 62, 111, 40, 8
+    CONTROL     "&OK", IDOK, "tbSuperBtn", 0x8011 | WS_TABSTOP, 116, 127, 50, 16
+    CONTROL     "&Cancel", IDCANCEL, "tbSuperBtn", 0x8010 | WS_TABSTOP, 173, 127, 50, 16
+END

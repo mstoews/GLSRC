@@ -1,0 +1,87 @@
+//
+// CustomControls.h - the Toolbox controls the legacy dialogs use (spec 3.6).
+//
+// RegisterCustomControls() registers window classes under the original
+// names, so the dialog templates in gl.rc create them unchanged:
+//
+//   tbPic      edit with a picture mask    (PicEdit.cpp)
+//   tbDate     date edit                   (DateEdit.cpp)
+//   tbFloat    decimal edit                (FloatEdit.cpp)
+//   tbInteger  integer edit                (IntEdit.cpp)
+//   tbSuperBtn push button with a picture  (SuperBtn.cpp)
+//
+// The edits superclass the system EDIT control and the button superclasses
+// BUTTON: the dialog code talks to them with the usual WM_SETTEXT /
+// WM_GETTEXT / EN_CHANGE / BN_CLICKED. A template's text is the control's
+// mask ("XXXXXXX", "(999) 999 - 9999", "9999999999999.99"), not its initial
+// text, as with Toolbox; the Toolbox style bits are translated to EDIT/BUTTON
+// styles (several share values with unrelated EDIT styles: FS_SEPARATOR is
+// ES_NUMBER's bit). See win32fx/README.md for what each control does.
+//
+// The Toolbox calls and messages the legacy code sends are below, with their
+// original names.
+//
+#pragma once
+
+#include <Windows.h>
+
+#include <string>
+
+namespace win32fx {
+
+// Registers all five classes (CS_GLOBALCLASS) for `inst`; calls
+// InitCommonControlsEx first. False if any registration failed. Safe to call
+// more than once.
+bool RegisterCustomControls(HINSTANCE inst);
+
+// The date in a tbDate control as YYYYMMDD (cb4sqlite's date format), or ""
+// if it is blank or not a valid date. Two-digit years: 00-49 are 20xx, 50-99 19xx.
+std::wstring DateGetYmd(HWND ctl);
+
+} // namespace win32fx
+
+// ---- Toolbox compatibility (include/toolbox.h names and values) -----------
+
+// Picture edit messages (tbPic, and tbDate's mask).
+#ifndef EPM_GETMASK
+#define EPM_GETMASK     (WM_USER + 38)   // lParam: wchar_t* buffer, wParam: its size
+#define EPM_SETMASK     (WM_USER + 39)   // lParam: const wchar_t* mask
+#define EPM_SETCALLBACK (WM_USER + 40)   // lParam: PICCALLBACK, null to remove
+#endif
+
+// Called for each character typed into a tbPic: return the character to
+// insert (possibly changed), or 0 to reject it.
+typedef WORD(CALLBACK* PICCALLBACK)(HWND ctl, short id, short pos, wchar_t ch);
+
+// tbSuperBtn messages. Only SBM_SETPICT does something; the rest are
+// accepted and ignored (the look is the themed system button).
+#ifndef SBM_SETPICT
+#define SBM_SETCOLOR         (WM_USER + 50)
+#define SBM_SETPICT          (WM_USER + 51)   // wParam: SUPERBTN_PICT_*, lParam: resource ID / name / handle
+#define SBM_SETPICT_DISABLED (WM_USER + 52)
+#define SBM_SETPICT_BTNDOWN  (WM_USER + 53)
+#define SBM_GETCOLOR         (WM_USER + 54)
+#define SBM_SETBUTTONTYPE    (WM_USER + 55)
+#define SBM_GETBUTTONSTATE   (WM_USER + 56)
+#define SBM_SETBUTTONSTATE   (WM_USER + 57)
+#define SBM_SETSHADOWSIZE    (WM_USER + 58)
+#define SBM_GETSHADOWSIZE    (WM_USER + 59)
+#define SBM_SETSTRETCH       (WM_USER + 60)
+#define SBM_GETSTRETCH       (WM_USER + 61)
+#define SUPERBTN_PICT_NONE   0
+#define SUPERBTN_PICT_ICON   0x0001           // BT_ICON
+#define SUPERBTN_PICT_BITMAP 0x0002           // BT_BITMAP
+#define SUPERBTN_PICT_HANDLE 0x0004           // BT_HANDLE: lParam is an HBITMAP (not owned)
+#endif
+
+// Values of tbFloat / tbInteger controls. Get returns FALSE (and 0) when the
+// control is blank or its text isn't a number; thousands separators are ignored.
+BOOL FloatGetValue(HWND ctl, double* value);
+BOOL FloatSetValue(HWND ctl, double value);
+BOOL IntGetValue(HWND ctl, LONG* value);
+BOOL IntSetValue(HWND ctl, LONG value);
+
+#define FloatGetDlgItemValue(h, i, v) FloatGetValue(GetDlgItem((h), (i)), (v))
+#define FloatSetDlgItemValue(h, i, v) FloatSetValue(GetDlgItem((h), (i)), (v))
+#define IntGetDlgItemValue(h, i, v)   IntGetValue(GetDlgItem((h), (i)), (v))
+#define IntSetDlgItemValue(h, i, v)   IntSetValue(GetDlgItem((h), (i)), (v))

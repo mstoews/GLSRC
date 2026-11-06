@@ -19,11 +19,11 @@
     <OutDir>$(GlRoot)x64\$(Configuration)\</OutDir>
     <IntDir>$(GlRoot)x64\$(Configuration)\obj\$(ProjectName)\</IntDir>
     <!--
-      Order matters (spec 2.1): the shim first, then the shared include/ tree,
+      Order matters (spec 2.1): win32fx and the shim first, then the shared include/ tree,
       then gl/header (db_acces.h lives there). include/ must precede gl/header
       because glh.h, gl_pds.hpp and gl_prof.hpp exist in both.
     -->
-    <IncludePath>$(GlRoot)cb4sqlite\include;$(GlRoot)dbf2sqlite_core\include;$(GlRoot)include;$(GlRoot)gl\header;$(IncludePath)</IncludePath>
+    <IncludePath>$(GlRoot)win32fx\include;$(GlRoot)cb4sqlite\include;$(GlRoot)dbf2sqlite_core\include;$(GlRoot)include;$(GlRoot)gl\header;$(IncludePath)</IncludePath>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
