@@ -4,7 +4,8 @@
 // M0 exit criterion (plan M0 task 7): this file must compile cleanly, under
 // /W4 /WX, against the cb4sqlite stub headers plus the hand-written schema
 // headers found on the IncludePath ($(GlRoot)include, then $(GlRoot)gl\header).
-// It is built and linked by cb4sqlite_tests; it is not run as a test.
+// It is built and linked by cb4sqlite_tests (Catch2 supplies main()); nothing
+// here runs.
 //
 
 #include "cb4sqlite.h"
@@ -43,9 +44,4 @@ void parse_smoke_touchpoints(Code4& cb_local, Data4& d4, Field4& f4)
     Date4 today;
     today.today();               // gl.cpp: `Date4 d; d.today(); fDate.assign(d.str());`
     (void)f4.assign(today.str().c_str());
-}
-
-int main()
-{
-    return 0;
 }

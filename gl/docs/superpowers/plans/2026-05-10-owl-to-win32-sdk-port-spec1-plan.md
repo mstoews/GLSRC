@@ -45,8 +45,8 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 2. **Survey other shared `include/` headers** that ports may need: `tlist_w.h` (referenced by `gl_acctl.h:3`), `gl_lista.h` (referenced by `glclass.h:4`), `cstring.h` (custom string class to be retired), `tbowl.h` (custom controls — to be deleted), and any `*.h` `#include`d by `gl_accts.cpp`/`gl_acctl.cpp`. Note which are CodeBase-API-internal (replace via `cb4sqlite`), which are OWL-dependent (replace via `win32fx`), which are `.dbf` schema (keep).
 3. **Vendor third-party code.** Drop into the repo, no submodules:
    - SQLite amalgamation (`sqlite3.c`, `sqlite3.h`) → `cb4sqlite/`.
-   - libdbf BSD-licensed reader → `dbf2sqlite_core/vendor/libdbf/`.
-   - Catch2 v3 single-header → `cb4sqlite_tests/vendor/catch2/`.
+   - shapelib DBF reader (`dbfopen.c`, `safileio.c`, `shapefil*.h`; MIT option) → `dbf2sqlite_core/vendor/shapelib/` (spec §10 Q3).
+   - Catch2 v3 amalgamation → `cb4sqlite_tests/vendor/catch2/`. Catch2 supplies `main()`; `parse_smoke.cpp` has none.
 4. **Provide M0 stub `cb4sqlite/include/` headers** declaring `Code4`, `Data4`, `Field4`, `Date4`, `Relate4set` types **without bodies** — empty class declarations with the methods listed in spec §4.2 marked `= delete` or empty. Just enough that `db_accts.h`, `db_acces.h`, etc. parse cleanly. Real implementations land in M1.
 5. **Create `gl.sln` and the six `.vcxproj` files** at `<repo root>/gl.sln`. Project list per spec §2.1:
    - `win32fx/win32fx.vcxproj` — static lib.
@@ -136,7 +136,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 ### Tasks
 
-1. **Bring up the libdbf reader** in `dbf2sqlite_core/`. Confirm it reads the bundled fixture.
+1. **Bring up the shapelib DBF reader** (`DBFOpen` / `DBFGetFieldInfo` / `DBFReadStringAttribute`) in `dbf2sqlite_core/`. Confirm it reads the bundled fixture.
 2. **Implement migration core in `dbf2sqlite_core.lib`:**
    - Public API surface in `dbf2sqlite_core/include/Migrator.h`:
      ```cpp

@@ -130,7 +130,7 @@ cb4sqlite/
 └── sqlite3.c / sqlite3.h   — Vendored amalgamation
 ```
 
-The migration tool is **not** under `cb4sqlite/`: it is split into `dbf2sqlite_core/` (static lib — DBF reader vendored at `dbf2sqlite_core/vendor/libdbf/`, index-expression translation, header generator; test fixtures at `dbf2sqlite_core/test/fixtures/`) and `dbf2sqlite/` (thin console EXE). See §4.5 and plan M2.
+The migration tool is **not** under `cb4sqlite/`: it is split into `dbf2sqlite_core/` (static lib — DBF reader vendored at `dbf2sqlite_core/vendor/shapelib/`, index-expression translation, header generator; test fixtures at `dbf2sqlite_core/test/fixtures/`) and `dbf2sqlite/` (thin console EXE). See §4.5 and plan M2.
 
 ### 2.4 `gl/` (the EXE)
 
@@ -383,7 +383,7 @@ Each `Data4` wraps one `sqlite3_stmt*`. `top()` / `bottom()` / `skip()` / `seek(
 
 Separate console executable; sources at `dbf2sqlite/`. Responsibilities:
 
-1. Parse `.dbf` header + records via a vendored BSD-licensed reader. **Default candidate: `libdbf`** (vendored as `dbf2sqlite_core/vendor/libdbf/`). Final library choice: see §10 Q3.
+1. Parse `.dbf` header + records via a vendored permissively-licensed reader: **shapelib's `dbfopen.c`** (MIT licence option), vendored as `dbf2sqlite_core/vendor/shapelib/`. See §10 Q3.
 2. Generate `CREATE TABLE` from the DBF header (column types per §4.3).
 3. Bulk `INSERT` records inside one transaction.
 4. Parse the indexed expression from each `.ndx` / `.cdx` file. **Only the expressions used by the four Spec #1 tables are supported** — generalized expression evaluation is deferred.
@@ -668,7 +668,7 @@ This section started as open questions during brainstorming. Most were resolved 
 
 2. **`glaccts` index tag names.** Verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`. The chart-of-accounts ports use exactly one tag: **`"accounts"`**. `dbf2sqlite` will migrate any other tags present on the source `.cdx` (so the SQLite database stays a faithful representation), but Spec #1 acceptance does not depend on them. See §6.5.
 
-3. **DBF reader library final choice.** **Decision: `libdbf`**, vendored under `dbf2sqlite_core/vendor/libdbf/`. Alternative `shapelib`/`dbfopen.c` retained as fallback if `libdbf` fails to handle the original `.cdx` layout. See §4.5.
+3. **DBF reader library final choice.** **Decision (revised 2026-11-06): shapelib `dbfopen.c` + `safileio.c` v1.6.3**, vendored under `dbf2sqlite_core/vendor/shapelib/`, used under its MIT licence option. The original choice, `libdbf`, was dropped during M0 vendoring: the GitHub repo the plan cited does not exist, and the real libdbf (SourceForge) is LGPL, not BSD, which is awkward for a statically linked single-exe distribution. shapelib reads `.dbf` only; `.ndx`/`.cdx` index-expression parsing stays our own code in `dbf2sqlite_core` (§4.5 item 4), as before. See `VENDORED.md`.
 
 4. **AP / AR menu items in the pruned `gl.rc`.** **Decision: keep MANILA menu items routing to AP/AR; AP and AR sub-menu definitions are excluded from the build.** Items 2210 (Accounts Payable...) and 1002 (Accounts Receivable...) on the MANILA File menu route to "not yet ported" stubs in `ApStubs.cpp` / `ArStubs.cpp`. The standalone `AP` and `AR` `MENU` resource definitions (lines 1457 and 1559 of `gl.rc`) are pruned.
 

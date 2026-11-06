@@ -39,5 +39,25 @@
   <ItemGroup>
     <ClCompile Include="src\m0_include_check.cpp" />
   </ItemGroup>
+  <!--
+    Vendored shapelib DBF reader (spec 10 Q3 fallback; MIT licence option). See VENDORED.md.
+    Compiled as C; exempt from /W4 /WX. Only the .dbf API is used.
+  -->
+  <ItemGroup>
+    <ClInclude Include="vendor\shapelib\shapefil.h" />
+    <ClInclude Include="vendor\shapelib\shapefil_private.h" />
+    <ClCompile Include="vendor\shapelib\dbfopen.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <SDLCheck>false</SDLCheck>
+    </ClCompile>
+    <ClCompile Include="vendor\shapelib\safileio.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <SDLCheck>false</SDLCheck>
+    </ClCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

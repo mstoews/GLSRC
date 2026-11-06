@@ -52,11 +52,10 @@
     <ClCompile Include="src\stub_impl.cpp" />
   </ItemGroup>
   <!--
-    Vendored SQLite amalgamation (plan M0 task 3). Picked up automatically once
-    sqlite3.c is dropped next to this file. Compiled as C with the spec 7.1 defines;
+    Vendored SQLite amalgamation (plan M0 task 3). See VENDORED.md. Compiled as C with the spec 7.1 defines;
     third-party code is exempt from /W4 /WX.
   -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)sqlite3.c')">
+  <ItemGroup>
     <ClInclude Include="sqlite3.h" />
     <ClCompile Include="sqlite3.c">
       <CompileAs>CompileAsC</CompileAs>
