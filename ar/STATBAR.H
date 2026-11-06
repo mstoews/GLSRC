@@ -1,0 +1,6 @@
+#include "windows.h"
+#include "windowsx.h"
+#include "resource.h"
+#include "main.h"
+#include "mainwnd.h"
+#include "dlgs.h"

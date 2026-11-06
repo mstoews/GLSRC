@@ -1,0 +1,1 @@
+#define IDS_GL "General Ledger and Accounting Package"   16001
