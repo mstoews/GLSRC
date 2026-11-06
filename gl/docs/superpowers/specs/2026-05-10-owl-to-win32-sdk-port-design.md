@@ -288,11 +288,12 @@ Methods not listed here don't exist in the shim: a call site that needs one fail
 
 **Methods declared on per-table subclasses but defined elsewhere.** Some convenience methods on `Tglaccts` (e.g., `dPeriod(...)`, `UpdateAccount(...)`) are declared in `db_accts.h` but defined in module-specific .cpp files (`ap_post.cpp`). Spec #1 does **not** invoke them, so the Spec #1 build does not link them. The headers compile cleanly without those .cpp files.
 
-**Generator role (M2 of plan) — incremental.** The `dbf2sqlite` tool can also emit `db_<table>.h` headers for tables that **do not** already have a hand-written header in `include/`. Policy:
+**Generator role (M2 of plan) — incremental.** The `dbf2sqlite` tool can also emit `db_<table>.h` headers for tables that **no existing code opens**. Policy (revised in M2):
 
-- If `include/db_<table>.h` exists → leave it untouched. The hand-written header is authoritative.
-- If `include/db_<table>.h` is absent → emit a generator-default header at `include/db_<table>.h` based on the dBase schema. Same `Data4`-subclass pattern. Future hand edits welcomed.
-- The generated header is committed to the repo, not regenerated at build time, so call sites have stable include paths.
+- A table is **covered** if any `.h`/`.hpp`/`.cpp` in the `--headers-check` directories (normally `include/`, `gl/header/`, `common/`), or in the output directory, contains `Data4(cb, "<table>")` or `Data4::open(cb, "<table>")`. A file-name check can't work: the 8.3-era names don't follow the tables (`glaccts` → `db_accts.h`, `access.psw` and `accessl` → `db_acces.h`, `gl_prof` → `common/gl_prof.cpp`). Covered tables are left untouched; the hand-written code is authoritative.
+- An uncovered table gets `db_<table>.h` (non-identifier characters become `_`): a `T<table> : public Data4` with one `Field4*` per field, opened by name, plus a destructor that deletes them. It compiles cleanly at `/W4` without the legacy-header guards. Hand edits are welcome.
+- An existing file is never overwritten, even if it doesn't open the table.
+- Output is deterministic, with no timestamps. Generated headers are committed, not regenerated at build time.
 
 This policy preserves hand-tuned helpers (`dPeriod`, `Open_bal`, etc.) while filling in coverage for tables that don't yet have headers.
 
@@ -319,31 +320,36 @@ Each navigation runs one keyset query: `SELECT … WHERE ((key_expr), _rowid) > 
 
 ### 4.5 `dbf2sqlite` migration tool
 
-Separate console executable; sources at `dbf2sqlite/`. Responsibilities:
+Static library `dbf2sqlite_core/` (all logic) plus the thin console EXE `dbf2sqlite/`. Usage and details: `dbf2sqlite_core/README.md`. Responsibilities:
 
-1. Parse `.dbf` header + records via a vendored permissively-licensed reader: **shapelib's `dbfopen.c`** (MIT licence option), vendored as `dbf2sqlite_core/vendor/shapelib/`. See §10 Q3.
-2. Generate `CREATE TABLE` from the DBF header (column types per §4.3).
-3. Bulk `INSERT` records inside one transaction.
-4. Parse the indexed expression from each `.ndx` / `.cdx` file. **Only the expressions used by the four Spec #1 tables are supported** — generalized expression evaluation is deferred.
-5. Verify by reopening with `cb4sqlite::Code4` and comparing record counts.
+1. **Read `.dbf` files** via the vendored shapelib reader (`dbf2sqlite_core/vendor/shapelib/`, MIT licence option; §10 Q3). The open goes through a custom file hook, so tables without a `.dbf` extension (`ACCESS.PSW`) work.
+2. **Create each table** with `cb4sqlite::createTable` (§4.3: `_cb_fields` plus typed columns). Insert the rows in record order in one transaction, with `_rowid` = record number and the deletion flag kept in `_deleted`.
+3. **Convert text** from the source code page to UTF-8: the language-driver byte, `--codepage`, or 1252 by default. Character fields that grow past their byte width are **widened and reported**, never truncated.
+4. **Read the index tags** from each table's **production `.mdx`**: the app's CodeBase was built with `S4MDX` (`include/d4all.h`), so dBase IV indexes, not `.ndx`/`.cdx`. Each tag's dBase key expression is translated to a `key_expr` and created with `cb4sqlite::createTag`. Supported: field names, `+` on character values, `UPPER()`, `DTOS()`, `STR()`. FOR clauses, descending tags and other functions exit 4 (`--force` skips them). UNIQUE tags migrate as plain tags; any duplicate keys are an error (or a warning with `--force`).
+5. **Verify** by reopening every table through `cb4sqlite::Code4`/`Data4` and comparing record counts.
+6. **Write atomically:** the database is built in `<out>.tmp` and renamed into place only if everything succeeded.
 
-Required Spec #1 tables: `accessm`, `access.psw`, the company-profile table, `glaccts`.
+The Spec #1 screens touch these tables: `glaccts`, `gldept`, `access.psw`, `accessl`, `accessm`, `gl_adm`, `gl_prof`, `gl_pds`, `gl_setat`. By default the tool migrates **every** dBase table in the directory rather than a fixed list: the migration is one-shot per company, and a partial database would be missing tables later specs need.
 
 **Command-line interface:**
 
 ```
 dbf2sqlite.exe --src <dbf-dir>  --out <company.db>  [--table <name>]...  [--force]
+               [--codepage <n>]  [--headers-out <dir> [--headers-check <dir>]...]
 
-  --src <path>     directory containing .dbf and .ndx/.cdx files
-  --out <path>     destination SQLite file (must not exist unless --force)
-  --table <name>   restrict migration to one table (repeatable). If omitted,
-                   migrates the four Spec #1 tables.
-  --force          overwrite existing destination file
+  --src <path>          directory containing the .dbf and .mdx files
+  --out <path>          destination SQLite file (must not exist unless --force)
+  --table <name>        restrict migration to one table (repeatable). If omitted,
+                        migrates every dBase table in --src (detected by header).
+  --force               overwrite the destination; skip untranslatable fields/tags with a warning
+  --codepage <n>        source code page (default: language-driver byte, else 1252)
+  --headers-out <dir>   generate db_<table>.h for tables without a hand-written class (§4.2)
+  --headers-check <dir> existing headers/sources to scan for coverage (repeatable)
 ```
 
 Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` destination write error, `4` schema/index translation error, `5` row-count verification mismatch.
 
-**Test fixture location:** `dbf2sqlite_core/test/fixtures/glaccts/` contains a 5-row chart-of-accounts `.dbf` plus its `.ndx` files. Originated as a hand-built fixture committed alongside the test (not derived from any production DB).
+**Test fixtures:** `dbf2sqlite_core/test/make_fixtures.py` writes `dbf2sqlite_core/test/fixtures/` (deterministically): `company/` (the Spec #1 tables, incl. cp1252 text, a deleted record, blank values, `ACCESS.PSW`), `bad/` (memo field, descending / FOR / bad-expression / duplicate-unique tags, widening, unreadable values), and two corrupt cases. They are hand-built, not taken from any production database; see §4.8 for what that leaves unverified.
 
 ### 4.6 Semantics & out of scope for Spec #1
 
@@ -379,6 +385,23 @@ Found during M1 (2026-11-06) by reading the CodeBase headers in `include/` along
 **One behaviour verified only against CodeBase's documented API, not by running the original:** `appendStart()` keeping the previous record's buffer. `gl_accts.cpp` zeroes only numeric fields after `appendStart()` and doesn't assign `category`, so new accounts inherit `category` from the record the cursor was on. That is faithful to CodeBase but may be a latent bug in the original; check it during the M6 Chart of Accounts walkthrough.
 
 **Encoding risk for M2:** dBase widths are bytes in the original code page. Japanese installs (`eiwa/`) store Shift-JIS, where a kanji is 2 bytes; in UTF-8 it is 3. A migrated value can therefore exceed its declared width. The shim truncates without splitting a character, so `dbf2sqlite` must widen character fields (or report the overflow) when converting non-ASCII data.
+
+### 4.8 M2 decisions and what remains unverified
+
+Found during M2 (2026-11-06):
+
+| Topic | Earlier plan / spec | Implemented | Why |
+|---|---|---|---|
+| Index format | `.ndx` / `.cdx` | dBase IV production `.mdx` only | `include/d4all.h` defines `S4MDX`; that CodeBase build couldn't read `.ndx`/`.cdx` at all |
+| Default tables | the four Spec #1 tables | every dBase table in `--src`, detected by header (so `ACCESS.PSW` is found) | one-shot migration; Spec #1 alone touches nine tables (§4.5) |
+| Header skip rule | `include/db_<table>.h` exists | scan for `Data4(cb, "<table>")` / `Data4::open(cb, "<table>")` (§4.2) | 8.3 file names don't match table names |
+| Fixture location | `dbf2sqlite_core/test/fixtures/<table>/` | `…/fixtures/{company,bad,corrupt_dbf,corrupt_mdx}/`, generated by `make_fixtures.py` | a company directory is what the tool consumes |
+| Output | written in place | `<out>.tmp`, renamed on success | a failed run never leaves a half-migrated company |
+| Deleted records | — | migrated with `_deleted = 1` | CodeBase showed them until `pack()` (§4.7) |
+
+**Real company data still needed.** No GL `.dbf`/`.mdx` files exist in the repository or its readable archives (`gl.ini` points to `D:\GL\DBF`). The `.mdx` reader follows the CodeBase `S4MDX` structures in `include/d4data.h` (`I4HEADER`, `T4DESC`, `T4HEADER`). One offset isn't in those headers and is taken from CodeBase's documented layout: tag slots start at byte 544. The fixtures are written to that same layout, so the tests prove internal consistency, not compatibility with a real dBase IV file. The reader validates every slot and fails with exit 2 ("not a dBase IV .mdx layout") instead of guessing. **Run `dbf2sqlite` on one real company directory before M5.**
+
+**Shim gap found for M5:** `gl_profi.cpp` uses the generated classes in `common/` (`GL_PROF`, `GL_PDS`, `GL_SETAT`, `GLACCTS`), which call `Data4::open(Code4&, name)` and hold `Field4` *values* initialised with `Field4::init`. The shim's `Data4` has no default constructor or `open()` yet. Add both when porting `gl_profi.cpp`.
 
 ---
 

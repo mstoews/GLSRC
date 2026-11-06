@@ -136,6 +136,15 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** Migrate a sample chart-of-accounts `.dbf` to SQLite, emit `include/db_<table>.h` headers for tables that lack a hand-written one, verify by reading back through the shim. Migration core lives in a static lib so the test harness can drive it directly without shelling out.
 
+> **As built (2026-11-06):** the tasks below are the original plan. Spec §4.5 and §4.8 describe what was built and why it differs:
+> - `.mdx` indexes, since the app was built with `S4MDX`.
+> - Every table in the directory migrated by default.
+> - The header skip rule detects `Data4(cb, "<table>")` instead of matching file names.
+> - Fixtures are generated into `test/fixtures/{company,bad,…}`.
+> - Output is written atomically via `<out>.tmp`.
+>
+> Usage is in `dbf2sqlite_core/README.md`.
+
 ### Tasks
 
 1. **Bring up the shapelib DBF reader** (`DBFOpen` / `DBFGetFieldInfo` / `DBFReadStringAttribute`) in `dbf2sqlite_core/`. Confirm it reads the bundled fixture.

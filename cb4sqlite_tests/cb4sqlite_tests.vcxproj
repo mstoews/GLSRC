@@ -56,6 +56,7 @@
     <ClCompile Include="test_data4.cpp" />
     <ClCompile Include="test_relate4set.cpp" />
     <ClCompile Include="test_legacy_headers.cpp" />
+    <ClCompile Include="test_dbf2sqlite.cpp" />
   </ItemGroup>
   <!--
     Vendored Catch2 v3 amalgamation (plan M0 task 3). See VENDORED.md.
