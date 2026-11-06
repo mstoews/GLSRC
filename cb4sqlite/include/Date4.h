@@ -10,7 +10,9 @@ namespace cb4sqlite {
 
 class Date4 {
 public:
-    static Date4 today();
+    // Sets *this to the current local date. Non-static to match CodeBase:
+    // the original code does `Date4 d; d.today(); ... d.str()`.
+    void today();
     std::string str() const;   // "YYYYMMDD"
 
 private:

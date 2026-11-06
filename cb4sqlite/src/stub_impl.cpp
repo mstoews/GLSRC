@@ -9,7 +9,7 @@
 // it from M5 onward.  Until M5 wires up an open(), `cb.handle()` returns null.
 //
 
-#include "../include/cb4sqlite.h"
+#include "cb4sqlite.h"
 
 namespace cb4sqlite {
 
@@ -63,7 +63,7 @@ int         Field4::AssignField(HWND, UINT){ notImpl("Field4::AssignField"); }
 bool        Field4::isValid() const noexcept { return false; }
 
 // --- Date4 ------------------------------------------------------------------
-Date4 Date4::today()           { return Date4{}; }
+void  Date4::today()           { /* M1: fill year_/month_/day_ from local time */ }
 std::string Date4::str() const { return std::string(8, '0'); }
 
 // --- Relate4set -------------------------------------------------------------
