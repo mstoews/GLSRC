@@ -45,6 +45,13 @@
     <ClCompile Include="port\App.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="res\gl.rc" />
+  </ItemGroup>
+  <!-- Common controls v6 + per-monitor DPI v2 (spec 7.1); mt.exe merges it into the linker's manifest. -->
+  <ItemGroup>
+    <Manifest Include="res\manifest.xml" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\win32fx\win32fx.vcxproj">
       <Project>{A0C1C001-0002-4001-A001-000000000002}</Project>
     </ProjectReference>

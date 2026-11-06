@@ -37,7 +37,41 @@
     <Import Project="$(MSBuildThisFileDirectory)..\common.props" />
   </ImportGroup>
   <ItemGroup>
-    <ClCompile Include="src\m0_include_check.cpp" />
+    <ClInclude Include="include\win32fx.h" />
+    <ClInclude Include="include\Window.h" />
+    <ClInclude Include="include\Dialog.h" />
+    <ClInclude Include="include\MsgMap.h" />
+    <ClInclude Include="include\HandleGuard.h" />
+    <ClInclude Include="include\StringUtil.h" />
+    <ClInclude Include="include\Verify.h" />
+    <ClInclude Include="include\MessageLoop.h" />
+    <ClInclude Include="include\MdiFrame.h" />
+    <ClInclude Include="include\Toolbar.h" />
+    <ClInclude Include="include\VerticalToolbar.h" />
+    <ClInclude Include="include\StatusBar.h" />
+    <ClInclude Include="include\controls\CustomControls.h" />
+    <ClInclude Include="src\Internal.h" />
+    <ClInclude Include="src\controls\ControlsInternal.h" />
+    <ClInclude Include="src\controls\EditRules.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Window.cpp" />
+    <ClCompile Include="src\Dialog.cpp" />
+    <ClCompile Include="src\MessageLoop.cpp" />
+    <ClCompile Include="src\StringUtil.cpp" />
+    <ClCompile Include="src\Verify.cpp" />
+    <ClCompile Include="src\MdiFrame.cpp" />
+    <ClCompile Include="src\Toolbar.cpp" />
+    <ClCompile Include="src\VerticalToolbar.cpp" />
+    <ClCompile Include="src\StatusBar.cpp" />
+    <ClCompile Include="src\controls\Register.cpp" />
+    <ClCompile Include="src\controls\EditRules.cpp" />
+    <ClCompile Include="src\controls\EditBase.cpp" />
+    <ClCompile Include="src\controls\PicEdit.cpp" />
+    <ClCompile Include="src\controls\DateEdit.cpp" />
+    <ClCompile Include="src\controls\FloatEdit.cpp" />
+    <ClCompile Include="src\controls\IntEdit.cpp" />
+    <ClCompile Include="src\controls\SuperBtn.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

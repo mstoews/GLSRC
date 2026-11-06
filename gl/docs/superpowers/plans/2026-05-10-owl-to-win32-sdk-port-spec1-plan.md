@@ -191,6 +191,15 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** Framework is complete enough to host login + chart-of-accounts dialogs.
 
+> **As built (2026-11-06):** the tasks below are the original plan; spec §2.2 and §3 describe what was built, and `win32fx/README.md` the details. Where it differs:
+> - **Task 7, `tbFloat`:** the number of decimals comes from the control's mask (the template text, e.g. `9999999999999.99` gives 2), not a fixed one decimal. The legacy resources mostly use 2.
+> - **Task 7, `tbDate`:** the control keeps the displayed `MM/DD/YY` text, because the legacy code reads it with `GetField` and parses it with `Date4`. `WM_SETTEXT` also takes `YYYYMMDD`, and `DateGetYmd()` returns the `YYYYMMDD` value for cb4sqlite.
+> - **Task 6:** `Toolbar` and `VerticalToolbar` are hosted dialog bars built from templates 1032 and 2057, like the originals. `VerticalToolbar` docks at the bottom of the frame. `StatusBar` is a common-controls wrapper. `MdiChild` was added, because the activation hook needs MDI children.
+> - **Task 9:** `gl/port/App.cpp` defines the globals. win32fx never references them; it takes an `HINSTANCE` where it needs one.
+> - **Exit criteria:**
+>   - The two-instance test is `trivial_dialog.exe /selftest`. It covers two dialogs and two MDI children of one class, plus the custom controls.
+>   - The smoke `gl.exe` loads the MANILA menu from a stub `gl/res/gl.rc`, which M4 replaces.
+
 ### Tasks
 
 1. **`Window` base class** with thunk dispatch via `SetWindowLongPtr(GWLP_USERDATA)` set in `WM_NCCREATE`.
