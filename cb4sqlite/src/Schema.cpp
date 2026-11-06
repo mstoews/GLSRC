@@ -39,6 +39,13 @@ static sqlite3* requireDb(Code4& code, const char* method)
     return code.handle();
 }
 
+static bool hasFilterColumn(sqlite3* db)
+{
+    Stmt q(db, "SELECT count(*) FROM pragma_table_info('_cb_tags') WHERE name = 'filter'", "ensureMetaTables");
+    q.step("ensureMetaTables");
+    return sqlite3_column_int(q.get(), 0) != 0;
+}
+
 void ensureMetaTables(Code4& code)
 {
     sqlite3* db = requireDb(code, "ensureMetaTables");
@@ -48,9 +55,12 @@ void ensureMetaTables(Code4& code)
         " type TEXT NOT NULL, len INTEGER NOT NULL, dec INTEGER NOT NULL DEFAULT 0,"
         " PRIMARY KEY (table_name, field_no));"
         "CREATE TABLE IF NOT EXISTS _cb_tags ("
-        " table_name TEXT NOT NULL, tag_name TEXT NOT NULL, key_expr TEXT NOT NULL,"
+        " table_name TEXT NOT NULL, tag_name TEXT NOT NULL, key_expr TEXT NOT NULL, filter TEXT,"
         " PRIMARY KEY (table_name, tag_name));",
         "ensureMetaTables");
+    // Databases made before tag filters existed (M2) lack the column.
+    if (!hasFilterColumn(db))
+        detail::exec(db, "ALTER TABLE _cb_tags ADD COLUMN filter TEXT", "ensureMetaTables");
 }
 
 void createTable(Code4& code, const char* tableName, const std::vector<FieldDef>& fields)
@@ -74,6 +84,7 @@ void createTable(Code4& code, const char* tableName, const std::vector<FieldDef>
         switch (f.type) {
             case r4str:   sqlType = "TEXT"; break;
             case r4date:  sqlType = "TEXT"; f.len = 8; break;
+            case r4memo:  sqlType = "TEXT"; f.len = 10; f.dec = 0; break;
             case r4log:   sqlType = "INTEGER"; f.len = 1; break;
             case r4num:
             case r4float: sqlType = (f.dec == 0) ? "INTEGER" : "REAL"; break;
@@ -110,7 +121,8 @@ void createTable(Code4& code, const char* tableName, const std::vector<FieldDef>
     }
 }
 
-void createTag(Code4& code, const char* tableName, const char* tag, const char* keyExpr)
+void createTag(Code4& code, const char* tableName, const char* tag, const char* keyExpr,
+               const char* filter)
 {
     static const char* M = "createTag";
     sqlite3* db = requireDb(code, M);
@@ -125,13 +137,18 @@ void createTag(Code4& code, const char* tableName, const char* tag, const char* 
 
     detail::exec(db, "SAVEPOINT cb_tag", M);
     try {
-        Stmt ins(db, "INSERT INTO _cb_tags (table_name, tag_name, key_expr) VALUES (?1, ?2, ?3)", M);
+        const bool filtered = filter && *filter;
+        Stmt ins(db, "INSERT INTO _cb_tags (table_name, tag_name, key_expr, filter) VALUES (?1, ?2, ?3, ?4)", M);
         ins.bindText(1, table);
         ins.bindText(2, name);
         ins.bindText(3, keyExpr);
+        if (filtered) ins.bindText(4, filter); else ins.bindNull(4);
         ins.step(M);
+        // Data4 puts the same "(filter)" term in its WHERE clauses, which is
+        // what lets SQLite use the partial index.
         detail::exec(db, "CREATE INDEX " + quoteIdent(table + "__" + name) + " ON " + quoteIdent(table) +
-                         " ((" + std::string(keyExpr) + "), _rowid)", M);
+                         " ((" + std::string(keyExpr) + "), _rowid)" +
+                         (filtered ? " WHERE (" + std::string(filter) + ")" : std::string()), M);
         detail::exec(db, "RELEASE cb_tag", M);
     } catch (...) {
         sqlite3_exec(db, "ROLLBACK TO cb_tag; RELEASE cb_tag", nullptr, nullptr, nullptr);
@@ -170,12 +187,16 @@ bool loadTableInfo(sqlite3* db, const std::string& tableName, TableInfo& out)
     if (out.fields.empty())
         return false;
     {
-        Stmt q(db, "SELECT tag_name, key_expr FROM _cb_tags WHERE table_name = ?1 ORDER BY rowid", M);
+        const bool filters = hasFilterColumn(db);
+        Stmt q(db, std::string("SELECT tag_name, key_expr, ") + (filters ? "filter" : "NULL") +
+                   " FROM _cb_tags WHERE table_name = ?1 ORDER BY rowid", M);
         q.bindText(1, table);
         while (q.step(M)) {
             TagDef t;
             t.name    = reinterpret_cast<const char*>(sqlite3_column_text(q.get(), 0));
             t.keyExpr = reinterpret_cast<const char*>(sqlite3_column_text(q.get(), 1));
+            if (const auto* f = reinterpret_cast<const char*>(sqlite3_column_text(q.get(), 2)))
+                t.filter = f;
             out.tags.push_back(std::move(t));
         }
     }

@@ -113,6 +113,13 @@ fs::path findMdx(const fs::path& dbf, const std::map<std::string, fs::path>& fil
     return it == files.end() ? fs::path() : it->second;
 }
 
+// Memo text lives in <base>.DBT.
+fs::path findDbt(const fs::path& dbf, const std::map<std::string, fs::path>& files)
+{
+    const auto it = files.find(lower(pathUtf8(dbf.stem())) + ".dbt");
+    return it == files.end() ? fs::path() : it->second;
+}
+
 class Sql {
 public:
     Sql(sqlite3* db, const std::string& sql) : db_(db)
@@ -180,14 +187,30 @@ bool migrateTable(Code4& code, const SourceFile& sf, const std::map<std::string,
     int cp = opt.codePage ? opt.codePage : codePageFromLdid(dbf->languageDriver());
     if (cp == 0) cp = 1252;
 
+    // --- memo file ------------------------------------------------------------
+    std::unique_ptr<DbtFile> dbt;
+    if (std::any_of(dbf->fields().begin(), dbf->fields().end(), [](const DbfField& f) { return f.type == 'M'; })) {
+        if (const fs::path p = findDbt(sf.path, files); !p.empty()) {
+            try {
+                dbt = std::make_unique<DbtFile>(p, dbf->version());
+            } catch (const SourceError& e) {
+                throw Fatal{ExitCode::SourceRead, e.what()};
+            }
+        }
+    }
+
     // --- columns -------------------------------------------------------------
     std::vector<Column> cols;
     for (const DbfField& f : dbf->fields()) {
         if (f.type == 'C' || f.type == 'N' || f.type == 'F' || f.type == 'D' || f.type == 'L') {
             cols.push_back({f, {f.name, f.type, f.len, f.dec}, 0});
+        } else if (f.type == 'M' && dbt) {
+            cols.push_back({f, {f.name, 'M', f.len, 0}, 0});
+        } else if (f.type == 'M') {
+            problem("field " + f.name + " is a memo but " + pathUtf8(sf.path.stem()) + ".DBT is missing",
+                    "field dropped");
         } else {
-            problem("field " + f.name + " has type '" + std::string(1, f.type) +
-                        (f.type == 'M' ? "' (memo, out of scope for spec #1)" : "' (unsupported)"),
+            problem("field " + f.name + " has type '" + std::string(1, f.type) + "' (unsupported)",
                     "field dropped");
         }
     }
@@ -286,6 +309,26 @@ bool migrateTable(Code4& code, const SourceFile& sf, const std::map<std::string,
                         sqlite3_bind_text(s, p, t.data(), 8, SQLITE_TRANSIENT);
                         break;
                     }
+                    case 'M': {
+                        // 10 ASCII digits: the memo's first block; blank or 0 = no memo.
+                        const std::string_view t = trim(raw);
+                        if (t.empty() || t.find_first_not_of('0') == std::string_view::npos) { sqlite3_bind_null(s, p); break; }
+                        if (t.size() > 9 || !std::all_of(t.begin(), t.end(), [](char ch) { return ch >= '0' && ch <= '9'; })) {
+                            bad("not a memo block number");
+                            break;
+                        }
+                        std::string text;
+                        try {
+                            text = dbt->read(std::stol(std::string(t)));
+                        } catch (const SourceError& e) {
+                            bad(e.what());
+                            break;
+                        }
+                        text = toUtf8(text, cp);
+                        if (text.empty()) { sqlite3_bind_null(s, p); break; }
+                        sqlite3_bind_text(s, p, text.data(), static_cast<int>(text.size()), SQLITE_TRANSIENT);
+                        break;
+                    }
                     case 'L': {
                         const char ch = raw.empty() ? ' ' : raw[0];
                         if (ch == 'T' || ch == 't' || ch == 'Y' || ch == 'y') sqlite3_bind_int(s, p, 1);
@@ -326,21 +369,30 @@ bool migrateTable(Code4& code, const SourceFile& sf, const std::map<std::string,
         for (const Column& c : cols) keyFields.push_back({c.def.name, c.def.type});
         for (const MdxTag& tag : tags) {
             const std::string what = "tag " + tag.name + " (" + tag.expression + ")";
-            if (!tag.filter.empty()) { problem(what + " has a FOR clause (" + tag.filter + ")", "tag skipped"); continue; }
             if (tag.descending)      { problem(what + " is descending", "tag skipped"); continue; }
-            const KeySql k = translateKey(tag.expression, keyFields);
+            const KeySql k = translateKey(toUtf8(tag.expression, cp), keyFields);
             if (k.sql.empty())       { problem(what + ": " + k.error, "tag skipped"); continue; }
+            KeySql f;
+            if (!tag.filter.empty()) {
+                f = translateFilter(toUtf8(tag.filter, cp), keyFields);
+                if (f.sql.empty()) {
+                    problem(what + " FOR " + tag.filter + ": " + f.error, "tag skipped");
+                    continue;
+                }
+            }
             if (k.type != tag.keyType)
                 r.log.push_back("[warn] " + T + ": " + what + " is a '" + std::string(1, tag.keyType) +
                                 "' key in the index but translates to type '" + std::string(1, k.type) + "'");
             try {
-                cb4sqlite::createTag(code, T.c_str(), tag.name.c_str(), k.sql.c_str());
+                cb4sqlite::createTag(code, T.c_str(), tag.name.c_str(), k.sql.c_str(),
+                                     f.sql.empty() ? nullptr : f.sql.c_str());
             } catch (const cb4sqlite::Error& e) {
                 problem(what + ": " + e.what(), "tag skipped");
                 continue;
             }
             if (tag.unique) {
-                Sql q(db, "SELECT count(*) FROM (SELECT 1 FROM " + cb4sqlite::quoteIdent(T) + " GROUP BY " +
+                Sql q(db, "SELECT count(*) FROM (SELECT 1 FROM " + cb4sqlite::quoteIdent(T) +
+                              (f.sql.empty() ? std::string() : " WHERE (" + f.sql + ")") + " GROUP BY " +
                               k.sql + " HAVING count(*) > 1)");
                 q.step();
                 if (const auto dups = sqlite3_column_int64(q.get(), 0); dups > 0)
@@ -348,7 +400,7 @@ bool migrateTable(Code4& code, const SourceFile& sf, const std::map<std::string,
                                 " key values occur more than once (cb4sqlite shows every record)",
                             "migrated as non-unique");
             }
-            tr.tags.push_back(lower(tag.name) + " = " + k.sql);
+            tr.tags.push_back(lower(tag.name) + " = " + k.sql + (f.sql.empty() ? "" : " FOR " + f.sql));
         }
     }
 

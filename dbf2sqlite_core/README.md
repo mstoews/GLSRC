@@ -27,6 +27,7 @@ Exit codes: `0` ok, `1` bad arguments, `2` source read error, `3` destination wr
    - `N`/`F`: INTEGER or REAL.
    - `D`: `YYYYMMDD`.
    - `L`: 0/1.
+   - `M`: the memo text from `<table>.DBT` (dBase IV blocks with an `FF FF 08 00` header, or dBase III text ending at `0x1A`), converted to UTF-8, whole. A missing `.dbt` is exit 4 (`--force` drops the field); a bad block pointer is a warning and NULL.
    - Blank and unreadable values become NULL; unreadable ones get a warning (at most 5 per field, then a total).
 3. **Widening.** If a character value is longer in UTF-8 than its declared byte width, the field is widened and reported. Text is never truncated.
 4. **Tags.** Tags come from the production `.mdx` (`S4MDX`: the app's CodeBase build used dBase IV indexes, not `.ndx`/`.cdx`). Each tag's dBase expression becomes a `key_expr`:
@@ -37,15 +38,29 @@ Exit codes: `0` ok, `1` bad arguments, `2` source read error, `3` destination wr
    | `UPPER(x)` | `upper(x)` |
    | `DTOS(d)` | `ifnull(d, '        ')` |
    | `STR(n,len,dec)` | `printf('%len.decf', ifnull(n, 0))` |
+   | `RECNO()` | `_rowid` |
 
-   Not representable (exit 4, or skipped with `--force`): FOR clauses, descending tags, other functions, alias references. UNIQUE tags migrate as normal tags; any duplicate keys are an error (or a warning with `--force`).
+   A tag's FOR clause becomes its `filter`, and the tag gets a partial index:
+
+   | dBase (in a FOR clause) | SQL |
+   |---|---|
+   | `type = 'AR '` (text, `SET EXACT OFF`) | `(substr("TYPE", 1, length('AR ')) = 'AR ')` |
+   | `<>` `#` `!=` on text | `NOT` of the above |
+   | `a == b` on text | `rtrim(a) = rtrim(b)` |
+   | `<` `<=` `>` `>=`, and `=` on numbers/dates | the SQL operator; blank numbers read as 0, blank dates as 8 spaces |
+   | `a $ b` | `instr(b, a) > 0` |
+   | `.AND.` `.OR.` `.NOT.` `!` | `AND` `OR` `NOT` |
+   | logical field `F`, `.T.`, `.F.` | `(ifnull(F, 0) = 1)`, `1`, `0` |
+   | `DELETED()` | `(_deleted <> 0)` |
+
+   Not representable (exit 4, or skipped with `--force`): descending tags, other functions (`SUBSTR`, `SOUNDEX`, `CTOD`, …), alias references, literals inside a key expression. UNIQUE tags migrate as normal tags; any duplicate keys are an error (or a warning with `--force`).
 5. **Verify.** Every table is reopened through the shim and its row count compared.
 6. **Atomic.** Everything is built in `<out>.tmp` and renamed into place only on success.
 
 ## Header generation
 
-A table is *covered* if any `.h`/`.hpp`/`.cpp` in the check directories, or in the output directory, opens it. File names can't be used to decide this: `glaccts` lives in `db_accts.h`, and `access.psw` in `db_acces.h`. Covered tables are skipped. For the others, `db_<table>.h` is written: a `T<table> : public Data4` with one `Field4*` per field, a destructor that frees them, and no timestamps, so output is deterministic. Existing files are never overwritten. `test/golden/db_accessm.h` is the committed expected output, and it is also compiled and run by the tests.
+A table is *covered* if any `.h`/`.hpp`/`.cpp` in the check directories, or in the output directory, opens it. File names can't be used to decide this: `glaccts` lives in `db_accts.h`, and `access.psw` in `db_acces.h`. Covered tables are skipped. For the others, `db_<table>.h` is written: a `T<table> : public Data4` with one `Field4*` per field (`Field4memo*` for memos), a destructor that frees them, and no timestamps, so output is deterministic. Existing files are never overwritten. `test/golden/db_accessm.h` is the committed expected output, and it is also compiled and run by the tests.
 
 ## Fixtures
 
-`test/make_fixtures.py` writes `test/fixtures/{company,bad,corrupt_dbf,corrupt_mdx}`; the output is byte-for-byte reproducible. **No real GL data was available when they were made:** the `.mdx` files follow the layout this reader implements (from CodeBase's `S4MDX` structures in `include/d4data.h`). Run the tool once on a real company directory before relying on it (spec §4.8).
+`test/make_fixtures.py` writes `test/fixtures/{company,bad,corrupt_dbf,corrupt_mdx}`; the output is byte-for-byte reproducible. The `.mdx` files follow the layout this reader implements (from CodeBase's `S4MDX` structures in `include/d4data.h`); a real company directory confirmed that layout on 2026-11-06 (spec §4.8). `AR_JSUM` and `AR_BTCH` copy that directory's table layouts and tag definitions, with made-up rows; the real data itself stays out of the repository.

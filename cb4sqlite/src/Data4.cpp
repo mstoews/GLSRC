@@ -7,7 +7,8 @@
 //    WHERE ((<key>), _rowid) > (?cur_key, ?cur_rowid) [AND filter]
 //    ORDER BY (<key>), _rowid LIMIT 1 OFFSET n-1
 //
-// where <key> is the selected tag's key_expr, or _rowid in record order. The
+// where <key> is the selected tag's key_expr, or _rowid in record order, and
+// the filter includes the tag's FOR condition, if it has one. The
 // current record's key value is kept (key_) so the next move continues from
 // it. Every query is backed by the (key_expr, _rowid) index made by createTag.
 //
@@ -103,6 +104,14 @@ std::string Data4::keyExpr(int tag) const
     return "(" + info_.tags[static_cast<size_t>(tag)].keyExpr + ")";
 }
 
+std::string Data4::tagFilter(int tag, const std::string& extra) const
+{
+    const std::string own = tag < 0 ? std::string() : info_.tags[static_cast<size_t>(tag)].filter;
+    if (own.empty()) return extra;
+    if (extra.empty()) return own;
+    return "(" + own + ") AND (" + extra + ")";
+}
+
 std::string Data4::selectList(int tag) const
 {
     std::string sql = "SELECT _rowid, _deleted";
@@ -192,7 +201,7 @@ int Data4::first(bool forward, const std::string& filter)
     if (!requireValid()) return e4data;
     writeBuffer();
     const char* dir = forward ? " ASC" : " DESC";
-    Stmt q(code_->handle(), selectList(tag_) + andWhere({}, filter) + " ORDER BY " + keyExpr(tag_) +
+    Stmt q(code_->handle(), selectList(tag_) + andWhere({}, tagFilter(tag_, filter)) + " ORDER BY " + keyExpr(tag_) +
                             dir + ", _rowid" + dir + " LIMIT 1", "Data4::top/bottom");
     if (!q.step("Data4::top/bottom")) {
         setEof();
@@ -224,7 +233,7 @@ int Data4::step(long n, const std::string& filter)
     const char* dir = fwd ? " ASC" : " DESC";
     Stmt q(code_->handle(),
            selectList(tag_) +
-           andWhere("(" + keyExpr(tag_) + ", _rowid) " + (fwd ? ">" : "<") + " (?1, ?2)", filter) +
+           andWhere("(" + keyExpr(tag_) + ", _rowid) " + (fwd ? ">" : "<") + " (?1, ?2)", tagFilter(tag_, filter)) +
            " ORDER BY " + keyExpr(tag_) + dir + ", _rowid" + dir +
            " LIMIT 1 OFFSET " + std::to_string(count - 1),
            "Data4::skip");
@@ -274,8 +283,8 @@ int Data4::seek(const char* key)
         throw Error(M, "table '" + info_.name + "' has no tags to seek on");
     writeBuffer();
     const std::string k(key ? key : "");
-    Stmt q(code_->handle(), selectList(tag) + " WHERE " + keyExpr(tag) + " >= ?1 ORDER BY " +
-                            keyExpr(tag) + ", _rowid LIMIT 1", M);
+    Stmt q(code_->handle(), selectList(tag) + andWhere(keyExpr(tag) + " >= ?1", tagFilter(tag, {})) +
+                            " ORDER BY " + keyExpr(tag) + ", _rowid LIMIT 1", M);
     q.bindText(1, k);
     if (!q.step(M)) {
         setEof();
@@ -300,8 +309,8 @@ int Data4::seek(double key)
     if (tag < 0)
         throw Error(M, "table '" + info_.name + "' has no tags to seek on");
     writeBuffer();
-    Stmt q(code_->handle(), selectList(tag) + " WHERE " + keyExpr(tag) + " >= ?1 ORDER BY " +
-                            keyExpr(tag) + ", _rowid LIMIT 1", M);
+    Stmt q(code_->handle(), selectList(tag) + andWhere(keyExpr(tag) + " >= ?1", tagFilter(tag, {})) +
+                            " ORDER BY " + keyExpr(tag) + ", _rowid LIMIT 1", M);
     q.bindDouble(1, key);
     if (!q.step(M)) {
         setEof();

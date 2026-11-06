@@ -45,6 +45,7 @@
     <ClCompile Include="src\MdxFile.cpp" />
     <ClCompile Include="src\Encoding.cpp" />
     <ClCompile Include="src\KeyExpr.cpp" />
+    <ClCompile Include="src\MemoFile.cpp" />
     <ClCompile Include="src\Migrator.cpp" />
     <ClCompile Include="src\HeaderGen.cpp" />
   </ItemGroup>

@@ -5,6 +5,8 @@
 #include "Field4.h"
 #include "Internal.h"
 
+#include <string>
+
 namespace cb4sqlite {
 
 namespace {
@@ -71,6 +73,12 @@ void Field4::assignLong(long value, int, int zerosInFront)
 void Field4::trim()
 {
     if (data_) data_->trimValue(field_);
+}
+
+unsigned Field4memo::len() const noexcept
+{
+    if (type() != r4memo) return Field4::len();
+    return static_cast<unsigned>(std::char_traits<char>::length(str()));
 }
 
 } // namespace cb4sqlite

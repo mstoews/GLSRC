@@ -14,12 +14,12 @@ The semantics follow the **original CodeBase headers in `include/`** (`d4data.hp
 |---|---|
 | table `T` | `_rowid INTEGER PRIMARY KEY`, `_deleted INTEGER NOT NULL DEFAULT 0`, one column per dBase field |
 | `_cb_fields` | `(table_name, field_no, field_name, type, len, dec)`: dBase type and width of each field, in record order |
-| `_cb_tags` | `(table_name, tag_name, key_expr)`: one row per index tag; `key_expr` is SQL producing the dBase key, e.g. `account \|\| dept` |
-| index `T__tag` | on `((key_expr), _rowid)`, created by `createTag` |
+| `_cb_tags` | `(table_name, tag_name, key_expr, filter)`: one row per index tag; `key_expr` is SQL producing the dBase key, e.g. `account \|\| dept`; `filter` is NULL or the SQL form of the tag's FOR clause |
+| index `T__tag` | on `((key_expr), _rowid)`, created by `createTag`; partial (`WHERE (filter)`) for a filtered tag |
 
 Column storage: `C` → TEXT right-padded to width; `N`/`F` → INTEGER (0 decimals) or REAL, blank → NULL; `D` → TEXT `YYYYMMDD`, blank → NULL; `L` → INTEGER 0/1, blank → NULL. Table names are lower-case, with any directory and `.dbf` removed (`access.psw` stays `access.psw`).
 
-`createTable()` / `createTag()` (in `Schema.h`) build all of this. The tests use them, and `dbf2sqlite_core` will (plan M2).
+`createTable()` / `createTag()` (in `Schema.h`) build all of this; the tests and `dbf2sqlite_core` use them. Memo fields (`M`) are TEXT columns holding the whole memo. A database written before `filter` existed still opens; `ensureMetaTables()` adds the column.
 
 ## Semantics
 
@@ -27,6 +27,8 @@ Column storage: `C` → TEXT right-padded to width; `N`/`F` → INTEGER (0 decim
 - **Writes.** `assign*()` edits the buffer. The change is written by `flush()`, or automatically before any navigation, `appendStart()`, `SetIndex()` or `close()`.
 - **Append.** `appendStart()` keeps the current buffer contents; call `blank()` to clear them. `append()` inserts the buffer and positions on the new record. Moving between `appendStart()` and `append()` abandons the new record; nothing is written. `append()` without `appendStart()` throws.
 - **Order.** Navigation follows the selected tag's key, then `_rowid`. With no tag selected, or after `SetIndex()` with an unknown name (which returns `e4tagName`), it follows record order. `SetIndex()` keeps the current record.
+- **Filtered tags.** A tag with a FOR condition holds only the records that satisfy it: `top`, `bottom`, `skip` and `seek` through it never land on others, and a record whose fields stop matching drops out once written. `go()` and record order still reach every record. A `Relate4set` filter is combined with the tag's own.
+- **Memos.** A memo field's image is its whole text, unpadded and never truncated (`""` when empty, stored as NULL). `Field4memo` is a `Field4` whose `len()` is the text length; a plain `Field4` on the same field reports the dBase width, 10.
 - **Seek.** `seek(key)` is a partial (prefix) match on the full tag key. It returns `r4success` if the found key starts with `key`, `r4after` if positioned on the next key, `r4eof` if past the end. In record order it seeks on the first tag. `seek(double)` does the same for numeric keys.
 - **eof / bof.** `skip()` past the end gives `r4eof`, a blank buffer, and `recNo() == recCount()+1`. `skip()` back past the start gives `r4bof`, positioned on the first record. `skip(-1)` from eof goes to the last record.
 - **Deleted records** stay visible to navigation and are counted by `recCount()`, as in CodeBase without `SET DELETED`. `deleteRec()`/`recall()` set and clear the flag immediately, and `pack()` removes deleted rows and goes to `top()`. A `Relate4set` with `".NOT. DELETED()"` iterates without them.
@@ -52,9 +54,10 @@ Every method is either exercised by a behavioural Catch2 assertion (file in `cb4
 | Field4 | `init`, `isValid`, `str`, `ptr`, `num`, `len`, `decimals`, `type`, `name`, `number` | `test_field4.cpp` |
 | Field4 | `assign`, `assignDouble`, `assignLong`, `trim` | `test_field4.cpp` |
 | Field4 | `SetField`, `AssignField` | `test_field4_win32.cpp` (Windows only) |
+| Field4memo | constructors, `len`, `free` (+ inherited `str`/`assign`) | `test_field4.cpp` (memo), `test_dbf2sqlite.cpp` (via `db_arbtc.h`) |
 | Date4 | `today`, `assign`, `str`, `ptr`, `len`, `year`, `month`, `day` | `test_field4.cpp` (Date4) |
 | Relate4set | `querySet`, `top`, `bottom`, `skip`, `eof`, `free` | `test_relate4set.cpp` |
-| Schema | `normaliseTableName`, `quoteIdent`, `createTable`, `createTag`, `loadTableInfo`, `ensureMetaTables` | `test_code4_schema.cpp` |
+| Schema | `normaliseTableName`, `quoteIdent`, `createTable`, `createTag`, `loadTableInfo`, `ensureMetaTables` | `test_code4_schema.cpp`; tag filters and the pre-filter layout in `test_data4.cpp` |
 | — | `Str4ptr`, `Str4long` | `m0_smoke_test.cpp` |
 | — | `db_accts.h`, `db_acces.h`, `db_dept.h` unchanged | `test_legacy_headers.cpp` |
 
@@ -64,12 +67,12 @@ Every method is either exercised by a behavioural Catch2 assertion (file in `cb4
 |---|---|
 | `Code4::initUndo()` | CodeBase undo log not modelled; returns 0 |
 | `Data4::unlock()`, `Relate4set::unlock()` | no locking in Spec #1 (single user); return 0 |
-| `Data4::appendStart(int memo)` argument | memo fields out of scope (spec §4.6); ignored |
+| `Data4::appendStart(int memo)` argument | CodeBase's flag for keeping memo contents; memos live in the record buffer, so it's ignored |
 | `Field4::assignDouble(…, int newLen, …)` / `assignLong(…, int newLen, …)` | `newLen` resizes `Str4` strings in CodeBase; a field's width is fixed |
 
 **Not implemented** (throw `cb4sqlite::Error("… not implemented in spec #1 …")`): `Relate4set::querySet` with anything other than empty / `.NOT. DELETED()` / `!DELETED()`; `Data4::zap` with a record range.
 
-**Not provided at all** (port the call site instead): CodeBase `Str4*` string classes (`Str4large`, `Str4ten` …; use `std::string`/`std::wstring`, spec §5), `Field4memo` (needed by `db_arbtc.h`, AR), `Data4::UpdateUserTime` (an app helper defined in legacy `gl.cpp`), locking, transactions, `Expr4`.
+**Not provided at all** (port the call site instead): CodeBase `Str4*` string classes (`Str4large`, `Str4ten` …; use `std::string`/`std::wstring`, spec §5), `Data4::UpdateUserTime` (an app helper defined in legacy `gl.cpp`), locking, transactions, `Expr4`.
 
 ## Building the tests elsewhere
 

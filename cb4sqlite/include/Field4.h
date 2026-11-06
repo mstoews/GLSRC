@@ -9,6 +9,7 @@
 //   N  number right-justified in len() with decimals()   "    12.50"
 //   D  "YYYYMMDD", or 8 spaces when empty
 //   L  "T" / "F", or " " when empty
+//   M  the whole memo text, unpadded ("" when empty); see Field4memo
 //   (empty numeric fields are all spaces; num() reads them as 0)
 //
 // Lifetime of str()/ptr(): the pointer stays valid until the Data4 moves to
@@ -45,7 +46,7 @@ public:
     double      num() const noexcept { return Str4ptr(str()); }
     unsigned    len() const noexcept;
     int         decimals() const noexcept;
-    char        type() const noexcept;        // r4str, r4num, r4float, r4date, r4log
+    char        type() const noexcept;        // r4str, r4num, r4float, r4date, r4log, r4memo
     const char* name() const noexcept;
     int         number() const noexcept { return field_ + 1; }
 
@@ -70,6 +71,21 @@ private:
     int    field_ = -1;          // 0-based
 };
 
+// CodeBase's memo accessor. The memo lives in the record buffer like any other
+// field (no separate memo file), so this is a Field4 whose len() is the length
+// of the text rather than the 10-byte dBase pointer width. assign() takes text
+// of any length. Legacy code builds one with `new Field4memo(data, fieldNo)`.
+class Field4memo : public Field4 {
+public:
+    Field4memo() noexcept = default;
+    Field4memo(Data4& d, int fieldNo) noexcept : Field4(d, fieldNo) {}
+    Field4memo(Data4& d, const char* name) noexcept : Field4(d, name) {}
+
+    unsigned len() const noexcept;
+    void     free() noexcept {}   // CodeBase released the memo buffer; nothing to do here
+};
+
 } // namespace cb4sqlite
 
 using cb4sqlite::Field4;
+using cb4sqlite::Field4memo;

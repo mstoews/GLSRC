@@ -12,7 +12,10 @@
 //    blank() to clear it); append() inserts the buffer as a new record and
 //    positions on it.
 //  * Navigation follows the selected tag's key, then _rowid. Without a tag
-//    (or after an unknown SetIndex name) it is record order (_rowid).
+//    (or after an unknown SetIndex name) it is record order (_rowid). A tag
+//    with a FOR condition holds only the records that satisfy it, so top(),
+//    bottom(), skip() and seek() through it never land on the others; go()
+//    and record order still reach every record.
 //  * Deleted records stay visible, as in CodeBase (no SET DELETED). deleteRec()
 //    marks, recall() unmarks, pack() removes them. Use a Relate4set with
 //    ".NOT. DELETED()" to iterate without them.
@@ -99,6 +102,7 @@ private:
     bool requireValid() const noexcept;
     void detachFromCode() noexcept;
     std::string keyExpr(int tag) const;
+    std::string tagFilter(int tag, const std::string& extra) const;   // FOR condition AND extra
     std::string selectList(int tag) const;
 
     // Field4 access to the record buffer.

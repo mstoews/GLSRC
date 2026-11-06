@@ -12,11 +12,11 @@ Layout written:
   fixtures/corrupt_dbf/  truncated .dbf (exit 2)
   fixtures/corrupt_mdx/  .mdx whose tag table is garbage (exit 2)
 
-IMPORTANT: no real GL company data was available when these were made, so the
-.mdx files follow the layout in dbf2sqlite_core/src/Source.h (CodeBase S4MDX
-structures; tag slots at offset 544). They prove the migrator is consistent
-with that layout, not that the layout matches a real dBase IV file: validate
-against a real company directory before relying on it (spec 4.7).
+The .mdx files follow the layout in dbf2sqlite_core/src/Source.h (CodeBase
+S4MDX structures; tag slots at offset 544). That layout has since been checked
+against a real company directory (2026-11-06: 45 tables, every .mdx read).
+AR_JSUM and AR_BTCH copy the real tables' field layouts and tag definitions
+(FOR clauses, RECNO() keys, a dBase IV memo); their rows are made up.
 """
 
 import os
@@ -71,6 +71,29 @@ def dbf(path, fields, rows, *, ldid=CP1252, deleted=(), version=0x03, mdx=False)
     out += b"\x1a"
     with open(path, "wb") as f:
         f.write(out)
+
+
+def dbt(path, dataname, memos):
+    """dBase IV memo file, 512-byte blocks. memos: [bytes]; returns the
+    10-byte block pointers to store in the .dbf, in the same order."""
+    block = 512
+    body = bytearray()
+    pointers = []
+    nxt = 1
+    for m in memos:
+        pointers.append(str(nxt).rjust(10).encode("ascii"))
+        rec = b"\xff\xff\x08\x00" + struct.pack("<I", 8 + len(m)) + m
+        rec += b"\x00" * (-len(rec) % block)
+        body += rec
+        nxt += len(rec) // block
+    header = bytearray(block)
+    struct.pack_into("<I", header, 0, nxt)               # next free block
+    n = dataname.encode("ascii")[:8]
+    header[8:8 + len(n)] = n
+    struct.pack_into("<H", header, 20, block)
+    with open(path, "wb") as f:
+        f.write(header + body)
+    return pointers
 
 
 def mdx(path, dataname, tags):
@@ -172,6 +195,53 @@ def company(d):
         [("Sample Company Ltd.", "1 Main Street", "Suite 100", "Vancouver", "V6B 1A1",
           "604-555-0100", "604-555-0101", "M. Stoews")], ldid=0)
 
+    # AR_JSUM: the real journal-summary layout. ARDIST/APDIST are the real FOR
+    # tags; RECNO and LIVEAR add a RECNO() key and a compound condition.
+    jsum = [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("PERIOD", "C", 4, 0), ("MODE", "C", 1, 0),
+            ("DATE", "D", 8, 0), ("TYPE", "C", 3, 0), ("BATCHNO", "N", 6, 0), ("REFERENCE", "C", 30, 0),
+            ("CHEQUE", "C", 7, 0), ("DESCRIPT", "C", 50, 0), ("DEBIT", "N", 16, 2), ("CREDIT", "N", 16, 2)]
+    def j(acct, dept, typ, batch, desc, debit):
+        return (acct, dept, "11", "1", "20261106", typ, batch, "REF", None, desc, debit, None)
+    dbf(os.path.join(d, "AR_JSUM.DBF"), jsum, [
+        j("1000", "01", "AR ", 5, "Invoice 5", 100.0),
+        j("2000", "01", "AP ", 3, "Bill 3", 40.0),
+        j("1000", "02", "AR ", 2, "Invoice 2", 25.5),
+        j("3000", "01", "GL ", 1, "Journal 1", 10.0),
+        j("1000", "01", "AR ", 7, "Invoice 7 (deleted)", 99.0),
+        j("4000", "01", "   ", 4, "No type", 1.0),
+    ], deleted={4}, mdx=True)
+    mdx(os.path.join(d, "AR_JSUM.MDX"), "AR_JSUM", [
+        ("ARDIST", "batchno", "N", False, False, "type = 'AR '"),
+        ("APDIST", "batchno", "N", False, False, "type = 'AP '"),
+        ("DESCRIPT", "descript", "C", False, False, ""),
+        ("BATCHNO", "batchno", "N", False, False, ""),
+        ("ACCOUNT", "account+dept", "C", False, False, ""),
+        ("RECNO", "RECNO()", "N", False, False, ""),
+        ("LIVEAR", "account+dept", "C", False, False, "TYPE='AR' .AND. .NOT. DELETED()"),
+    ])
+
+    # AR_BTCH: the real invoice-batch layout, with its dBase IV memo field.
+    btch = [("BATCHNO", "N", 6, 0), ("MODE", "C", 1, 0), ("TYPE", "C", 2, 0), ("ADJ", "C", 1, 0),
+            ("PERIOD", "N", 2, 0), ("VENDORNO", "C", 6, 0), ("INVOICENO", "C", 8, 0), ("ORDERNO", "C", 10, 0),
+            ("ORDERDATE", "D", 8, 0), ("VIN", "C", 10, 0), ("UNITS", "C", 7, 0), ("DUEDATE", "D", 8, 0),
+            ("INVDATE", "D", 8, 0), ("REFERENCE", "C", 40, 0), ("DESCRIPT", "C", 10, 0), ("DATE", "D", 8, 0),
+            ("ACCOUNT", "C", 7, 0), ("DEPART", "C", 4, 0), ("PAYABLE", "N", 16, 2), ("REBATEAMT", "N", 16, 2),
+            ("ENTRYNO", "N", 3, 0), ("VATPERCENT", "N", 2, 0), ("REBATE", "N", 2, 0), ("TERMS", "N", 3, 0),
+            ("VATAMT", "N", 16, 2), ("ADJAMT", "N", 16, 2), ("MEMOFIELD", "M", 10, 0)]
+    long_memo = ("".join(f"Line {i:03d} of a memo longer than one 512-byte block.\r\n" for i in range(20)))
+    ptr = dbt(os.path.join(d, "AR_BTCH.DBT"), "AR_BTCH",
+              ["Net 30 days.\r\nCafé on the corner".encode("cp1252"), long_memo.encode("ascii")])
+    def b(batch, invoice, memo):
+        return (batch, "1", "IN", "N", 11, "C100", invoice, None, None, None, None, "20261206", "20261106",
+                "Invoice " + invoice, "Sales", "20261106", "1100", "01", 250.0, None, 1, 5, None, 30,
+                12.5, None, memo)
+    dbf(os.path.join(d, "AR_BTCH.DBF"), btch,
+        [b(1, "INV001", ptr[0]), b(2, "INV002", None), b(3, "INV003", ptr[1])], version=0x8B, mdx=True)
+    mdx(os.path.join(d, "AR_BTCH.MDX"), "AR_BTCH", [
+        ("BATCHNO", "batchno", "N", False, False, ""),
+        ("RECNO", "RECNO()", "N", False, False, ""),
+    ])
+
     with open(os.path.join(d, "README.TXT"), "w", newline="\n") as f:
         f.write("Not a dBase file; the migrator must ignore it.\n")
 
@@ -183,7 +253,7 @@ def bad(d):
     mdx(os.path.join(d, "DESCTAG.MDX"), "DESCTAG", [("NAME", "NAME", "C", False, True, "")])
     dbf(os.path.join(d, "FILTTAG.DBF"), [("NAME", "C", 10, 0), ("ACTIVE", "L", 1, 0)],
         [("a", "T"), ("b", "F")], mdx=True)
-    mdx(os.path.join(d, "FILTTAG.MDX"), "FILTTAG", [("ACT", "NAME", "C", False, False, "ACTIVE")])
+    mdx(os.path.join(d, "FILTTAG.MDX"), "FILTTAG", [("ACT", "NAME", "C", False, False, "SOUNDEX(NAME) = 'A000'")])
     dbf(os.path.join(d, "DUPUNIQ.DBF"), [("NAME", "C", 10, 0)], [("same",), ("same",), ("other",)], mdx=True)
     mdx(os.path.join(d, "DUPUNIQ.MDX"), "DUPUNIQ", [("NAME", "NAME", "C", True, False, "")])
     dbf(os.path.join(d, "BADEXPR.DBF"), [("NAME", "C", 10, 0)], [("abc",)], mdx=True)

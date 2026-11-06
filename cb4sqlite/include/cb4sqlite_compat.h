@@ -14,11 +14,12 @@
 #define _CLASSDEF(name) /* no-op */
 #endif
 
-// The legacy schema headers use LPSTR. On Windows it comes from <Windows.h>
-// (pulled in by Field4.h); this keeps them compiling in the portable test
+// The legacy schema headers use LPSTR and BOOL. On Windows they come from <Windows.h>
+// (pulled in by Field4.h); these typedefs keep them compiling in the portable test
 // build of cb4sqlite_tests on other platforms.
 #ifndef _WIN32
 typedef char* LPSTR;
+typedef int   BOOL;    // include/db_arbtc.h declares BOOL members
 #endif
 
 // Navigation / seek return codes (d4defs.h).

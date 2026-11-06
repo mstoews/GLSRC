@@ -147,7 +147,8 @@ std::string renderHeader(const cb4sqlite::TableInfo& info)
       << "class " << cls << " : public Data4\n{\npublic:\n";
     for (size_t i = 0; i < members.size(); ++i) {
         const cb4sqlite::FieldDef& f = info.fields[i];
-        h << "    Field4* " << members[i] << " = nullptr;   // " << f.name << " " << f.type << "(" << f.len;
+        h << "    " << (f.type == 'M' ? "Field4memo*" : "Field4*") << " " << members[i] << " = nullptr;   // "
+          << f.name << " " << f.type << "(" << f.len;
         if (f.dec) h << "," << f.dec;
         h << ")\n";
     }
@@ -157,7 +158,8 @@ std::string renderHeader(const cb4sqlite::TableInfo& info)
         h << "        SetIndex(\"" << info.tags.front().name << "\");\n";
     h << "        top();\n";
     for (size_t i = 0; i < members.size(); ++i)
-        h << "        " << members[i] << " = new Field4(*this, \"" << info.fields[i].name << "\");\n";
+        h << "        " << members[i] << " = new " << (info.fields[i].type == 'M' ? "Field4memo" : "Field4")
+          << "(*this, \"" << info.fields[i].name << "\");\n";
     h << "    }\n\n    ~" << cls << "()\n    {\n";
     for (const std::string& m : members)
         h << "        delete " << m << ";\n";

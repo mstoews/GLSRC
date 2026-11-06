@@ -173,3 +173,37 @@ TEST_CASE("Date4", "[date4]")
     Field4(t, "opened").assign(fixed.str());                  // fDate.assign(d.str())
     CHECK(std::string(Field4(t, "opened").str()) == "20261106");
 }
+
+TEST_CASE("Memo fields hold the whole text; Field4memo reports its length", "[field4][memo]")
+{
+    TempDb db;
+    Code4 code;
+    db.open(code);
+    cb4sqlite::createTable(code, "notes", {{"ID", r4str, 4, 0}, {"BODY", r4memo, 10, 0}});
+    CHECK(raw(code, "SELECT type || len FROM _cb_fields WHERE field_name = 'BODY'") == "M10");
+    Data4 d(&code, "notes");
+    REQUIRE(d.appendStart() == r4success);
+    d.blank();
+    Field4(d, "id").assign("A1");
+    Field4memo body(d, "body");
+    REQUIRE(body.isValid());
+    CHECK(body.type() == r4memo);
+    CHECK(std::string(body.str()).empty());
+    CHECK(body.len() == 0);
+
+    const std::string text = std::string(2000, 'x') + "\r\nCaf\xC3\xA9";
+    REQUIRE(body.assign(text.c_str()) == r4success);
+    REQUIRE(d.append() == r4success);
+    CHECK(raw(code, "SELECT length(CAST(body AS BLOB)) FROM notes") == "2007");   // never truncated
+
+    REQUIRE(d.top() == r4success);
+    CHECK(std::string(body.str()) == text);
+    CHECK(body.len() == text.size());
+    CHECK(Field4(d, "body").len() == 10u);          // a plain Field4 reports the dBase width
+    CHECK(Field4memo(d, "id").len() == 4u);         // on a non-memo field: the field width
+
+    body.assign("");
+    d.flush();
+    CHECK(raw(code, "SELECT typeof(body) FROM notes") == "null");   // empty memo = no memo
+    body.free();
+}

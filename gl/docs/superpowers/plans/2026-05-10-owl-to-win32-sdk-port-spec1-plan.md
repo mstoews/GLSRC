@@ -142,6 +142,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 > - The header skip rule detects `Data4(cb, "<table>")` instead of matching file names.
 > - Fixtures are generated into `test/fixtures/{company,bad,…}`.
 > - Output is written atomically via `<out>.tmp`.
+> - **M2b, after the first real-data run:** FOR clauses (tag filters with partial indexes), `RECNO()` keys and dBase IV memo fields (`Field4memo`) are supported, so the real company directory migrates with exit 0.
 >
 > Usage is in `dbf2sqlite_core/README.md`.
 

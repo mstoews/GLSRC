@@ -111,6 +111,7 @@ bool isNumericType(char type) noexcept
 
 std::string blankImage(const FieldDef& f)
 {
+    if (f.type == r4memo) return {};          // a memo's image is its whole text
     return std::string(static_cast<size_t>(f.len), ' ');
 }
 
@@ -142,6 +143,8 @@ std::string imageFromText(const FieldDef& f, std::string_view text)
     if (const size_t z = text.find('\0'); z != std::string_view::npos)
         text = text.substr(0, z);
 
+    if (f.type == r4memo)
+        return std::string(text);             // any length, never padded
     if (isNumericType(f.type)) {
         const std::string t(trim(text));
         if (t.empty())
@@ -175,6 +178,8 @@ std::string imageFromColumn(const FieldDef& f, sqlite3_stmt* s, int col)
         return sqlite3_column_int64(s, col) ? "T" : "F";
     const auto* p = reinterpret_cast<const char*>(sqlite3_column_text(s, col));
     const int   n = sqlite3_column_bytes(s, col);
+    if (f.type == r4memo)
+        return std::string(p ? p : "", static_cast<size_t>(n));
     return fitText(std::string_view(p ? p : "", static_cast<size_t>(n)), static_cast<size_t>(f.len));
 }
 
@@ -194,6 +199,10 @@ void bindImage(Stmt& s, int i, const FieldDef& f, const std::string& image)
         if (image == "T")      s.bindInt(i, 1);
         else if (image == "F") s.bindInt(i, 0);
         else                   s.bindNull(i);
+        return;
+    }
+    if (f.type == r4memo) {
+        if (image.empty()) s.bindNull(i); else s.bindText(i, image);
         return;
     }
     if (f.type == r4date && trim(image).empty()) {
