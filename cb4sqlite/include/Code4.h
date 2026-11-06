@@ -1,49 +1,90 @@
 #pragma once
 //
-// Code4 — database session.  M0 stub: declarations only, no behaviour.
-// Spec §4.2.  Real implementation lands in M1.
+// Code4 - the database session (spec 4.2).
+//
+// In CodeBase, Code4 was only an environment: tables were separate .dbf files
+// that each Data4 opened by name. Here one Code4 owns the connection to one
+// company SQLite file, and Data4 objects open tables inside it.
+//
+//   open(path)   - new in the shim: opens the company database.
+//   close()      - new in the shim: closes every Data4 and the connection.
+//   closeAll()   - as CodeBase: closes every open Data4 (they become
+//                  !isValid()); the connection stays open so the legacy
+//                  pattern `cb.closeAll(); cb.init(); ...reopen tables...` works.
+//   init()       - as CodeBase: resets error state; no-op otherwise.
+//   initUndo()   - compile-only stub, returns 0 (CodeBase undo log not modelled).
 //
 
 #include "cb4sqlite_compat.h"
 #include "Errors.h"
 
-#include <Windows.h>   // LPSTR, LPCSTR
-#include <cstdlib>     // std::atof, std::atol
+#include <cstdlib>
+#include <string>
+#include <string_view>
+#include <vector>
 
-// Forward-declare the SQLite handle type so M0 doesn't require sqlite3.h.
 struct sqlite3;
 
 namespace cb4sqlite {
 
+class Data4;
+
 class Code4 {
 public:
-    Code4()  noexcept = default;
-    ~Code4() noexcept = default;
+    Code4() noexcept = default;
+    ~Code4();
+    Code4(const Code4&) = delete;
+    Code4& operator=(const Code4&) = delete;
 
-    // 0 on success, negative on error.  M1 implements via sqlite3_open_v2.
-    int      open(const char* dbPath);
-    int      open(LPSTR dbPath) { return open(static_cast<const char*>(dbPath)); }
-    void     closeAll();
-    void     initUndo();
-    sqlite3* handle() noexcept;
+    // Opens the company database (UTF-8 path). Returns r4success, or e4open if
+    // the file doesn't exist (and create == false) or can't be opened. Any
+    // previously open database is closed first. Pragmas: foreign_keys=ON,
+    // journal_mode=DELETE (a single file, so the legacy file-copy backup stays
+    // correct; WAL would leave committed data in a -wal side file).
+    int open(const char* utf8Path, bool create = false);
+#ifdef _WIN32
+    int open(std::wstring_view path, bool create = false);
+#endif
+    void close() noexcept;
+    bool isOpen() const noexcept { return db_ != nullptr; }
+
+    int  closeAll() noexcept;
+    int  init() noexcept { errorCode = 0; return 0; }
+    int  initUndo() noexcept { return 0; }
+
+    sqlite3* handle() noexcept { return db_; }
+
+    // Last error code, as in CodeBase (0 = none). Set by failed opens.
+    int errorCode = 0;
+
+private:
+    friend class Data4;
+    void attach(Data4* d);
+    void detach(Data4* d) noexcept;
+
+    sqlite3*            db_ = nullptr;
+    std::vector<Data4*> open_;   // Data4 objects currently attached
 };
 
-// Global Code4 instance, defined in App.cpp (M5).
-// Tests in M1 must not rely on this — they instantiate locally.
-extern Code4 cb;
-
-// CodeBase utility helpers used throughout original source.
-inline double Str4ptr(const char* s) noexcept {
+// CodeBase numeric helpers. In CodeBase Str4ptr was a class with operator
+// double(); the original code only ever writes `double(Str4ptr(f->str()))`,
+// which these functions satisfy.
+inline double Str4ptr(const char* s) noexcept
+{
     return (s && *s) ? std::atof(s) : 0.0;
 }
-inline long Str4long(const char* s) noexcept {
+inline long Str4long(const char* s) noexcept
+{
     return (s && *s) ? std::atol(s) : 0L;
 }
 
 } // namespace cb4sqlite
 
-// Original code calls Str4ptr/Str4long unqualified.  Keep ports' diff small
-// by exposing them in the global namespace too.
 using cb4sqlite::Code4;
 using cb4sqlite::Str4ptr;
 using cb4sqlite::Str4long;
+
+// The application-wide session, as in the original gl.cpp (`Code4 cb;`).
+// Declared here so ported code can keep writing `&cb`; *defined* in
+// gl/port/App.cpp (plan M5). Tests never use it: they create a local Code4.
+extern cb4sqlite::Code4 cb;

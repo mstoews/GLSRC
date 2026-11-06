@@ -1,22 +1,33 @@
 #pragma once
 //
-// Date4 — date helper.  M0 stub.  Spec §4.2.
+// Date4 - dBase date value "YYYYMMDD" (spec 4.2). Mirrors the parts of the
+// CodeBase class the original code uses:
+//
+//   Date4 d; d.today(); fDate.assign(d.str());        // gl.cpp UpdateUserTime
 //
 
 #include "cb4sqlite_compat.h"
-#include <string>
 
 namespace cb4sqlite {
 
 class Date4 {
 public:
-    // Sets *this to the current local date. Non-static to match CodeBase:
-    // the original code does `Date4 d; d.today(); ... d.str()`.
-    void today();
-    std::string str() const;   // "YYYYMMDD"
+    Date4() noexcept;                       // empty date: 8 spaces
+    explicit Date4(const char* yyyymmdd) noexcept { assign(yyyymmdd); }
+
+    void today() noexcept;                  // sets *this to the local date
+    void assign(const char* yyyymmdd) noexcept;
+
+    const char* str() const noexcept { return dt_; }
+    const char* ptr() const noexcept { return dt_; }
+    unsigned    len() const noexcept { return 8; }
+
+    int year()  const noexcept;             // 0 for an empty date
+    int month() const noexcept;
+    int day()   const noexcept;
 
 private:
-    int year_ = 0, month_ = 0, day_ = 0;
+    char dt_[9];
 };
 
 } // namespace cb4sqlite
