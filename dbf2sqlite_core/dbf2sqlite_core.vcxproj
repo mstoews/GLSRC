@@ -37,7 +37,16 @@
     <Import Project="$(MSBuildThisFileDirectory)..\common.props" />
   </ImportGroup>
   <ItemGroup>
-    <ClCompile Include="src\m0_include_check.cpp" />
+    <ClInclude Include="include\Migrator.h" />
+    <ClInclude Include="src\Source.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\DbfFile.cpp" />
+    <ClCompile Include="src\MdxFile.cpp" />
+    <ClCompile Include="src\Encoding.cpp" />
+    <ClCompile Include="src\KeyExpr.cpp" />
+    <ClCompile Include="src\Migrator.cpp" />
+    <ClCompile Include="src\HeaderGen.cpp" />
   </ItemGroup>
   <!--
     Vendored shapelib DBF reader (spec 10 Q3 fallback; MIT licence option). See VENDORED.md.

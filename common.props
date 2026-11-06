@@ -23,7 +23,7 @@
       then gl/header (db_acces.h lives there). include/ must precede gl/header
       because glh.h, gl_pds.hpp and gl_prof.hpp exist in both.
     -->
-    <IncludePath>$(GlRoot)cb4sqlite\include;$(GlRoot)include;$(GlRoot)gl\header;$(IncludePath)</IncludePath>
+    <IncludePath>$(GlRoot)cb4sqlite\include;$(GlRoot)dbf2sqlite_core\include;$(GlRoot)include;$(GlRoot)gl\header;$(IncludePath)</IncludePath>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
