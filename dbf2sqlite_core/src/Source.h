@@ -35,6 +35,7 @@ public:
     const std::vector<DbfField>& fields() const noexcept { return fields_; }
     int  recordCount() const noexcept { return records_; }
     int  languageDriver() const noexcept { return ldid_; }   // header byte 29
+    int  version() const noexcept { return version_; }       // header byte 0 (0x8B: dBase IV + memo)
 
     // Raw bytes of record i (0-based), without the deletion flag. Valid until
     // the next call.
@@ -47,7 +48,28 @@ private:
     std::vector<DbfField> fields_;
     int records_ = 0;
     int ldid_ = 0;
+    int version_ = 0;
     int recLen_ = 0;
+};
+
+// The .dbt memo file next to a .dbf with memo fields. The .dbf holds each
+// memo's starting block number as 10 ASCII digits (blank = no memo).
+//   dBase IV (version 0x8B): block size from the header (offset 20, short);
+//            each memo starts FF FF 08 00 + 4-byte length including those 8 bytes.
+//   dBase III (0x83): 512-byte blocks, text ends at 0x1A.
+class DbtFile {
+public:
+    DbtFile(const std::filesystem::path& path, int dbfVersion);   // throws SourceError
+    // Raw memo bytes starting at `block`. Throws SourceError if the block is
+    // outside the file or its header is inconsistent.
+    std::string read(long block) const;
+    const std::filesystem::path& path() const noexcept { return path_; }
+
+private:
+    std::filesystem::path path_;
+    std::string data_;
+    size_t blockSize_ = 512;
+    bool dBase4_ = true;
 };
 
 // True if the file looks like a dBase table: known version byte and header /
@@ -91,6 +113,10 @@ struct KeySql {
 // dBase index expression -> cb4sqlite key_expr. Supported: field names,
 // `+` between character values, UPPER(c), DTOS(d), STR(n[,len[,dec]]).
 KeySql translateKey(const std::string& expr, const std::vector<KeyField>& fields);
+// A tag's FOR condition -> SQL condition (type 'L'). Adds comparisons
+// (= == <> # != < <= > >= $), .AND. .OR. .NOT. !, text/number/.T./.F.
+// literals, DELETED() and RECNO(); see KeyExpr.cpp for dBase semantics.
+KeySql translateFilter(const std::string& condition, const std::vector<KeyField>& fields);
 
 std::string pathUtf8(const std::filesystem::path& p);
 

@@ -83,6 +83,11 @@ DbfFile::DbfFile(const std::filesystem::path& path)
         throw SourceError(msg);
     }
     h_ = h;
+    {
+        std::ifstream in(path, std::ios::binary);
+        char b = 0;
+        if (in.get(b)) version_ = static_cast<unsigned char>(b);
+    }
 
     const int n = DBFGetFieldCount(h);
     int offset = 0;

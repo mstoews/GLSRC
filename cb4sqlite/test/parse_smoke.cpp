@@ -90,6 +90,14 @@ void parse_smoke_touchpoints(Code4& code, char* szSeek)
     (void)rQuery->free();
     delete rQuery;
 
+    // Field4memo, as include/db_arbtc.h and ar_btche.cpp TARMemo.
+    Field4memo* memo = (Field4memo*) new Field4memo(*(Data4*)glaccts, 27);
+    (void)memo->assign("note");
+    (void)memo->str();
+    (void)memo->len();
+    memo->free();
+    delete memo;
+
     (void)Str4ptr("123.45");
     (void)Str4long("42");
 

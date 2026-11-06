@@ -309,9 +309,10 @@ This policy preserves hand-tuned helpers (`dPeriod`, `Open_bal`, etc.) while fil
   - `Numeric`   → `REAL` or `INTEGER` (decided per field at migration time)
   - `Date`      → `TEXT('YYYYMMDD')`
   - `Logical`   → `INTEGER` (0/1)
-  - Blank numeric, date and logical values are stored as NULL.
+  - `Memo`      → `TEXT`, the whole memo, read from the `.dbt` at migration (no separate memo file afterwards). `_cb_fields.len` keeps the 10-byte dBase pointer width, which doesn't limit the text.
+  - Blank numeric, date, logical and memo values are stored as NULL.
 - Field metadata: `_cb_fields(table_name, field_no, field_name, type, len, dec)` records each field's dBase type, declared width and decimals in record order. `Field4::len()/type()/decimals()`, padding and number formatting come from it.
-- Indexes: each `.ndx` / `.cdx` tag becomes a row in `_cb_tags(table_name, tag_name, key_expr)`. `key_expr` is an SQL expression that reproduces the dBase key; for `ACCOUNT+DEPT` it is `account || dept`, which is byte-identical to the dBase key because character columns are stored padded. `createTag` also creates `CREATE INDEX <table>__<tag> ON <table> ((key_expr), _rowid)`. (This replaced an earlier `order_by_sql` column: a single key expression is what both ordering and `seek` need.)
+- Indexes: each `.mdx` tag becomes a row in `_cb_tags(table_name, tag_name, key_expr, filter)`. `key_expr` is an SQL expression that reproduces the dBase key; for `ACCOUNT+DEPT` it is `account || dept`, which is byte-identical to the dBase key because character columns are stored padded. `createTag` also creates `CREATE INDEX <table>__<tag> ON <table> ((key_expr), _rowid)`. (This replaced an earlier `order_by_sql` column: a single key expression is what both ordering and `seek` need.) `filter` is NULL, or the SQL form of the tag's FOR clause: only matching records are in the tag, so `top`/`bottom`/`skip`/`seek` through it skip the rest, while `go()` and record order still see every record. Filtered tags get a partial index (`… WHERE (filter)`), and `Data4` adds the same term to its queries so SQLite uses it. `RECNO()` keys become `_rowid`. Databases written before the `filter` column existed (M2) still open, and `ensureMetaTables` adds the column.
 - **`seek` rule (CodeBase partial-key match).** `Data4::seek(const char* key)` finds the first record whose tag key is `>= key`. It returns `r4success` if that key *starts with* `key`, `r4after` otherwise (positioned on it), and `r4eof` if there is none. Example: key `account || dept`, stored `"100    01"`; `seek("100")`, `seek("100    ")` and `seek("100    01")` all return `r4success`. The earlier "pad to the leading column, then compare for equality" rule is a special case of this, and the M1 tests cover both.
 
 ### 4.4 Cursor model
@@ -325,7 +326,7 @@ Static library `dbf2sqlite_core/` (all logic) plus the thin console EXE `dbf2sql
 1. **Read `.dbf` files** via the vendored shapelib reader (`dbf2sqlite_core/vendor/shapelib/`, MIT licence option; §10 Q3). The open goes through a custom file hook, so tables without a `.dbf` extension (`ACCESS.PSW`) work.
 2. **Create each table** with `cb4sqlite::createTable` (§4.3: `_cb_fields` plus typed columns). Insert the rows in record order in one transaction, with `_rowid` = record number and the deletion flag kept in `_deleted`.
 3. **Convert text** from the source code page to UTF-8: the language-driver byte, `--codepage`, or 1252 by default. Character fields that grow past their byte width are **widened and reported**, never truncated.
-4. **Read the index tags** from each table's **production `.mdx`**: the app's CodeBase was built with `S4MDX` (`include/d4all.h`), so dBase IV indexes, not `.ndx`/`.cdx`. Each tag's dBase key expression is translated to a `key_expr` and created with `cb4sqlite::createTag`. Supported: field names, `+` on character values, `UPPER()`, `DTOS()`, `STR()`. FOR clauses, descending tags and other functions exit 4 (`--force` skips them). UNIQUE tags migrate as plain tags; any duplicate keys are an error (or a warning with `--force`).
+4. **Read the index tags** from each table's **production `.mdx`**: the app's CodeBase was built with `S4MDX` (`include/d4all.h`), so dBase IV indexes, not `.ndx`/`.cdx`. Each tag's dBase key expression is translated to a `key_expr` and created with `cb4sqlite::createTag`. Supported: field names, `+` (character or numeric), `UPPER()`, `DTOS()`, `STR()`, `RECNO()`. FOR clauses are translated too: comparisons (with dBase `SET EXACT OFF` prefix matching for text), `.AND.`/`.OR.`/`.NOT.`, literals, `DELETED()`. Descending tags, alias references and other functions exit 4 (`--force` skips them). Memo fields are read from the table's `.dbt` (dBase III or IV layout); a missing `.dbt` exits 4. UNIQUE tags migrate as plain tags; any duplicate keys are an error (or a warning with `--force`).
 5. **Verify** by reopening every table through `cb4sqlite::Code4`/`Data4` and comparing record counts.
 6. **Write atomically:** the database is built in `<out>.tmp` and renamed into place only if everything succeeded.
 
@@ -349,7 +350,7 @@ dbf2sqlite.exe --src <dbf-dir>  --out <company.db>  [--table <name>]...  [--forc
 
 Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` destination write error, `4` schema/index translation error, `5` row-count verification mismatch.
 
-**Test fixtures:** `dbf2sqlite_core/test/make_fixtures.py` writes `dbf2sqlite_core/test/fixtures/` (deterministically): `company/` (the Spec #1 tables, incl. cp1252 text, a deleted record, blank values, `ACCESS.PSW`), `bad/` (memo field, descending / FOR / bad-expression / duplicate-unique tags, widening, unreadable values), and two corrupt cases. They are hand-built, not taken from any production database; see §4.8 for what that leaves unverified.
+**Test fixtures:** `dbf2sqlite_core/test/make_fixtures.py` writes `dbf2sqlite_core/test/fixtures/` (deterministically): `company/` (the Spec #1 tables, incl. cp1252 text, a deleted record, blank values, `ACCESS.PSW`), `AR_JSUM` and `AR_BTCH` with the real tables' layouts and tags (FOR clauses, `RECNO()`, a dBase IV memo); `bad/` (memo without `.dbt`, descending / untranslatable-FOR / bad-expression / duplicate-unique tags, widening, unreadable values), and two corrupt cases. They are hand-built, not taken from any production database; see §4.8 for what that leaves unverified.
 
 ### 4.6 Semantics & out of scope for Spec #1
 
@@ -359,7 +360,7 @@ Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` desti
 
 - Record / file locking — single-user mode only. The `.db` file is assumed to live on the local disk where `gl.exe` runs (UNC paths are unsupported in Spec #1; see risk #10).
 - Transactions visible at the API (no `Code4::begin()`/`commit()`/`rollback()`).
-- Memo fields.
+- Memo files: memos are migrated into a TEXT column (§4.3) and read/written whole through `Field4memo`; CodeBase's separate memo-file API isn't modelled.
 - Custom dBase expression evaluator (only literal expressions used by Spec #1 tables are supported).
 - Write-back to `.dbf` (the migration is intentionally one-way).
 
@@ -399,7 +400,15 @@ Found during M2 (2026-11-06):
 | Output | written in place | `<out>.tmp`, renamed on success | a failed run never leaves a half-migrated company |
 | Deleted records | — | migrated with `_deleted = 1` | CodeBase showed them until `pack()` (§4.7) |
 
-**Real company data still needed.** No GL `.dbf`/`.mdx` files exist in the repository or its readable archives (`gl.ini` points to `D:\GL\DBF`). The `.mdx` reader follows the CodeBase `S4MDX` structures in `include/d4data.h` (`I4HEADER`, `T4DESC`, `T4HEADER`). One offset isn't in those headers and is taken from CodeBase's documented layout: tag slots start at byte 544. The fixtures are written to that same layout, so the tests prove internal consistency, not compatibility with a real dBase IV file. The reader validates every slot and fails with exit 2 ("not a dBase IV .mdx layout") instead of guessing. **Run `dbf2sqlite` on one real company directory before M5.**
+**Real company data (validated 2026-11-06).** The `.mdx` reader follows the CodeBase `S4MDX` structures in `include/d4data.h` (`I4HEADER`, `T4DESC`, `T4HEADER`), plus one offset from CodeBase's documented layout: tag slots start at byte 544. A real company directory (kept local, not committed) confirmed it: all 45 tables and every `.mdx` tag read correctly. That first run also failed on things the fixtures hadn't covered, all fixed in M2b:
+
+| Found in the real data | Count | Now |
+|---|---|---|
+| Tags keyed on `RECNO()` / `recno()` | 8 tables | key `_rowid` |
+| Tags with FOR clauses (`batchno FOR type = 'AR '`, `TYPE="CA"`, …) | 17 tags | `_cb_tags.filter` + partial index (§4.3) |
+| Memo field `AR_BTCH.MEMOFIELD` with a dBase IV `.dbt` | 1 | TEXT column, `Field4memo` |
+
+Data-quality warnings in that directory are left to the owner: `***********` (dBase numeric overflow) and stray text in a few numeric fields are stored as NULL, and six tables declare DOS code page 437 (language driver 0x01). If those installs actually used another code page, migrate with `--codepage`.
 
 **Shim gap found for M5:** `gl_profi.cpp` uses the generated classes in `common/` (`GL_PROF`, `GL_PDS`, `GL_SETAT`, `GLACCTS`), which call `Data4::open(Code4&, name)` and hold `Field4` *values* initialised with `Field4::init`. The shim's `Data4` has no default constructor or `open()` yet. Add both when porting `gl_profi.cpp`.
 

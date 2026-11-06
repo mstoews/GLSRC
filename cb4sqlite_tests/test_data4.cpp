@@ -289,3 +289,76 @@ TEST_CASE("Two cursors on one table see each other's writes", "[data4]")
     REQUIRE(other.seek("100    02") == r4success);
     CHECK(std::string(Field4(other, "descript").str()) == "Petty cash          ");
 }
+
+TEST_CASE("A tag with a FOR condition holds only the records that satisfy it", "[data4][tags][filter]")
+{
+    TempDb db;
+    Code4 code;
+    db.open(code);
+    createAccounts(code);
+    cb4sqlite::createTag(code, "accts", "positive", "account || dept", "curr_bal > 0");
+    CHECK_THAT(raw(code, "SELECT sql FROM sqlite_master WHERE name = 'accts__positive'"),
+               Catch::Matchers::EndsWith("WHERE (curr_bal > 0)"));   // a partial index
+    Data4 d(&code, "accts");
+    addSampleAccounts(d);   // balances: 300/01 -500, 100/02 75.25, 200/01 -120, 100/01 250.50, 400/01 42
+
+    REQUIRE(d.SetIndex("positive") == r4success);
+    CHECK(walk(d) == std::vector<std::string>{"100/01", "100/02", "400/01"});
+    REQUIRE(d.bottom() == r4success);
+    CHECK(key(d) == "400/01");
+    REQUIRE(d.skip(-1) == r4success);
+    CHECK(key(d) == "100/02");
+    CHECK(d.skip(-5) == r4bof);
+    CHECK(key(d) == "100/01");
+
+    CHECK(d.seek("100") == r4success);
+    CHECK(key(d) == "100/01");
+    CHECK(d.seek("2") == r4after);         // 200/01 isn't in the tag
+    CHECK(key(d) == "400/01");
+    CHECK(d.seek("5") == r4eof);
+
+    // go() and record order still reach every record.
+    REQUIRE(d.go(1) == r4success);
+    CHECK(key(d) == "300/01");
+    d.select();
+    CHECK(walk(d).size() == 5);
+
+    // A record that stops satisfying the condition leaves the tag.
+    REQUIRE(d.SetIndex("positive") == r4success);
+    REQUIRE(d.seek("100    01") == r4success);
+    Field4(d, "curr_bal").assignDouble(-1.0);
+    REQUIRE(d.skip(1) == r4success);       // writes the change, then moves on
+    CHECK(key(d) == "100/02");
+    CHECK(walk(d) == std::vector<std::string>{"100/02", "400/01"});
+
+    // A Relate4set filter combines with the tag's own condition.
+    REQUIRE(d.seek("400") == r4success);
+    d.deleteRec();
+    Relate4set q(d);
+    REQUIRE(q.querySet(".NOT. DELETED()") == r4success);
+    std::vector<std::string> live;
+    for (int rc = q.top(); rc == r4success; rc = q.skip(1)) live.push_back(key(d));
+    CHECK(live == std::vector<std::string>{"100/02"});
+}
+
+TEST_CASE("Databases made before tag filters still open, and gain the column", "[data4][tags][filter]")
+{
+    TempDb db;
+    Code4 code;
+    db.open(code);
+    createAccounts(code);
+    raw(code, "ALTER TABLE _cb_tags DROP COLUMN filter");   // the M2 layout
+    {
+        Data4 d(&code, "accts");
+        REQUIRE(d.isValid());
+        addSampleAccounts(d);
+        REQUIRE(d.SetIndex("accounts") == r4success);
+        CHECK(walk(d).size() == 5);
+    }
+    cb4sqlite::ensureMetaTables(code);
+    CHECK(raw(code, "SELECT count(*) FROM pragma_table_info('_cb_tags') WHERE name = 'filter'") == "1");
+    cb4sqlite::createTag(code, "accts", "cash", "account || dept", "account = '100    '");
+    Data4 d(&code, "accts");
+    REQUIRE(d.SetIndex("cash") == r4success);
+    CHECK(walk(d) == std::vector<std::string>{"100/01", "100/02"});
+}

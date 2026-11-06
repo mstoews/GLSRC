@@ -7,11 +7,16 @@
 //     DEFAULT 0, then one column per dBase field;
 //   * rows in _cb_fields (table_name, field_no, field_name, type, len, dec)
 //     giving the dBase type and declared width of each field, in record order;
-//   * rows in _cb_tags (table_name, tag_name, key_expr), one per index tag.
-//     key_expr is an SQL expression over the table's columns that produces the
-//     same key the dBase tag expression did, e.g. `account || dept` for
+//   * rows in _cb_tags (table_name, tag_name, key_expr, filter), one per index
+//     tag. key_expr is an SQL expression over the table's columns that produces
+//     the same key the dBase tag expression did, e.g. `account || dept` for
 //     ACCOUNT+DEPT. Character columns are stored right-padded to their width,
 //     so concatenation reproduces the fixed-width dBase key byte for byte.
+//     filter is NULL, or an SQL condition from the tag's FOR clause: only
+//     records that satisfy it are in the tag, so navigating or seeking through
+//     the tag skips the others (record order and go() still see every record).
+//   * memo fields (type M) are TEXT columns holding the whole memo; len is the
+//     dBase pointer width (10) and doesn't limit the text.
 //
 // Table and tag names are stored lower-case. Field names keep the case they
 // were created with (dBase field names are upper-case) and are matched
@@ -31,14 +36,15 @@ class Code4;
 
 struct FieldDef {
     std::string name;
-    char        type = 'C';   // r4str, r4num, r4float, r4date, r4log
-    int         len  = 0;     // declared width in bytes (dates: 8, logicals: 1)
+    char        type = 'C';   // r4str, r4num, r4float, r4date, r4log, r4memo
+    int         len  = 0;     // declared width in bytes (dates: 8, logicals: 1, memos: 10)
     int         dec  = 0;     // decimals, numeric fields only
 };
 
 struct TagDef {
     std::string name;
     std::string keyExpr;
+    std::string filter;       // SQL condition from the FOR clause; empty = every record
 };
 
 struct TableInfo {
@@ -61,8 +67,10 @@ void ensureMetaTables(Code4& code);
 // (unknown type, zero width, duplicate field).
 void createTable(Code4& code, const char* table, const std::vector<FieldDef>& fields);
 
-// Registers a tag and creates a matching SQLite index on (key_expr, _rowid).
-void createTag(Code4& code, const char* table, const char* tag, const char* keyExpr);
+// Registers a tag and creates a matching SQLite index on (key_expr, _rowid),
+// partial (WHERE filter) when the tag has a FOR condition.
+void createTag(Code4& code, const char* table, const char* tag, const char* keyExpr,
+               const char* filter = nullptr);
 
 // Loads metadata. Returns false if the table or its _cb_fields rows are missing.
 bool loadTableInfo(sqlite3* db, const std::string& table, TableInfo& out);
