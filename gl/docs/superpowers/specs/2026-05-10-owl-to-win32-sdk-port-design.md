@@ -49,23 +49,30 @@ The following are **explicitly out of scope** for Spec #1:
 
 ### 2.1 Solution structure
 
-The existing repository has this top-level layout:
+The repository root (historically `GLSRC/`; in this checkout the git root `gl-win/`) has this top-level layout. The legacy GL sources were moved in commit `1606b78` from `gl/` into `gl/src/` (`.cpp`) and `gl/header/` (`.h`/`.hpp`); they are kept **as reference only** and are never compiled by the new solution.
 
 ```
-GLSRC/
-├── include/                ← shared headers (db_accts.h, other db_*.h, definitions)
-├── gl/                     ← General Ledger module sources (cwd of this sandbox = /work)
-├── ap/                     ← Accounts Payable sources
-└── ar/                     ← Accounts Receivable sources
+<repo root>/
+├── include/                ← shared headers (db_accts.h, other db_*.h, CodeBase/Toolbox/CRPE headers)
+├── common/                 ← shared sources across modules (gl_acct, gldbf, gl_prof, gl_pds, utildlg …)
+├── gl/
+│   ├── src/                ← legacy GL .cpp files (reference only)
+│   ├── header/             ← legacy GL .h/.hpp files (reference only; includes db_acces.h)
+│   ├── lzh/                ← original LZH source/exe archives
+│   ├── gl.rc, gl_new.rc    ← legacy Borland resources (reference only)
+│   └── docs/               ← this spec and its plan
+├── ap/, ar/                ← Accounts Payable / Receivable (source still in .LZH archives)
+└── owl/, db/, scs/, eiwa/, src/  ← 16-bit libs and archives (out of scope)
 ```
 
-Spec #1 adds four new top-level project directories alongside the existing module directories. The Visual Studio solution `gl.sln` lives at `GLSRC/gl.sln`:
+Spec #1 adds five new top-level project directories alongside the existing module directories. The Visual Studio solution `gl.sln` and the shared property sheet `common.props` live at the repo root:
 
 ```
-GLSRC/
+<repo root>/
 ├── gl.sln                  ← NEW — solution file
+├── common.props            ← NEW — shared compiler/linker settings (spec §7.1), imported by every project
 ├── include/                ← existing — added to every project's IncludePath
-├── gl/                     ← existing — Spec #1 modifies (App.cpp, ManilaGL, ports, res/)
+├── gl/                     ← existing — Spec #1 adds gl.vcxproj + new port sources (§2.4) next to src/ and header/
 ├── ap/                     ← existing — untouched in Spec #1
 ├── ar/                     ← existing — untouched in Spec #1
 ├── win32fx/                ← NEW (static lib) — Mini-framework
@@ -75,11 +82,13 @@ GLSRC/
 └── dbf2sqlite/             ← NEW (console EXE) — Thin CLI wrapper around dbf2sqlite_core
 ```
 
-**Include path:** all projects add `..\include` (relative to project) to `IncludePath`. The existing schema headers (`db_accts.h`, `db_acces.h` if present, future `db_*.h` from the M2 generator) live there; ports built in Spec #1 `#include "db_accts.h"` exactly as the original code does.
+**Include path:** every project adds `$(SolutionDir)include` and then `$(SolutionDir)gl\header` to `IncludePath`, in that order. The schema headers live in those two directories — `db_accts.h` and the other shared `db_*.h` in `include/`, `db_acces.h` in `gl/header/` — and future `db_*.h` from the M2 generator are written to `include/`. Ports built in Spec #1 `#include "db_accts.h"` exactly as the original code does. Because `include/` comes first, the copies of `glh.h`, `gl_pds.hpp` and `gl_prof.hpp` in `include/` win over the duplicates in `gl/header/`.
+
+**Legacy-header warnings:** the hand-written schema headers trip `/W4` warnings (e.g. C4100, the unused `LPSTR name` constructor parameter). Under `/WX` those would fail the build, so ports wrap legacy-header includes in `cb4sqlite/include/legacy_headers_begin.h` / `legacy_headers_end.h` (`#pragma warning(push)` + targeted disables / `pop`) instead of editing the headers.
 
 Static linking only. No DLLs. Single-exe distribution.
 
-**Build artifact layout:** all projects emit to `$(SolutionDir)x64\$(Configuration)\` (i.e., `GLSRC/x64/Debug/` or `GLSRC/x64/Release/`). Static libs land alongside EXEs; `gl.exe` references them by relative path during link.
+**Build artifact layout:** all projects emit to `$(SolutionDir)x64\$(Configuration)\` (i.e., `<repo root>/x64/Debug/` or `<repo root>/x64/Release/`; git-ignored). Static libs land alongside EXEs; `gl.exe` references them by relative path during link.
 
 ### 2.2 `win32fx/` (static lib)
 
@@ -106,39 +115,47 @@ win32fx/
 
 ```
 cb4sqlite/
-├── Code4.h/.cpp            — Database session
-├── Data4.h/.cpp            — Cursor (per-table sqlite3_stmt*)
-├── Field4.h/.cpp           — Field accessor
-├── Date4.h/.cpp            — Date helpers
-├── Schema.h/.cpp           — Table/column metadata
-├── Relate4set.h/.cpp       — Multi-cursor join helper
-├── Errors.h                — cb4sqlite::Error : std::runtime_error
-├── sqlite3.c / sqlite3.h   — Vendored amalgamation
-└── tools/
-    └── dbf2sqlite/         — Console EXE migration utility
-        ├── main.cpp
-        ├── DbfReader.h/.cpp     — Vendored BSD-licensed DBF reader
-        └── IndexTranslator.cpp  — .ndx/.cdx expression → ORDER BY
+├── include/
+│   ├── cb4sqlite.h         — Umbrella header (replaces d4all.hpp in ports)
+│   ├── cb4sqlite_compat.h  — _CLASSDEF no-op, r4eof, other CodeBase constants
+│   ├── legacy_headers_begin.h / legacy_headers_end.h — warning push/pop around legacy schema headers
+│   ├── Code4.h             — Database session
+│   ├── Data4.h             — Cursor (per-table sqlite3_stmt*)
+│   ├── Field4.h            — Field accessor
+│   ├── Date4.h             — Date helpers
+│   ├── Relate4set.h        — Multi-cursor join helper
+│   └── Errors.h            — cb4sqlite::Error : std::runtime_error
+├── src/                    — Code4/Data4/Field4/Date4/Schema/Relate4set .cpp (M0: stub_impl.cpp)
+├── test/parse_smoke.cpp    — M0 compile-only smoke test (built by cb4sqlite_tests)
+└── sqlite3.c / sqlite3.h   — Vendored amalgamation
 ```
+
+The migration tool is **not** under `cb4sqlite/`: it is split into `dbf2sqlite_core/` (static lib — DBF reader vendored at `dbf2sqlite_core/vendor/shapelib/`, index-expression translation, header generator; test fixtures at `dbf2sqlite_core/test/fixtures/`) and `dbf2sqlite/` (thin console EXE). See §4.5 and plan M2.
 
 ### 2.4 `gl/` (the EXE)
 
+New port code goes in `gl/port/` and new resources in `gl/res/`, kept apart from the legacy reference files in `gl/src/`, `gl/header/` and the legacy `gl/gl.rc` / `gl/gl_new.rc`:
+
 ```
 gl/
-├── App.cpp                  — WinMain, globals, init/shutdown
-├── ManilaGL.h/.cpp          — MDI frame subclass; menu/toolbar wiring
-├── Login.h/.cpp             — gl_acces.cpp port
-├── CompanyProfile.h/.cpp    — gl_profi.cpp port
-├── ChartOfAccounts.h/.cpp   — gl_accts.cpp port (TGLAcctsAdd/Delete)
-├── AccountList.h/.cpp       — gl_acctl.cpp port (TAccountList)
-├── stubs/
-│   ├── ReportingStubs.cpp   — "not yet ported" message boxes
-│   ├── ApStubs.cpp
-│   └── ArStubs.cpp
-└── res/
-    ├── gl.rc                — Pruned for Spec #1 (see §6)
-    ├── manifest.xml         — v6 common controls + per-monitor DPI v2
-    └── bitmaps/             — Extracted from original hex blobs
+├── gl.vcxproj               — NEW — Windows EXE project
+├── port/
+│   ├── App.cpp              — WinMain, globals, init/shutdown
+│   ├── ManilaGL.h/.cpp      — MDI frame subclass; menu/toolbar wiring
+│   ├── Login.h/.cpp         — gl/src/gl_acces.cpp port
+│   ├── CompanyProfile.h/.cpp — gl/src/gl_profi.cpp port
+│   ├── ChartOfAccounts.h/.cpp — gl/src/gl_accts.cpp port (TGLAcctsAdd/Delete)
+│   ├── AccountList.h/.cpp   — gl/src/gl_acctl.cpp port (TAccountList)
+│   └── stubs/
+│       ├── ReportingStubs.cpp — "not yet ported" message boxes
+│       ├── ApStubs.cpp
+│       └── ArStubs.cpp
+├── res/
+│   ├── gl.rc                — Pruned copy of gl/gl.rc for Spec #1 (see §6)
+│   ├── manifest.xml         — v6 common controls + per-monitor DPI v2
+│   └── bitmaps/             — Extracted from original hex blobs
+├── src/, header/            — legacy, reference only (not in gl.vcxproj)
+└── gl.rc, gl_new.rc         — legacy, reference only
 ```
 
 ### 2.5 Removed dependencies
@@ -366,7 +383,7 @@ Each `Data4` wraps one `sqlite3_stmt*`. `top()` / `bottom()` / `skip()` / `seek(
 
 Separate console executable; sources at `dbf2sqlite/`. Responsibilities:
 
-1. Parse `.dbf` header + records via a vendored BSD-licensed reader. **Default candidate: `libdbf`** (vendored as `dbf2sqlite/vendor/libdbf/`). Final library choice is an open question (§10).
+1. Parse `.dbf` header + records via a vendored permissively-licensed reader: **shapelib's `dbfopen.c`** (MIT licence option), vendored as `dbf2sqlite_core/vendor/shapelib/`. See §10 Q3.
 2. Generate `CREATE TABLE` from the DBF header (column types per §4.3).
 3. Bulk `INSERT` records inside one transaction.
 4. Parse the indexed expression from each `.ndx` / `.cdx` file. **Only the expressions used by the four Spec #1 tables are supported** — generalized expression evaluation is deferred.
@@ -388,7 +405,7 @@ dbf2sqlite.exe --src <dbf-dir>  --out <company.db>  [--table <name>]...  [--forc
 
 Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` destination write error, `4` schema/index translation error, `5` row-count verification mismatch.
 
-**Test fixture location:** `dbf2sqlite/test/fixtures/glaccts/` contains a 5-row chart-of-accounts `.dbf` plus its `.ndx` files. Originated as a hand-built fixture committed alongside the test (not derived from any production DB).
+**Test fixture location:** `dbf2sqlite_core/test/fixtures/glaccts/` contains a 5-row chart-of-accounts `.dbf` plus its `.ndx` files. Originated as a hand-built fixture committed alongside the test (not derived from any production DB).
 
 ### 4.6 Semantics & out of scope for Spec #1
 
@@ -485,8 +502,8 @@ Custom controls registering with their **original class names** means the dialog
 
 | Source file       | Header(s)             | Becomes                                     | Notes                                |
 |-------------------|-----------------------|---------------------------------------------|--------------------------------------|
-| `gl_accts.cpp`    | `gl_accts.h`, `gl_acct.h`, `glclass.h` | `ChartOfAccounts.h/.cpp`           | TGLAcctsAdd, TGLAcctsDelete; dialogs 1033 + 1032 |
-| `gl_acctl.cpp`    | `gl_acctl.h`, `gl_main.h`              | `AccountList.h/.cpp`               | TAccountList; dialog 1034            |
+| `gl/src/gl_accts.cpp` | `gl_accts.h`, `gl_acct.h`, `glclass.h`, `db_dept.h` (missing — §10 Q9) | `gl/port/ChartOfAccounts.h/.cpp` | TGLAcctsAdd, TGLAcctsDelete; dialogs 1033 + 1032; also opens `GLDEPT` via `Tgldept` |
+| `gl/src/gl_acctl.cpp` | `gl_acctl.h`, `gl_main.h`              | `gl/port/AccountList.h/.cpp`       | TAccountList; dialog 1034            |
 
 **DB:** `glaccts` table. The only CodeBase tag the Chart of Accounts ports actually use is **`"accounts"`** (verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`). `gl_acctl.cpp::TListWindow::SetFields` accepts a tag name from the caller (`szIndex`), but every Spec #1 caller of `TAccountList` passes the default; no DESCRIP-tag switch is exercised. Other tags on `glaccts` (if present in the original `.cdx`) are migrated for completeness by `dbf2sqlite` but are not required by Spec #1 acceptance.
 
@@ -559,7 +576,7 @@ The original code has **three error idioms** mixed together: return codes, `Mess
 | Layer | Required for #1 | Description |
 |-------|-----------------|-------------|
 | 1     | Yes             | `cb4sqlite_tests.exe` — **Catch2 v3 single-header**, vendored at `cb4sqlite_tests/vendor/catch2/`. Covers: open/close, append + round-trip, tag ordering, seek, navigation, soft-delete, padding-preserved compare. |
-| 2     | Yes             | `dbf2sqlite` integration test — runs the migration over the 5-row fixture at `dbf2sqlite/test/fixtures/glaccts/`, verifies result with `cb4sqlite` reads. Wired into the same `cb4sqlite_tests.exe` binary as a separate test case. |
+| 2     | Yes             | `dbf2sqlite` integration test — runs the migration over the 5-row fixture at `dbf2sqlite_core/test/fixtures/glaccts/`, verifies result with `cb4sqlite` reads. Wired into the same `cb4sqlite_tests.exe` binary as a separate test case. |
 | 3     | Yes             | Manual walkthrough of the 9 acceptance criteria from §6.7, signed off in writing. |
 | 4     | **No**          | UI automation (UIA / AutoIt / WinAppDriver) — heavyweight, deferred to AP/AR specs. |
 | 5     | **No**          | `win32fx` unit tests — proven indirectly by Chart of Accounts working and by the §6.7 #9 reusability example. Adding direct tests deferred. |
@@ -615,7 +632,8 @@ What is **not expected to change**:
 - **Size:** ~140 `.cpp` files, MDI architecture, three logical modules (GL, AP, AR).
 - **Resources:** `gl.rc` (~190 KB) + `gl_new.rc` (~233 KB), Borland Resource Workshop output, hex-embedded bitmaps, custom controls registered at runtime by `ToolBoxLoadDlls`.
 - **Stack to remove:** OWL, CodeBase 4, Crystal Reports Print Engine, CTL3D, BWCC, TBOWL/Toolbox DLLs, custom `string` class.
-- **Spec #1 source files:** `gl.cpp`, `gl_main.h`, `gl_acces.cpp`, `gl_profi.cpp`, `gl_accts.cpp` / `gl_accts.h`, `gl_acctl.cpp` / `gl_acctl.h`.
+- **Spec #1 source files:** `gl/src/gl.cpp`, `gl/header/gl_main.h`, `gl/src/gl_acces.cpp`, `gl/src/gl_profi.cpp`, `gl/src/gl_accts.cpp` / `gl/header/gl_accts.h`, `gl/src/gl_acctl.cpp` / `gl/header/gl_acctl.h`.
+- **Layout:** legacy GL sources live in `gl/src/` (`.cpp`) and `gl/header/` (`.h`) since commit `1606b78`; shared headers in `include/` at the repo root. See §2.1.
 
 ---
 
@@ -650,7 +668,7 @@ This section started as open questions during brainstorming. Most were resolved 
 
 2. **`glaccts` index tag names.** Verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`. The chart-of-accounts ports use exactly one tag: **`"accounts"`**. `dbf2sqlite` will migrate any other tags present on the source `.cdx` (so the SQLite database stays a faithful representation), but Spec #1 acceptance does not depend on them. See §6.5.
 
-3. **DBF reader library final choice.** **Decision: `libdbf`**, vendored under `dbf2sqlite/vendor/libdbf/`. Alternative `shapelib`/`dbfopen.c` retained as fallback if `libdbf` fails to handle the original `.cdx` layout. See §4.5.
+3. **DBF reader library final choice.** **Decision (revised 2026-11-06): shapelib `dbfopen.c` + `safileio.c` v1.6.3**, vendored under `dbf2sqlite_core/vendor/shapelib/`, used under its MIT licence option. The original choice, `libdbf`, was dropped during M0 vendoring: the GitHub repo the plan cited does not exist, and the real libdbf (SourceForge) is LGPL, not BSD, which is awkward for a statically linked single-exe distribution. shapelib reads `.dbf` only; `.ndx`/`.cdx` index-expression parsing stays our own code in `dbf2sqlite_core` (§4.5 item 4), as before. See `VENDORED.md`.
 
 4. **AP / AR menu items in the pruned `gl.rc`.** **Decision: keep MANILA menu items routing to AP/AR; AP and AR sub-menu definitions are excluded from the build.** Items 2210 (Accounts Payable...) and 1002 (Accounts Receivable...) on the MANILA File menu route to "not yet ported" stubs in `ApStubs.cpp` / `ArStubs.cpp`. The standalone `AP` and `AR` `MENU` resource definitions (lines 1457 and 1559 of `gl.rc`) are pruned.
 
@@ -660,7 +678,7 @@ This section started as open questions during brainstorming. Most were resolved 
 
 7. **Per-monitor DPI test display.** **Decision: 96-DPI only for Spec #1 acceptance.** The per-monitor v2 manifest still ships (cheap insurance against future hi-DPI hardware), but the §6.7 manual walkthrough runs on 96-DPI hardware only. High-DPI is documented as untested and caught in a later spec.
 
-8. **`db_accts.h` location.** **Resolved.** The header lives at `GLSRC/include/db_accts.h` (one directory up from the `gl/` mount point that maps to `/work` in this sandbox). It was not "missing" — the sandbox simply doesn't expose `GLSRC/include/`. Spec §2.1 now reflects the real top-level layout (`GLSRC/{include, gl, ap, ar}` plus the four new project dirs), and the build's `IncludePath` adds `..\include`. The hand-written header is authoritative. Verified `Tglaccts` shape: 44 fields (accounts/dept/descript/fdescript/type/curr_bal/category + budget1..12 + period1..12 + openbal + previous1..12), plus `dPeriod()`/`UpdateAccount()` member methods (defined in `ap_post.cpp` — not link-required for Spec #1 since unused). M2's generator emits `db_<table>.h` only for tables lacking a hand-written header.
+8. **`db_accts.h` location.** **Resolved.** The header lives at `<repo root>/include/db_accts.h` (an identical copy is in `common/`). `db_acces.h` lives at `gl/header/db_acces.h`. Spec §2.1 reflects the real top-level layout, and the build's `IncludePath` adds `$(SolutionDir)include;$(SolutionDir)gl\header`. The hand-written header is authoritative. Verified `Tglaccts` shape: 44 fields (accounts/dept/descript/fdescript/type/curr_bal/category + budget1..12 + period1..12 + openbal + previous1..12), plus `dPeriod()`/`UpdateAccount()` member methods (defined in `ap_post.cpp` — not link-required for Spec #1 since unused). M2's generator emits `db_<table>.h` only for tables lacking a hand-written header.
 
 ### Still open
 
@@ -672,4 +690,6 @@ This section started as open questions during brainstorming. Most were resolved 
    - **Paint / erase**: themed default; escalate to owner-draw only if visual gap.
 
    Open question: is the above sufficient, or are there concealed message-flow dependencies (e.g., subclass thunks that swallow specific WM_*)? Decide by porting and observing.
+
+9. **`db_dept.h` / `Tgldept`.** **Resolved 2026-11-06.** It was missing from `include/`; the user recovered it in an archive unpacked into `ar/`, and it is now `include/db_dept.h` (copied unchanged from `ar/DB_DEPT.H`): `class Tgldept : public Data4` on table `gldept`, tag `depart`, fields `depart` and `descript`. That matches its use in `gl/src/gl_accts.cpp:12,233`, and it compiles against the M0 shim. Nine more missing headers came from the same source (`db_arbtc`, `db_ardst`, `db_btch`, `db_btchd`, `db_cust`, `db_dist`, `db_itemm`, `db_medrp`, `db_srce`). **Caution:** the `ar/` tree is an *older* snapshot. Its copies of headers already in `include/` differ (e.g. `ar/DB_ACCTS.H` lacks `category` and uses 1-based field indexes), so the `include/` versions remain authoritative and only missing headers were taken from `ar/`. Still missing (non-Spec #1): `db_acct.h`, `db_alloc.h`, `db_arjsm.h`, `db_distd.h`, `db_fa.h`, `db_glopn.h`, `db_index.h`, `db_xacct.h`.
 

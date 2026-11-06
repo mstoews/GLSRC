@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  common.props - shared build settings for every project in gl.sln (spec 7.1).
+
+  Each .vcxproj imports this from its "PropertySheets" ImportGroup, i.e. after
+  Microsoft.Cpp.props, so the IncludePath below can extend the toolset's default.
+  Per-project files keep only what differs: ConfigurationType, sources, references.
+
+  GlRoot is derived from this file's location rather than $(SolutionDir), so a
+  single project still builds correctly when invoked without the solution
+  (e.g. `msbuild cb4sqlite\cb4sqlite.vcxproj`).
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <GlRoot>$(MSBuildThisFileDirectory)</GlRoot>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutDir>$(GlRoot)x64\$(Configuration)\</OutDir>
+    <IntDir>$(GlRoot)x64\$(Configuration)\obj\$(ProjectName)\</IntDir>
+    <!--
+      Order matters (spec 2.1): the shim first, then the shared include/ tree,
+      then gl/header (db_acces.h lives there). include/ must precede gl/header
+      because glh.h, gl_pds.hpp and gl_prof.hpp exist in both.
+    -->
+    <IncludePath>$(GlRoot)cb4sqlite\include;$(GlRoot)include;$(GlRoot)gl\header;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <ConformanceMode>true</ConformanceMode>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Debug: static debug CRT; NDEBUG deliberately NOT defined so assert() stays live (spec 7.2). -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- Release: static CRT + hardening (/sdl above, /guard:cf, /DYNAMICBASE, /NXCOMPAT). -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalOptions>/guard:cf %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

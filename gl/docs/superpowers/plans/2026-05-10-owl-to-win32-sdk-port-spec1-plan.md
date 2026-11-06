@@ -4,6 +4,8 @@
 **Date:** 2026-05-10
 **Plan status:** Draft
 
+**Paths:** all paths are relative to the repo root (historically `GLSRC/`). Legacy GL sources are in `gl/src/` and `gl/header/` (moved in commit `1606b78`); shared headers in `include/`. See spec §2.1.
+
 This plan operationalizes the locked design in Spec #1. It assumes the design is final; if a milestone reveals a contradiction with the spec, **stop, fix the spec, then resume the plan** — do not silently diverge.
 
 ---
@@ -29,39 +31,39 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 ## Milestone 0 — Bootstrap
 
-**Goal:** All third-party code vendored. Visual Studio solution opens. Empty build of every project succeeds. `include/` directory wired into `IncludePath` so existing `db_*.h` headers compile against the cb4sqlite shim.
+**Goal:** All third-party code vendored. Visual Studio solution opens. Empty build of every project succeeds. `include/` and `gl/header/` wired into `IncludePath` so existing `db_*.h` headers compile against the cb4sqlite shim.
 
 ### Tasks
 
-1. **Confirm existing `include/` tree is intact** at `GLSRC/include/`. Spot-check files referenced by `gl_acctl.h` and friends:
+1. **Confirm existing `include/` tree is intact** at `<repo root>/include/`. Spot-check files referenced by `gl/header/gl_acctl.h` and friends:
    - `db_accts.h` (verified: 44 `Field4*` members for `Tglaccts`, plus convenience `dPeriod*`/`dBudget*`/`dPrevious*` doubles, `dPeriod()`, `UpdateAccount()`).
-   - Any other `db_*.h` referenced by `gl/*.cpp` `#include` lines. Run from `gl/`:
+   - Any other `db_*.h` referenced by `gl/src/*.cpp` / `gl/header/*.h` `#include` lines. Run from the repo root:
      ```bash
-     grep -hE '^#include "db_' *.cpp *.h | sort -u
+     grep -rhoiE '^\s*#\s*include\s*"db_[^"]+"' gl/src gl/header | sort -u
      ```
-     to enumerate the dependency surface. All listed headers must exist in `../include/`.
+     to enumerate the dependency surface. Each listed header must exist in `include/` or `gl/header/`. Headers needed by Spec #1 screens that are missing are recorded in spec §10 (see Q9, `db_dept.h`); missing headers for later modules are only logged.
 2. **Survey other shared `include/` headers** that ports may need: `tlist_w.h` (referenced by `gl_acctl.h:3`), `gl_lista.h` (referenced by `glclass.h:4`), `cstring.h` (custom string class to be retired), `tbowl.h` (custom controls — to be deleted), and any `*.h` `#include`d by `gl_accts.cpp`/`gl_acctl.cpp`. Note which are CodeBase-API-internal (replace via `cb4sqlite`), which are OWL-dependent (replace via `win32fx`), which are `.dbf` schema (keep).
 3. **Vendor third-party code.** Drop into the repo, no submodules:
    - SQLite amalgamation (`sqlite3.c`, `sqlite3.h`) → `cb4sqlite/`.
-   - libdbf BSD-licensed reader → `dbf2sqlite_core/vendor/libdbf/`.
-   - Catch2 v3 single-header → `cb4sqlite_tests/vendor/catch2/`.
+   - shapelib DBF reader (`dbfopen.c`, `safileio.c`, `shapefil*.h`; MIT option) → `dbf2sqlite_core/vendor/shapelib/` (spec §10 Q3).
+   - Catch2 v3 amalgamation → `cb4sqlite_tests/vendor/catch2/`. Catch2 supplies `main()`; `parse_smoke.cpp` has none.
 4. **Provide M0 stub `cb4sqlite/include/` headers** declaring `Code4`, `Data4`, `Field4`, `Date4`, `Relate4set` types **without bodies** — empty class declarations with the methods listed in spec §4.2 marked `= delete` or empty. Just enough that `db_accts.h`, `db_acces.h`, etc. parse cleanly. Real implementations land in M1.
-5. **Create `gl.sln` and the six `.vcxproj` files** at `GLSRC/gl.sln`. Project list per spec §2.1:
+5. **Create `gl.sln` and the six `.vcxproj` files** at `<repo root>/gl.sln`. Project list per spec §2.1:
    - `win32fx/win32fx.vcxproj` — static lib.
    - `cb4sqlite/cb4sqlite.vcxproj` — static lib.
    - `cb4sqlite_tests/cb4sqlite_tests.vcxproj` — console exe (links `cb4sqlite.lib` and `dbf2sqlite_core.lib`).
    - `dbf2sqlite_core/dbf2sqlite_core.vcxproj` — static lib (DBF parsing, schema generation, header generation).
    - `dbf2sqlite/dbf2sqlite.vcxproj` — console exe (thin CLI wrapper around `dbf2sqlite_core.lib`).
-   - `gl/gl.vcxproj` — Windows exe.
-6. **Apply project settings from spec §7.1** to every project:
+   - `gl/gl.vcxproj` — Windows exe (new sources under `gl/port/`; `gl/src/` is never added to the project).
+6. **Apply project settings from spec §7.1** to every project, via the shared `<repo root>/common.props` property sheet:
    - C++20, `/W4 /WX /permissive-`, defines `UNICODE`, `_UNICODE`, `WIN32_LEAN_AND_MEAN`, `NOMINMAX`.
-   - **`IncludePath` adds `$(SolutionDir)include`** so `#include "db_accts.h"` works unchanged.
+   - **`IncludePath` adds `$(SolutionDir)include;$(SolutionDir)gl\header`** (in that order) so `#include "db_accts.h"` and `#include "db_acces.h"` work unchanged.
    - Configurations `Debug|x64` and `Release|x64` only.
    - Static CRT (`/MT`).
    - Output dir: `$(SolutionDir)x64\$(Configuration)\`.
    - SQLite `.c` compiles with `SQLITE_THREADSAFE=0`, `SQLITE_OMIT_LOAD_EXTENSION=1`, `SQLITE_DEFAULT_FOREIGN_KEYS=1`.
    - Release adds `/DYNAMICBASE`, `/NXCOMPAT`, `/guard:cf`, `/sdl`.
-7. **Smoke-compile `db_accts.h`** standalone in a tiny `.cpp` (placed at `cb4sqlite/test/parse_smoke.cpp`) that does `#include "db_accts.h"` against the M0 stub headers. Verify the 44 `Field4*` initializations parse — full link is not required at this stage.
+7. **Smoke-compile `db_accts.h`** standalone in a tiny `.cpp` (placed at `cb4sqlite/test/parse_smoke.cpp`) that does `#include "db_accts.h"` against the M0 stub headers. Verify the 44 `Field4*` initializations parse — full link is not required at this stage. Legacy headers are included between `legacy_headers_begin.h` / `legacy_headers_end.h` so their `/W4` warnings (e.g. C4100) don't break `/WX` (spec §2.1).
 
 ### Exit criteria
 
@@ -134,7 +136,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 ### Tasks
 
-1. **Bring up the libdbf reader** in `dbf2sqlite_core/`. Confirm it reads the bundled fixture.
+1. **Bring up the shapelib DBF reader** (`DBFOpen` / `DBFGetFieldInfo` / `DBFReadStringAttribute`) in `dbf2sqlite_core/`. Confirm it reads the bundled fixture.
 2. **Implement migration core in `dbf2sqlite_core.lib`:**
    - Public API surface in `dbf2sqlite_core/include/Migrator.h`:
      ```cpp
@@ -151,7 +153,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
    - Emit `_cb_tags` row per source index (`tag_name = .ndx file basename or CDX tag id`, `order_by_sql = ORDER BY <expression>`).
    - **Emit a `CREATE INDEX` statement on the SQLite table for each tag's `order_by_sql`-able columns**, so navigation is index-backed (matters for performance in M5/M6 even if behavior is correct without).
 3. **Implement header generator in `dbf2sqlite_core` (`include/db_<table>.h`):**
-   - **Skip-policy enforcement:** before emission, the generator does `std::filesystem::exists(outDir / ("db_" + table + ".h"))`. If true → log `[skip] include/db_<table>.h (hand-written)` and return success for that table. **Skip-policy is not overridable by `--force`** (which only relaxes the index-expression rule). This is enforced at runtime, not by a hardcoded list.
+   - **Skip-policy enforcement:** before emission, the generator checks every directory on the schema include path (`include/` and `gl/header/`) — `std::filesystem::exists(dir / ("db_" + table + ".h"))`. If true → log `[skip] include/db_<table>.h (hand-written)` and return success for that table. **Skip-policy is not overridable by `--force`** (which only relaxes the index-expression rule). This is enforced at runtime, not by a hardcoded list.
    - For new headers, emit a `Data4`-derived class declaration.
    - Class name: `T<table>` lowercase (matches existing convention: `Tglaccts`, `TAccess`).
    - Each column → one `Field4*` member named lowercase per the dBase column name.
@@ -166,7 +168,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 - `dbf2sqlite.exe` migrates the 5-row fixture without errors.
 - Generator's emission is byte-for-byte stable (deterministic output) — re-running produces no diff.
 - All four Spec #1 tables (`glaccts`, `accessm`, `access.psw`, company-profile) round-trip through migration → cb4sqlite read with row-count and field-value verification.
-- Generator skips `include/db_accts.h` and `include/db_acces.h` (existing hand-written headers).
+- Generator skips `include/db_accts.h` and `gl/header/db_acces.h` (existing hand-written headers).
 - Generator is exercised end-to-end on at least one table that **lacks** a hand-written header (likely the company-profile table, depending on what's in `include/`); the generated header compiles standalone against `cb4sqlite`.
 - `CREATE INDEX` statements visible in the SQLite output for each migrated tag (verify via `.indexes <table>` in `sqlite3` shell).
 
@@ -213,11 +215,11 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 ### Tasks
 
-1. **Throwaway bitmap-extraction script** — Python or PowerShell. Reads `gl.rc` and `gl_new.rc`, writes each hex-embedded `BITMAP` block to `gl/res/bitmaps/<id>.bmp`.
+1. **Throwaway bitmap-extraction script** — Python or PowerShell. Reads `gl/gl.rc` and `gl/gl_new.rc`, writes each hex-embedded `BITMAP` block to `gl/res/bitmaps/<id>.bmp`.
 2. **Build the merged pruned `.rc`** per spec §6.2 table. Cherry-pick from both source files. Strip `LOADONCALL MOVEABLE DISCARDABLE`.
 3. **Add manifest** `gl/res/manifest.xml` — v6 common controls + per-monitor DPI v2.
 4. **Rewrite `BITMAP`** declarations to reference external `.bmp` files.
-5. **Verify vertical-toolbar bitmaps** referenced by the `MANILA` frame's manila-tab toolbar (the original "vertical toolbar" buttons) are in the pruned `.rc`. Cross-check against `gl_main.h`/`gl_toolb.h` for the bitmap IDs used; ensure each lands in `gl/res/bitmaps/`.
+5. **Verify vertical-toolbar bitmaps** referenced by the `MANILA` frame's manila-tab toolbar (the original "vertical toolbar" buttons) are in the pruned `.rc`. Cross-check against `gl/header/gl_main.h` / `gl/header/gl_toolb.h` (and `gl/src/gl_toolb.cpp`) for the bitmap IDs used; ensure each lands in `gl/res/bitmaps/`.
 6. **Smoke compile** `gl/res/gl.rc` standalone via `rc.exe` with `gl/res` as include path. Half-day buffer in the schedule for Borland-dialect rejection (spec risk #7).
 7. **`win32fx/controls/styles.md`** — create the empty file in M4 with placeholder structure. **Populated incrementally during M5 and M6** as `tb*` style bits force discovery; not a M4 deliverable beyond file creation.
 

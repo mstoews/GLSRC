@@ -1,0 +1,5 @@
+# Visual Studio build output (common.props: $(GlRoot)x64\$(Configuration)\)
+/x64/
+.vs/
+*.vcxproj.user
+*.aps
