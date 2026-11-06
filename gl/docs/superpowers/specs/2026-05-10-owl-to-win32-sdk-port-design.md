@@ -117,7 +117,8 @@ win32fx/
 cb4sqlite/
 ├── include/
 │   ├── cb4sqlite.h         — Umbrella header (replaces d4all.hpp in ports)
-│   ├── cb4sqlite_compat.h  — _CLASSDEF no-op, r4eof, other CodeBase constants
+│   ├── cb4sqlite_compat.h  — _CLASSDEF no-op, r4*/e4* return codes, field-type constants
+│   ├── Schema.h            — FieldDef/TagDef/TableInfo, createTable/createTag (shared with dbf2sqlite_core)
 │   ├── legacy_headers_begin.h / legacy_headers_end.h — warning push/pop around legacy schema headers
 │   ├── Code4.h             — Database session
 │   ├── Data4.h             — Cursor (per-table sqlite3_stmt*)
@@ -125,7 +126,8 @@ cb4sqlite/
 │   ├── Date4.h             — Date helpers
 │   ├── Relate4set.h        — Multi-cursor join helper
 │   └── Errors.h            — cb4sqlite::Error : std::runtime_error
-├── src/                    — Code4/Data4/Field4/Date4/Schema/Relate4set .cpp (M0: stub_impl.cpp)
+├── src/                    — Code4/Data4/Field4/Field4_win32/Date4/Schema/Relate4set .cpp + Internal.h/.cpp
+├── README.md               — semantics, method coverage, compile-only stubs
 ├── test/parse_smoke.cpp    — M0 compile-only smoke test (built by cb4sqlite_tests)
 └── sqlite3.c / sqlite3.h   — Vendored amalgamation
 ```
@@ -260,95 +262,29 @@ This is intentional: the shim grows organically as later specs port more screens
 
 ### 4.2 API surface required by Spec #1
 
-The shim mirrors the relevant subset of CodeBase 4 (headers vendored from the original install at `vendor/codebase4/`; no public docs available — surface is reverse-engineered from `d4all.hpp` as ports demand). Sketch of the C++ types:
+The shim mirrors the subset of CodeBase 4 that the Spec #1 sources call. **The original CodeBase headers are in `include/` (`d4data.hpp`, `d4defs.h`, `e4expr.h`) and are the reference for signatures, return codes and behaviour.** An earlier sketch here was written before those headers were consulted and was replaced in M1. See §4.7 for what changed.
 
-```cpp
-namespace cb4sqlite {
+**Implemented surface** (authoritative: `cb4sqlite/include/*.h`; semantics and test coverage: `cb4sqlite/README.md`):
 
-class Code4 {
-public:
-    Code4();
-    ~Code4();
-    int  open(std::wstring_view dbPath);   // 0 on success
-    void closeAll();
-    void initUndo();
-    sqlite3* handle() noexcept;            // raw handle for tools/tests
-};
+| Class | Methods |
+|---|---|
+| `Code4` | `open(path, create=false)` *(new)*, `close()` *(new)*, `isOpen()`, `closeAll()`, `init()`, `initUndo()`, `handle()`, `errorCode` |
+| `Data4` | ctor `(Code4*` or `Code4&, const char* table)`; `top`, `bottom`, `skip(n=1)`, `go(rec)`, `seek(const char*)`, `seek(double)`, `eof`, `bof`, `recNo`, `recCount`; `SetIndex(tag)`, `select()`; `appendStart`, `append`, `appendBlank`, `blank`, `flush`, `deleteRec`, `recall`, `deleted`, `pack`, `zap`; `numFields`, `fieldNumber`, `isValid`, `close`, `unlock` |
+| `Field4` | ctors `()`, `(Data4&, int fieldNo)`, `(Data4&, const char* name)`, `init(...)`; `str`, `ptr`, `num`, `len`, `decimals`, `type`, `name`, `number`, `isValid`; `assign(const char*)`, `assignDouble(d, newLen=-1, nDec=-1)`, `assignLong(l, newLen=-1, zerosInFront=0)`, `trim`; Windows: `SetField(HWND, UINT)`, `AssignField(HWND, UINT)` |
+| `Date4` | `Date4()`, `Date4(const char*)`; `today()` (non-static, as CodeBase), `assign`, `str`, `ptr`, `len`, `year`, `month`, `day` |
+| `Relate4set` | ctor `(Data4*` or `Data4&)`; `querySet(expr=nullptr)`, `top`, `bottom`, `skip(n=1)`, `eof`, `unlock`, `free` |
+| `Schema.h` | `createTable`, `createTag`, `loadTableInfo`, `ensureMetaTables`, `normaliseTableName`, `quoteIdent` (shared with `dbf2sqlite_core`) |
+| free functions | `Str4ptr(const char*)`, `Str4long(const char*)` (in CodeBase `Str4ptr` was a class; every call site is `double(Str4ptr(x))`) |
+| constants | `r4success 0, r4found 1, r4after 2, r4eof 3, r4bof 4, r4entry 5`; `e4*` error codes; field types `r4str 'C', r4num 'N', r4float 'F', r4date 'D', r4log 'L', r4memo 'M'`, with values copied from `d4defs.h` / `e4expr.h` |
+| global | `extern cb4sqlite::Code4 cb;` at global scope, *defined* in `gl/port/App.cpp` (M5) |
 
-class Data4 {
-public:
-    Data4(Code4& env, std::wstring_view tableName);
-    ~Data4();
-    int  top();         int  bottom();      int  skip(long n);
-    int  seek(const char* key);             // ANSI string seek (matches original calls; UTF-8 internally)
-    int  seek(long recordNumber);           // overload for numeric seek (used by AP/AR; harmless for #1)
-    int  append();      int  flush();       // see §4.6 for flush semantics
-    long recCount() noexcept;
-    long recNo()    noexcept;
-    bool eof()      noexcept;
-    int  numFields() const noexcept;
-    int  SetIndex(const char* tagName);
-    int  go(long recordNumber);             // direct positioning (used by TAccountList::HandleListBox)
-    bool isValid() const noexcept;          // false when the table failed to open (used by per-table ctors)
-    void close();
-};
+`SetField` / `AssignField` aren't CodeBase methods. They come from the application's own `Field : Field4` class (`gl/src/gl_field.cpp`), and the shim puts them on `Field4` so call sites like `glaccts->accounts->SetField(HWindow, ID)` compile unchanged.
 
-class Field4 {
-public:
-    Field4(Data4& d, int index);                  // 1-based index — matches original
-    Field4(Data4& d, const char* name);
-    const char*  str()  const;                    // returns pointer into row buffer; lifetime = until next nav
-    double       num()  const;
-    long         len()  const noexcept;
-    const char*  name() const noexcept;
-    int  assign(const char* value);
-    int  assign(double value);
-    int  assignDouble(double value);               // explicit-double overload (used by gl_budgt.cpp)
-    int  SetField(HWND hParent, UINT controlId);   // copies field value into a child edit control
-    int  AssignField(HWND hParent, UINT controlId);// reads child edit control value back into the field
-    bool isValid() const noexcept;
-};
-
-class Date4 {
-public:
-    static Date4 today();
-    std::wstring str() const;             // "YYYYMMDD"
-};
-
-class Relate4set {                         // surface used by gl_acctl::TListWindow::Redraw
-public:
-    Relate4set(Data4* parent);
-    int  querySet(const char* expression);  // dBase predicate; spec #1 supports literal-only (e.g. ".NOT. DELETED()")
-    int  top();
-    int  skip(long n);                      // returns r4eof at end (constant: -22 to match original)
-    bool eof() const noexcept;
-    void unlock();                          // no-op in spec #1 (no locking)
-    void free();                            // releases the cursor early
-};
-
-extern Code4 cb;                            // global Code4 instance, mirrors original `cb` in App.cpp
-
-// CodeBase utility helpers used throughout original source
-inline double Str4ptr(const char* s) noexcept {
-    return (s && *s) ? std::atof(s) : 0.0;
-}
-inline long   Str4long(const char* s) noexcept {
-    return (s && *s) ? std::atol(s) : 0L;
-}
-
-} // namespace cb4sqlite
-
-// The original code calls Str4ptr/Str4long unqualified at global scope.
-// To keep ports' diff small, expose them in the global namespace too:
-using cb4sqlite::Str4ptr;
-using cb4sqlite::Str4long;
-```
-
-Methods not listed here throw `cb4sqlite::Error("not implemented in spec #1: <method>")`.
+Methods not listed here don't exist in the shim: a call site that needs one fails to compile and is ported, or the shim grows (§4.1). Listed methods that hit an unsupported case (an unknown `querySet` expression, a ranged `zap`) throw `cb4sqlite::Error("… not implemented in spec #1 …")`.
 
 **Per-table subclasses — hand-written authoritative.** The original code uses subclasses like `Tglaccts : public Data4` with named `Field4*` members (`accounts`, `dept`, `descript`, `budget1..budget12`, `previous1..previous12`, `period1..period12`, `openbal`, `curr_bal`, `category`, `type`, `fdescript`). Those subclasses live in `include/db_*.h` headers and are **hand-written, authoritative, and kept as-is**. The verified shape of `Tglaccts` (44 fields, plus convenience methods like `Open_bal()`, `dPeriod1..12()`, `dBudget1..12()`, `dPrevious1..12()`, `dPeriod(account, dept, period)`, `UpdateAccount(seek, period, debit, credit)`) is the ground truth for Spec #1.
 
-**Field constructor pattern.** The hand-written headers use the **string-name-based** `Field4` ctor: `new Field4(*(Data4*)this, "account")` — not 1-based index. The shim's Field4 must support both forms (per §4.2 declaration above), but the column-name form is the dominant pattern for new headers.
+**Field constructor pattern.** `db_accts.h` and `db_dept.h` use the name-based `Field4` ctor (`new Field4(*(Data4*)this, "account")`); `db_acces.h` uses 1-based field numbers. The shim supports both; the generator (M2) emits the name form.
 
 **Methods declared on per-table subclasses but defined elsewhere.** Some convenience methods on `Tglaccts` (e.g., `dPeriod(...)`, `UpdateAccount(...)`) are declared in `db_accts.h` but defined in module-specific .cpp files (`ap_post.cpp`). Spec #1 does **not** invoke them, so the Spec #1 build does not link them. The headers compile cleanly without those .cpp files.
 
@@ -372,12 +308,14 @@ This policy preserves hand-tuned helpers (`dPeriod`, `Open_bal`, etc.) while fil
   - `Numeric`   → `REAL` or `INTEGER` (decided per field at migration time)
   - `Date`      → `TEXT('YYYYMMDD')`
   - `Logical`   → `INTEGER` (0/1)
-- Indexes: each `.ndx` / `.cdx` becomes a `CREATE INDEX` statement. A metadata table `_cb_tags(table_name, tag_name, order_by_sql)` maps `SetIndex()` calls to ORDER BY clauses.
-- **`seek` key-padding rule.** When `Data4::seek(const char* key)` is called, the key is right-padded with spaces to the declared width of the active tag's leading column before comparison (matching CodeBase semantics). Example: column `account CHAR(7)`, call `seek("100")` → padded to `"100    "`, matches a stored value of `"100    "`. Equality compare is on the right-padded form. M1 unit tests verify this exact behavior.
+  - Blank numeric, date and logical values are stored as NULL.
+- Field metadata: `_cb_fields(table_name, field_no, field_name, type, len, dec)` records each field's dBase type, declared width and decimals in record order. `Field4::len()/type()/decimals()`, padding and number formatting come from it.
+- Indexes: each `.ndx` / `.cdx` tag becomes a row in `_cb_tags(table_name, tag_name, key_expr)`. `key_expr` is an SQL expression that reproduces the dBase key; for `ACCOUNT+DEPT` it is `account || dept`, which is byte-identical to the dBase key because character columns are stored padded. `createTag` also creates `CREATE INDEX <table>__<tag> ON <table> ((key_expr), _rowid)`. (This replaced an earlier `order_by_sql` column: a single key expression is what both ordering and `seek` need.)
+- **`seek` rule (CodeBase partial-key match).** `Data4::seek(const char* key)` finds the first record whose tag key is `>= key`. It returns `r4success` if that key *starts with* `key`, `r4after` otherwise (positioned on it), and `r4eof` if there is none. Example: key `account || dept`, stored `"100    01"`; `seek("100")`, `seek("100    ")` and `seek("100    01")` all return `r4success`. The earlier "pad to the leading column, then compare for equality" rule is a special case of this, and the M1 tests cover both.
 
 ### 4.4 Cursor model
 
-Each `Data4` wraps one `sqlite3_stmt*`. `top()` / `bottom()` / `skip()` / `seek()` re-prepare the statement with the appropriate ORDER BY / WHERE clause. Expensive in raw operations-per-second, but transparent to ported code and well under interactive thresholds for the Chart of Accounts dataset.
+Each navigation runs one keyset query: `SELECT … WHERE ((key_expr), _rowid) > (?current_key, ?current_rowid) ORDER BY (key_expr), _rowid LIMIT 1 OFFSET n-1` (reversed for backward moves). The `Data4` keeps the current record's key value between calls. Statements are prepared per call. That costs some raw throughput, but every query uses the `(key_expr, _rowid)` index, and it's far below interactive thresholds for the Chart of Accounts dataset.
 
 ### 4.5 `dbf2sqlite` migration tool
 
@@ -409,7 +347,7 @@ Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` desti
 
 ### 4.6 Semantics & out of scope for Spec #1
 
-**`Data4::flush()` semantics in Spec #1:** every `append()` and field-`assign()` is committed to SQLite immediately as part of an implicit per-statement transaction. `flush()` is therefore a no-op in the success path and exists only so call sites that invoke it for compat compile cleanly. Future specs that introduce explicit batching may make `flush()` issue an explicit `COMMIT`.
+**Write semantics (revised in M1, see §4.7):** CodeBase's record-buffer model is kept. `Field4::assign*()` edits the in-memory record. The record is written by `flush()`, or automatically before the cursor moves (`top`/`skip`/`seek`/`go`/`SetIndex`/`appendStart`/`close`), which is when CodeBase wrote a changed record. Each write is one autocommitted `UPDATE`/`INSERT`. The Spec #1 screens depend on this: `seek(); assign…; flush()` to modify, and `appendStart(); assign…; append()` to add.
 
 **Out of scope for Spec #1:**
 
@@ -418,6 +356,29 @@ Exit codes: `0` success, `1` invalid arguments, `2` source read error, `3` desti
 - Memo fields.
 - Custom dBase expression evaluator (only literal expressions used by Spec #1 tables are supported).
 - Write-back to `.dbf` (the migration is intentionally one-way).
+
+### 4.7 M1 decisions: CodeBase semantics over the original sketch
+
+Found during M1 (2026-11-06) by reading the CodeBase headers in `include/` alongside the Spec #1 call sites. Each item replaces what the earlier sketch / plan said:
+
+| Topic | Earlier sketch / plan | Implemented (CodeBase behaviour) | Why it matters |
+|---|---|---|---|
+| Return codes | `r4eof = -22` | `r4success 0, r4found 1, r4after 2, r4eof 3, r4bof 4, r4entry 5` (`d4defs.h`) | ported code compares against these |
+| `append()` | inserts an all-NULL row | `appendStart()` → assign → `append()` inserts the buffer; `appendStart()` keeps the current buffer (`blank()` clears) | `gl_acces.cpp`, `gl_profi.cpp`, `gl_accts.cpp` all use this sequence |
+| Writes | each `assign` commits immediately; `flush()` no-op | record buffer, written on `flush()` or the next move (§4.6) | `seek; assign; flush` modify pattern |
+| `seek` | pad to leading column, compare for equality | partial-key match on the full tag key; `r4after` / `r4eof` on a miss (§4.3) | `gl_accts.cpp` seeks `account + dept`; `gl_profi.cpp` seeks a trimmed key |
+| Deleted records | skipped by navigation, excluded from `recCount` | visible and counted; `.NOT. DELETED()` filters; `pack()` removes | the legacy code always calls `pack()` after `deleteRec()`, and filters with `.NOT. DELETED()` |
+| Tag metadata | `_cb_tags.order_by_sql` | `_cb_tags.key_expr`, plus a new `_cb_fields` table | seek and ordering need the key value; padding/formatting need widths |
+| `Field4::assign(double)` | provided | removed; `assignDouble` / `assignLong` as in CodeBase | `assign(0)` would have been ambiguous |
+| `seek(long recNo)` | numeric record seek | `seek(double)` numeric *key* seek, as CodeBase; `go(recNo)` positions by record | — |
+| `Date4` | `static today()`, `std::wstring str()` | `void today()`, `const char* str()` | `Date4 d; d.today(); f.assign(d.str());` in `gl.cpp` |
+| `Code4::closeAll()` | closes the connection | closes every `Data4`, keeps the connection; new `Code4::close()` closes it | the legacy `closeAll(); init(); reopen` pattern |
+| Journal mode | WAL | `DELETE` | one file, so the legacy file-copy backup stays consistent |
+| `Relate4set` query | — | also accepts `!DELETED()`; anything else throws | `gl_acctl.cpp` reads the query from `GLDR.INI` (plan risk P4) |
+
+**One behaviour verified only against CodeBase's documented API, not by running the original:** `appendStart()` keeping the previous record's buffer. `gl_accts.cpp` zeroes only numeric fields after `appendStart()` and doesn't assign `category`, so new accounts inherit `category` from the record the cursor was on. That is faithful to CodeBase but may be a latent bug in the original; check it during the M6 Chart of Accounts walkthrough.
+
+**Encoding risk for M2:** dBase widths are bytes in the original code page. Japanese installs (`eiwa/`) store Shift-JIS, where a kanji is 2 bytes; in UTF-8 it is 3. A migrated value can therefore exceed its declared width. The shim truncates without splitting a character, so `dbf2sqlite` must widen character fields (or report the overflow) when converting non-ASCII data.
 
 ---
 

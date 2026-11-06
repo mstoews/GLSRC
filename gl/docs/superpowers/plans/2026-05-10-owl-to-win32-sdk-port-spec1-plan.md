@@ -78,6 +78,8 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** All five shim classes work against a hand-built SQLite database, demonstrated by Catch2 unit tests.
 
+> **As built (2026-11-06):** the tasks below are the original plan. Reading the CodeBase headers in `include/` and the Spec #1 call sites showed several of them contradict real CodeBase behaviour: return-code values, the append sequence, the write model, seek matching, deleted-record visibility, and tag metadata. The implementation follows CodeBase, and spec §4.7 lists every deviation. `cb4sqlite/README.md` has the resulting semantics and the method-coverage table required by the exit criteria.
+
 ### Tasks
 
 1. **Implement `Code4`** (open / closeAll / initUndo / handle).
@@ -117,7 +119,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
    - Append + read back via every `Field4` accessor type.
    - Tag ordering: build `_cb_tags` row, verify `top()/skip()` order.
    - `seek` exact / not-found.
-   - Soft-delete (`_deleted=1` skipped by navigation, counted out by `recCount`).
+   - Soft-delete. *As built:* deleted records stay visible and counted, as in CodeBase; `.NOT. DELETED()` filters them and `pack()` removes them (spec §4.7).
    - Padding-preserved compare (TEXT trailing spaces preserved).
    - Stretch goal: thread-safety smoke (single-thread only — confirm `SQLITE_THREADSAFE=0` doesn't crash in the cb code path).
 
@@ -150,8 +152,9 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
    - Parse DBF header → emit `CREATE TABLE` (column types per spec §4.3, **right-pad CHAR values to declared width on insert**).
    - Bulk-insert records inside one transaction.
    - Read `.ndx` / `.cdx` files; parse the indexed expression. Spec #1 supports literal expressions only — `.NOT. DELETED()` and bare column references. Anything else: `--force` overrides with a warning, otherwise abort with exit 4. **`--force` does NOT override the header skip-policy** — hand-written headers are always preserved.
-   - Emit `_cb_tags` row per source index (`tag_name = .ndx file basename or CDX tag id`, `order_by_sql = ORDER BY <expression>`).
-   - **Emit a `CREATE INDEX` statement on the SQLite table for each tag's `order_by_sql`-able columns**, so navigation is index-backed (matters for performance in M5/M6 even if behavior is correct without).
+   - **Create tables and tags through `cb4sqlite::createTable` / `createTag`** (`cb4sqlite/include/Schema.h`, built in M1). They write `_cb_fields` (dBase type, width, decimals per field) and `_cb_tags` (`tag_name = .ndx file basename or CDX tag id`, `key_expr`), and create the `(key_expr, _rowid)` index, so navigation is index-backed.
+   - **Translate each dBase index expression to `key_expr`:** field references → column names, `+` → `||` (character columns are stored padded, so the concatenation matches the dBase key byte for byte), `UPPER(x)` → `upper(x)`. Anything else: `--force` skips the tag with a warning, otherwise exit 4.
+   - **Encoding:** convert character data from the source code page to UTF-8. Where a converted value exceeds the field's byte width (Shift-JIS → UTF-8 for `eiwa/` data), widen the field in `_cb_fields` and report it; never truncate silently (spec §4.7).
 3. **Implement header generator in `dbf2sqlite_core` (`include/db_<table>.h`):**
    - **Skip-policy enforcement:** before emission, the generator checks every directory on the schema include path (`include/` and `gl/header/`) — `std::filesystem::exists(dir / ("db_" + table + ".h"))`. If true → log `[skip] include/db_<table>.h (hand-written)` and return success for that table. **Skip-policy is not overridable by `--force`** (which only relaxes the index-expression rule). This is enforced at runtime, not by a hardcoded list.
    - For new headers, emit a `Data4`-derived class declaration.
@@ -170,7 +173,7 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 - All four Spec #1 tables (`glaccts`, `accessm`, `access.psw`, company-profile) round-trip through migration → cb4sqlite read with row-count and field-value verification.
 - Generator skips `include/db_accts.h` and `gl/header/db_acces.h` (existing hand-written headers).
 - Generator is exercised end-to-end on at least one table that **lacks** a hand-written header (likely the company-profile table, depending on what's in `include/`); the generated header compiles standalone against `cb4sqlite`.
-- `CREATE INDEX` statements visible in the SQLite output for each migrated tag (verify via `.indexes <table>` in `sqlite3` shell).
+- An index `<table>__<tag>` exists for each migrated tag (verify via `.indexes <table>` in the `sqlite3` shell), and `_cb_fields` / `_cb_tags` rows match the source `.dbf` / index files.
 
 ---
 
