@@ -42,12 +42,31 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="port\Company.h" />
+    <ClInclude Include="port\CompanyProfile.h" />
+    <ClInclude Include="port\Globals.h" />
+    <ClInclude Include="port\Ini.h" />
+    <ClInclude Include="port\LegacyIds.h" />
+    <ClInclude Include="port\Login.h" />
+    <ClInclude Include="port\MainDialog.h" />
+    <ClInclude Include="port\ManilaGL.h" />
     <ClInclude Include="port\ResourceCheck.h" />
+    <ClInclude Include="port\Tables.h" />
+    <ClInclude Include="port\stubs\Stubs.h" />
     <ClInclude Include="res\resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="port\App.cpp" />
+    <ClCompile Include="port\Company.cpp" />
+    <ClCompile Include="port\CompanyProfile.cpp" />
+    <ClCompile Include="port\Ini.cpp" />
+    <ClCompile Include="port\Login.cpp" />
+    <ClCompile Include="port\MainDialog.cpp" />
+    <ClCompile Include="port\ManilaGL.cpp" />
     <ClCompile Include="port\ResourceCheck.cpp" />
+    <ClCompile Include="port\stubs\ApStubs.cpp" />
+    <ClCompile Include="port\stubs\ArStubs.cpp" />
+    <ClCompile Include="port\stubs\ReportingStubs.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res\gl.rc">

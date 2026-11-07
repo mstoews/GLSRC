@@ -1,8 +1,8 @@
 //
 // MdiFrame.cpp - see MdiFrame.h.
 //
-// Menu merge (plan M5; spec 10 Q5). Where it goes: a subclass overrides
-// OnMdiChildActivate(child). Merge points, from the legacy code:
+// Menu merge (spec 10 Q5). A subclass overrides OnMdiChildActivate(child);
+// gl/port/ManilaGL.cpp does (plan M5). Merge points, from the legacy code:
 //   - frame menu MANILA (HGLMenu, loaded in WinMain); its Window menu is
 //     submenu 7 (TManilaGL: ChildMenuPos = 7), passed to CreateFrame;
 //   - a GL child brings the GLE menu (HGLExMenu); GLSUB is the right-click

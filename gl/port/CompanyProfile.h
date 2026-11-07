@@ -1,0 +1,27 @@
+//
+// CompanyProfile.h - port of gl/src/gl_profi.cpp (plan M5 task 5).
+//
+//   CompanyProfile   TGLProfile, dialog 1021 (File > Company Profile): the
+//                    gl_prof record, the fiscal-year dates from gl_pds, the
+//                    data location and GL.INI [WITHHOLDING] TAX.
+//   SetPeriodDates   TGLSetPeriodDates, dialog 1028 (Profile > Periods).
+//   SetAccounts      TGLSetAccounts, dialog 1033 (Profile > Accounts): the
+//                    eight GL control accounts in gl_setat (TYPE="GL").
+//   CashAccounts     TAPCashAccts, dialog 1034 (Accounts > Cash): the bank
+//                    accounts in gl_setat (TYPE="CA").
+//
+// Not ported:
+//   - TAPCashAcctsList (dialog 1011), the account list beside dialog 1034:
+//     it is a tbSpread grid. Dialog 1034 works without it; you type the
+//     account, and double-clicking the dialog steps to the next one.
+//   - TGLProfile::GetCalc. A right-click on Company Profile asked "Not
+//     fooling around here..." and, on Yes, zapped every table listed in the
+//     `clear` table and zeroed every balance in glaccts. It is a destructive
+//     tool outside Spec #1 and has no menu item; it is left out on purpose.
+//
+#pragma once
+
+#include <Windows.h>
+
+// Returns the dialog result: IDOK after Save, IDCANCEL after Close.
+INT_PTR RunCompanyProfile(HWND frame);

@@ -268,6 +268,31 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** `gl.exe` launches, user can log in, status bar shows company name and accounting period, AP/AR/Reporting menu items show "not yet ported."
 
+> **As built (2026-11-07):** `gl/README.md` describes what runs. Spec §2.4, §4.3, §5.4, §6.7 #1 and §10 Q5 were corrected to match the original code. Where M5 differs from the tasks below:
+> - **Task 1, startup order.** The original created the frame first. It then posted `ID_SYSACCESS` for the login, and only when `GL.INI [ACCESS] PSW=T`; the real company's `GL.INI` has `PSW=F`, so it never logged in. Company Profile opened only from the File menu. The port does the same: `GLDR.INI` → open `cb` → load menus → frame → login if `PSW=T`.
+>   - The `GL` accelerator table is not loaded. The original never loaded it, and it maps Tab to Print.
+>   - A second `gl.exe` brings the first to the front, as `hPrevInstance` did.
+> - **Task 2.** The fixture is `gl/test/dev-fixture/`:
+>   - `make_dev_fixture.py` writes `dbf/`, the real tables' layouts and tags with made-up rows.
+>   - `setup.cmd <Config>` migrates them to `x64\<Config>\dev.db` and copies `GLDR.INI` and `GL.INI` beside `gl.exe`.
+>   - Users: ADMIN/ADMIN sees everything; CLERK/clerk has the Maintenance menu grayed.
+>
+>   No bypass flag was needed. The real company directory has no `ACCESS.PSW`, `ACCESSL` or `ACCESSM`, so only the fixture can test the login.
+> - **Task 3.**
+>   - **Status bar:** the original's status line is the module bar 2057 (fields 3222 company, 3223 menu help, 3224 period). `HStatusBar` was never created. The port uses 2057 and no common-controls status bar.
+>   - **Menu merge:** the original swapped MANILA for GLE, with `WM_MDISETMENU`, only while the spreadsheet child (`gl_xls.cpp`) was active. GLSUB was the right-click popup. `ManilaGL` does the same for any child that calls `UseGleMenu`. See spec §10 Q5, revised.
+>   - **Stubs:** commands are routed by the legacy response tables: report handlers go to `ReportingStubs`, the `gl_man.h` AP/AR handlers to `ApStubs`/`ArStubs`, and the remaining GL commands get a general message. The lists are in `ManilaGL.cpp`.
+> - **Task 4.**
+>   - `gl_acces.cpp`'s `TGLAdministration` (1159, Maintenance > User Access) is ported too.
+>   - `TAccessMenus` (1160) is not: it is a `tbSpread` grid, and its button says so.
+>   - `db_acces.h` is used unchanged. Its constructors leak their `Field4`s, which the port's subclasses delete.
+> - **Task 5.**
+>   - The Company Profile children are ported too: Period Dates (1028), Account Setup (1033) and Cash Accounts (1034, without its `tbSpread` list 1011).
+>   - `TGLProfile::GetCalc` is left out on purpose. On a right-click it zapped every table listed in the `clear` table.
+>   - `gl_prof.hpp`/`gl_pds.hpp`/`gl_setat.hpp` don't compile as C++ (`open(Code4&)` has no return type), so `gl/port/Tables.h` re-declares them.
+> - **Task 7.** The INI files are read from the directory of `gl.exe`, not the Windows directory. `[GL_DIR] DIR` names the `.db` file, and `DRIVE` is ignored. UNC paths and mapped network drives are refused before the database is opened (`gl/port/Ini.cpp`).
+> - **Translation base.** `gl/port/MainDialog` ports the `TMainDialog` helpers (`GetField`, `SetField`, `GetDate`, `SetBitmap`, `Cancel`) that M6 reuses. `gl/port/LegacyIds.h` includes the legacy `gl.h`/`gl_manil.h`, so the original ID names stay.
+
 ### Tasks
 
 1. **`App.cpp`** — `WinMain`, `_tWinMain`. Sequence (order matters): (a) register custom controls via `win32fx::RegisterCustomControls()` — **must happen before any `LoadDialogW` or `DialogBoxParamW`**, since dialog templates reference `tbPic`/etc. by class name; (b) define and `open()` the global `cb` (`Code4`); (c) load `HGLMenu` via `LoadMenuW(hInst, L"MANILA")`, plus `GLE` and `GLSUB` menus, into respective `extern HMENU` globals; (d) load `GLDR.INI`; (e) drive login → profile → MDI frame.

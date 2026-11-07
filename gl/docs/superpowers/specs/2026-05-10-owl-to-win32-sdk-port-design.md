@@ -147,14 +147,23 @@ New port code goes in `gl/port/` and new resources in `gl/res/`, kept apart from
 ```
 gl/
 ├── gl.vcxproj               — NEW — Windows EXE project
+├── README.md                — build, first run, settings files
 ├── port/
 │   ├── App.cpp              — WinMain, globals, init/shutdown
+│   ├── Globals.h            — the original globals (§3.7)
+│   ├── LegacyIds.h          — the legacy ID headers (gl/header/gl.h, gl_manil.h); include last
+│   ├── Ini.h/.cpp           — GL.INI / GLDR.INI (§5.4)
 │   ├── ManilaGL.h/.cpp      — MDI frame subclass; menu/toolbar wiring
+│   ├── MainDialog.h/.cpp    — TMainDialog helpers, the base of the GL screens
 │   ├── Login.h/.cpp         — gl/src/gl_acces.cpp port
 │   ├── CompanyProfile.h/.cpp — gl/src/gl_profi.cpp port
+│   ├── Company.h/.cpp       — company name, current period, UpdateUserTime
+│   ├── Tables.h             — GL_PROF / GL_PDS / GL_SETAT (the legacy .hpp don't compile)
+│   ├── ResourceCheck.h/.cpp — gl.exe /checkres (plan M4)
 │   ├── ChartOfAccounts.h/.cpp — gl/src/gl_accts.cpp port (TGLAcctsAdd/Delete)
 │   ├── AccountList.h/.cpp   — gl/src/gl_acctl.cpp port (TAccountList)
 │   └── stubs/
+│       ├── Stubs.h
 │       ├── ReportingStubs.cpp — "not yet ported" message boxes
 │       ├── ApStubs.cpp
 │       └── ArStubs.cpp
@@ -164,6 +173,7 @@ gl/
 │   ├── manifest.xml         — v6 common controls + per-monitor DPI v2
 │   ├── bitmaps/, icons/     — Extracted from original hex blobs
 │   └── tools/prune_rc.py    — generates the four above
+├── test/dev-fixture/        — a made-up company to log in to (plan M5): make_dev_fixture.py, dbf/, setup.cmd, INIs
 ├── src/, header/            — legacy, reference only (not in gl.vcxproj)
 └── gl.rc, gl_new.rc         — legacy, reference only
 ```
@@ -318,7 +328,7 @@ This policy preserves hand-tuned helpers (`dPeriod`, `Open_bal`, etc.) while fil
 
 ### 4.3 Storage model
 
-- One SQLite file per company. Path comes from `GLDR.INI` exactly as before, but `.db` instead of a directory of `.dbf` files.
+- One SQLite file per company. Its path comes from `GLDR.INI` `[GL_DIR] DIR`, as before, but `DIR` now names the `.db` file instead of the directory of `.dbf` files (§5.4).
 - Each `.dbf` becomes one SQLite table:
   - `_rowid INTEGER PRIMARY KEY` replaces dBase recno.
   - `_deleted INTEGER NOT NULL DEFAULT 0` is the soft-delete flag.
@@ -456,7 +466,11 @@ Data-quality warnings in that directory are left to the owner: `***********` (dB
 
 ### 5.4 INI files
 
-Keep `GetPrivateProfileStringW` / `GetPrivateProfileIntW` for Spec #1. Microsoft has deprecated them, but they still work, have zero dependencies, and existing `GLDR.INI` files work as-is.
+Keep `GetPrivateProfileStringW` / `GetPrivateProfileIntW` for Spec #1. Microsoft has deprecated them, but they still work and have zero dependencies. Existing `GL.INI` files work as they are.
+
+*As built (M5), two changes (`gl/port/Ini.cpp`, `gl/README.md`):*
+- **Location.** The original passed bare names (`"GL.INI"`, `"GLDR.INI"`), so Windows read them from the Windows directory. The port reads them from the directory of `gl.exe`.
+- **`GLDR.INI [GL_DIR] DIR`.** It names the company database file, so an existing `GLDR.INI` needs that one line changed. A relative path is relative to `gl.exe`. `DRIVE` is ignored. A directory, a missing file or a network path stops `gl.exe` with a message.
 
 ### 5.5 Out of scope
 
@@ -568,7 +582,12 @@ Method bodies port near-verbatim with the §4 (DB) and §5 (string) transforms a
 
 ### 6.7 Acceptance criteria — 9 manual checks
 
-1. **Launch / chrome:** `gl.exe` launches and shows the MDI frame with: (a) the menu identical in label/order to the original GLE menu, (b) the vertical "manila" toolbar present on the left, (c) the status bar showing company name (from company-profile table) and current accounting period.
+1. **Launch / chrome:** `gl.exe` launches and shows the MDI frame with:
+   (a) the menu identical in label and order to the original MANILA menu;
+   (b) the toolbar along the top and the "manila" module bar along the bottom;
+   (c) the status line in the module bar, showing the company name (from the company-profile table) and the current accounting period.
+
+   *Corrected in M5:* the draft said the GLE menu, a toolbar on the left, and a separate status bar. The original frame menu is MANILA; GLE replaced it only while a spreadsheet child was active (§10 Q5). `TGlWindow::WMSize` puts the module bar 2057 at the bottom, and its fields are the status line: `HStatusBar` was never created.
 2. **Chart of Accounts navigation:** GL → Chart of Accounts opens dialog 1033; top / bottom / next / prev navigate `glaccts` rows in the `"accounts"` tag order (matches original; no other tags exercised by these ports).
 3. **Add:** Enter required fields (ACCT_NO, DESCRIP at minimum), click Add/Mod → row appears in SQLite (verify externally with `sqlite3 <co>.db "select * from glaccts"`).
 4. **Modify:** Navigate to a row, edit fields, click Add/Mod → row updated in SQLite (compare row before/after).
@@ -628,7 +647,7 @@ The original code has **three error idioms** mixed together: return codes, `Mess
 | 7 | Medium              | Borland `.rc` dialect rejection by Microsoft `rc.exe`.                                    | Half-day buffer in the schedule for "feed pruned `gl.rc` to `rc.exe`, fix errors."                     |
 | 8 | Low–Medium          | `tbSuperBtn` owner-draw visual matching.                                                 | Themed `BUTTON` first; escalate to owner-draw only if visual gap is unacceptable.                      |
 | 9 | Medium              | Hidden global state (e.g., `extern PTWindowsObject GetObjectPtr`).                       | Surface via `grep` as ports happen; delete or replace per case.                                        |
-| 10| Medium              | SQLite `.db` over UNC / SMB share — known corruption risk under single-user SQLite when the shared file lock is unreliable. Original installs sometimes placed company directories on a network drive. | Spec #1 supports local-disk paths only. If `GLDR.INI` resolves to a UNC path, `Code4::open` returns an error and the login screen shows a "Spec #1: company DB must be on local disk" message. Re-enabling UNC waits on a future spec that adds proper locking. |
+| 10| Medium              | SQLite `.db` over UNC / SMB share — known corruption risk under single-user SQLite when the shared file lock is unreliable. Original installs sometimes placed company directories on a network drive. | Spec #1 supports local-disk paths only. If `GLDR.INI` resolves to a UNC path or a mapped network drive, `gl.exe` shows "Spec #1: company DB must be on local disk" at startup and exits, before opening the database (`gl/port/Ini.cpp`). Re-enabling UNC waits on a future spec that adds proper locking. |
 | 11| Medium              | Resource encoding round-trip — re-saving the pruned `gl.rc` in Visual Studio's resource editor can rewrite layout (control order, embedded comment loss) and silently break dialog visuals; Borland Resource Workshop output is also non-canonical. | Edit `gl.rc` only as plain UTF-16 LE text in Spec #1; do **not** open it in the VS resource editor. Add a CI / pre-commit check that rejects layout-changing rewrites. |
 
 ### 7.5 Spec #2+ deltas (informational)
@@ -709,6 +728,13 @@ This section started as open questions during brainstorming. Most were resolved 
    **Revised in M4:** MANILA now comes from `gl_new.rc` (§6.2), which has no 2210/1002/1000 module items. AP and AR functions appear instead as ordinary items inside MANILA's popups: vouchers under Transactions, cheques and receipts under Receipts/Payments, the Accounts Payable and Accounts Receivable reports under Reporting. M5 routes those AP/AR commands to the stubs. The M5 exit check "AP/AR/Reporting items show the stub" applies to those items. Switching MANILA back to `gl.rc`'s version is a one-line change in `prune_rc.py`, but `gl.rc`'s menu lacks 48 items the later code has.
 
 5. **Menu-merge behavior in Spec #1.** Menu merging IS exercised — when Chart of Accounts (or any GL MDI child) has focus, the `GLE` and `GLSUB` menus merge onto the MANILA frame menu. The merge is non-trivial in Spec #1; not identity-only. `MdiFrame::OnMdiChildActivate` must implement the merge correctly. Document the merge points in `win32fx/MdiFrame.cpp`.
+
+   **Revised in M5, from the original code:**
+   - **No merge.** The original never merged menus. `TWorksheet::WMMDIActivate` (`gl_xls.cpp`, the spreadsheet child) swapped the whole frame menu to `GLE` with `WM_MDISETMENU` while it was active, and back to MANILA when it wasn't.
+   - **GLSUB** was never on the menu bar. It is the right-click popup on the MDI client (`TGlWindow::PopUpMenu`).
+   - **Chart of Accounts** is a modal dialog (`ExecDialog(new TGLAcctsAdd(this, 1010))`), not an MDI child, so it doesn't change the menu.
+
+   **Port:** `ManilaGL::OnMdiChildActivate` does the swap for any child that has called `ManilaGL::UseGleMenu` (`gl/port/ManilaGL.cpp`), and GLSUB is the right-click popup. **Open for M6:** the M6 exit check "opening Chart of Accounts merges GLE; the Account List merges GLSUB" doesn't match the original. M6 should check what `TAccountList` (an OWL `TWindow`) is a child of, and replace that check with the behaviour it finds.
 
 ### Resolved during plan-writing
 

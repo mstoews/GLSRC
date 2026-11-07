@@ -1,100 +1,102 @@
 //
-// App.cpp - gl.exe entry point and the original module globals (spec 2.4, 3.7).
+// App.cpp - gl.exe entry point and the original module globals (spec 2.4,
+// 3.7). Port of WinMain / TAcctModule in gl/src/gl.cpp (plan M5 task 1).
 //
-// M3 smoke stub (plan M3 exit criteria): an MdiFrame with the MANILA menu and
-// a status bar. File > New opens an empty MDI child, so the Window menu, the
-// OWL CM_* commands and the OnMdiChildActivate hook can be tried; every other
-// menu command just names itself in the status bar. Plan M5 replaces this
-// with the real WinMain (ManilaGL frame, login, company profile). The legacy
-// reference is gl/src/gl.cpp.
+// Startup, in order:
+//   1. Register the Toolbox controls: every dialog template needs them.
+//   2. /checkres: the resource check (plan M4; ResourceCheck.cpp), then exit.
+//   3. One instance only: a second gl.exe brings the first to the front
+//      (the original's hPrevInstance check).
+//   4. GLDR.INI [GL_DIR] DIR -> the company database; refuse a network path
+//      (Ini.cpp). Open it as the global cb.
+//   5. Load MANILA, GLE and GLSUB.
+//   6. Create the ManilaGL frame. It shows the login when GL.INI [ACCESS]
+//      PSW=T (TGlWindow::SetupWindow posted ID_SYSACCESS the same way).
 //
-//   gl.exe /checkres [/quiet]   loads every Spec #1 resource (plan M4; ResourceCheck.cpp)
+//   gl.exe /checkres [/quiet]   loads every Spec #1 resource and reports
+//
+// The GL accelerator table in gl.rc is not loaded: the original never loaded
+// it (it maps Tab to Print).
 //
 #include <Windows.h>
 
 #include "win32fx.h"
 
+#include "Globals.h"
+#include "Ini.h"
+#include "ManilaGL.h"
 #include "ResourceCheck.h"
 
 #include "cb4sqlite.h"
 
 #include <string>
 
-#include "legacy_headers_begin.h"
-#include "db_accts.h"
-#include "legacy_headers_end.h"
+#include "LegacyIds.h"   // last: see LegacyIds.h (declares szMsg)
 
-// The original globals (gl/src/gl.cpp), kept as plain globals (spec 3.7).
-// Other port files declare them extern; win32fx never touches them.
+// The original globals (gl/src/gl.cpp). Login.cpp defines gl_acces.cpp's.
 HINSTANCE hInst = nullptr;
 HMENU HGLMenu = nullptr;
+HMENU HGLExMenu = nullptr;
+HMENU HGLSubMenu = nullptr;
 Code4 cb;
 WCHAR szApp[20] = L"TIAS";
+WCHAR CurDir[MAX_PATH] = L"";
+char szMsg[256] = "";
 
 namespace {
 
-constexpr WORD ID_FILENEW = 111;     // MANILA File > New
-constexpr UINT ID_STATUSBAR = 100;
-constexpr int WINDOW_MENU_POS = 7;   // TManilaGL: ChildMenuPos = 7
+bool activatePrevious()
+{
+    HWND prev = FindWindowW(L"GLWindow", nullptr);
+    if (!prev) return false;
+    prev = GetLastActivePopup(prev);
+    ShowWindow(prev, SW_SHOWNORMAL);
+    SetForegroundWindow(prev);
+    return true;
+}
 
-class SmokeChild : public fx::MdiChild {
-protected:
-    void OnFinalMessage() override { delete this; }   // owns itself, like an OWL child
-};
-
-class SmokeFrame : public fx::MdiFrame {
-protected:
-    bool OnCreate(LPCREATESTRUCTW cs) override
-    {
-        MdiFrame::OnCreate(cs);
-        status_.Create(hwnd(), ID_STATUSBAR, hInst);
-        status_.SetText(0, L"M3 smoke test: win32fx MdiFrame, MANILA menu, status bar");
-        Dock(status_, fx::DockSide::Bottom, 0);
-        return true;
-    }
-
-    bool OnCommand(WORD id, WORD code, HWND ctl) override
-    {
-        if (MdiFrame::OnCommand(id, code, ctl)) return true;
-        if (id == ID_FILENEW) {
-            auto* child = new SmokeChild;
-            if (!child->CreateChild(*this, L"GLSmokeChild", fx::Format(L"Child %d", ++children_).c_str()))
-                delete child;
-            return true;
-        }
-        if (!ctl && id < 0xFF00) {   // a menu command (child-window IDs go to DefFrameProc)
-            status_.SetText(0, fx::Format(L"Command %u is not part of the M3 smoke build", id).c_str());
-            return true;
-        }
-        return false;
-    }
-
-    void OnMdiChildActivate(HWND child) override
-    {
-        status_.SetText(0, child ? (L"Active: " + fx::GetText(child)).c_str() : L"No MDI children");
-    }
-
-private:
-    fx::StatusBar status_;
-    int children_ = 0;
-};
+int fail(const std::wstring& text)
+{
+    MessageBoxW(nullptr, text.c_str(), szApp, MB_OK | MB_ICONSTOP);
+    return 1;
+}
 
 } // namespace
 
 int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, _In_ int show)
 {
     hInst = inst;
-    if (!fx::RegisterCustomControls(inst)) return 1;
+    if (!fx::RegisterCustomControls(inst)) return fail(L"The custom controls could not be registered.");
     const std::wstring args = cmdLine ? cmdLine : L"";
     if (args.find(L"/checkres") != std::wstring::npos)
         return RunResourceCheck(inst, args.find(L"/quiet") != std::wstring::npos);
+    if (activatePrevious()) return 0;
 
-    HGLMenu = LoadMenuW(inst, L"MANILA");   // destroyed with the frame
-    if (!HGLMenu) return 1;
+    const CompanyDbLocation db = FindCompanyDb();
+    if (!db.error.empty()) return fail(db.error);
+    if (db.path.size() >= MAX_PATH) return fail(L"The company database path is too long:\n" + db.path);
+    CurDir[db.path.copy(CurDir, MAX_PATH - 1)] = L'\0';
+    if (cb.open(std::wstring_view(db.path)) != r4success)
+        return fail(L"The company database could not be opened:\n" + db.path);
 
-    SmokeFrame frame;
-    if (!frame.CreateFrame(inst, L"TManilaGL", szApp, HGLMenu, WINDOW_MENU_POS, LoadIconW(inst, L"GL"))) return 1;
-    ShowWindow(frame, show);
-    UpdateWindow(frame);
-    return fx::RunMessageLoop(frame, frame.mdiClient());
+    // ~TAcctModule destroyed these; the frame detaches MANILA before it goes.
+    fx::MenuGuard manila(LoadMenuW(inst, L"MANILA"));
+    fx::MenuGuard gle(LoadMenuW(inst, L"GLE"));
+    fx::MenuGuard glsub(LoadMenuW(inst, L"GLSUB"));
+    if (!manila || !gle || !glsub) return fail(L"The menus could not be loaded.");
+    HGLMenu = manila.get();
+    HGLExMenu = gle.get();
+    HGLSubMenu = glsub.get();
+
+    int rc = 1;
+    {
+        ManilaGL frame;
+        if (frame.Create(inst)) {
+            ShowWindow(frame, show);
+            UpdateWindow(frame);
+            rc = fx::RunMessageLoop(frame, frame.mdiClient());
+        }
+    }
+    cb.close();
+    return rc;
 }
