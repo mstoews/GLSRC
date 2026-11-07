@@ -159,9 +159,11 @@ gl/
 │       ├── ApStubs.cpp
 │       └── ArStubs.cpp
 ├── res/
-│   ├── gl.rc                — Pruned copy of gl/gl.rc for Spec #1 (see §6)
+│   ├── gl.rc                — Spec #1 resources, pruned from gl_new.rc / gl.rc (see §6.2)
+│   ├── resource.h           — the symbolic IDs gl.rc uses
 │   ├── manifest.xml         — v6 common controls + per-monitor DPI v2
-│   └── bitmaps/             — Extracted from original hex blobs
+│   ├── bitmaps/, icons/     — Extracted from original hex blobs
+│   └── tools/prune_rc.py    — generates the four above
 ├── src/, header/            — legacy, reference only (not in gl.vcxproj)
 └── gl.rc, gl_new.rc         — legacy, reference only
 ```
@@ -475,26 +477,48 @@ Keep `GetPrivateProfileStringW` / `GetPrivateProfileIntW` for Spec #1. Microsoft
 
 ### 6.2 Resource pruning for Spec #1
 
-The pruned `.rc` for Spec #1 — `gl/res/gl.rc` (one file) — is built by **merging** entries from the originals (`gl.rc` and `gl_new.rc`) since some Spec #1 dialogs only exist in `gl_new.rc`:
+The pruned `.rc` for Spec #1 is one file, `gl/res/gl.rc`. `gl/res/tools/prune_rc.py` generates it, together with `bitmaps/`, `icons/` and `resource.h`, from the two legacy files.
 
-| Resource | ID | Source file | Notes |
-|----------|-----|-------------|-------|
-| Main toolbar dialog | 1001 | `gl.rc` | |
-| About-box dialog | 1003 | `gl.rc` | |
-| Chart of Accounts inner toolbar | 1032 | `gl.rc` | |
-| Chart of Accounts main dialog | 1033 | `gl.rc` | |
-| Account List dialog | 1034 | `gl.rc` | |
-| Company Profile dialog | 1021 | `gl.rc` | `gl_new.rc` also has 1021 with different size — `gl.rc` is canonical for #1 |
-| Period Dates dialog | 1028 | `gl.rc` | |
-| Login dialog | 1158 | `gl_new.rc` | Not present in `gl.rc` — must come from `gl_new.rc` |
-| Administration dialog | 1159 | `gl_new.rc` | **Note:** appears at lines 4300 and 4320 of `gl_new.rc` — duplicate. Use the entry at line 4300; document the choice. (§10 Q1.1) |
-| Access Menus dialog | 1160 | `gl_new.rc` | |
-| `MANILA` menu | — | `gl.rc` | Top-level frame menu. AP/AR menu items kept (route to stubs); see Q4 below. |
-| `GLE` menu | — | `gl.rc` | Merged onto MANILA when a GL MDI child has focus. |
-| `GLSUB` menu | — | `gl.rc` | Sub-menu activated for inner GL dialogs. |
-| `STRINGTABLE` | — | both | Only the entries referenced by the dialogs/menus above are included. |
+**`gl_new.rc` is the primary source** (corrected in M4). It is the later of the two files, and it is the one the legacy sources match. Examples:
+- `gl_profi.cpp` uses controls 1017 and 4026 and bitmaps 4000 and 1125 on Company Profile; only `gl_new.rc`'s 1021 has them.
+- `gl_accts.cpp` uses `ID_DELETE` on 1010; only `gl_new.rc`'s 1010 has it.
+- `TToolBar` places buttons 1031 and 4014; only `gl_new.rc`'s 1032 has them.
 
-**Excluded from the Spec #1 build** (still on disk for reference): the AP / AR menu definitions, the `MEMO` and `SPREAD` menus, all dialogs not listed above. AP/AR menu *items* on MANILA remain (so the user sees the same File menu) and are wired to "not yet ported" stubs.
+`gl.rc` contributes only the bitmap and the string that `gl_new.rc` lacks. `gl_new.rc` `#include`s `gl_manil.h`, `gl.h`, `ar_id.h` and `ar_clear.h` for its symbolic IDs. The 21 that the pruned file uses are resolved through those headers into `gl/res/resource.h`, so the templates keep their symbols unchanged.
+
+The dialog IDs below come from the `ExecDialog`/`new T...(this, ID)` calls in the Spec #1 sources. The M4 table replaces the original draft, several of whose IDs were wrong.
+
+| Resource | ID | Used by | Notes |
+|----------|-----|---------|-------|
+| Chart of Accounts | 1010 | `TGLAcctsAdd`, `TGLAcctsDelete` (`gl_accts.cpp`) | The draft said 1033. |
+| Toolbar | 1032 | `TToolBar` (`gl.cpp`) | |
+| Module bar | 2057 | `TVToolBar` (`gl.cpp`) | In `gl_new.rc` it holds only the status fields 3222–3224. The GL/AP/AR buttons are gone, so `SetPic(1000/2210/1002)` finds no control. |
+| About | 1008 | `gl.cpp` | The draft said 1003, which is a bitmap. |
+| Login | 1158 | `TGLAccess` (`gl_acces.cpp`) | |
+| Administration | 1159 | `TGLAdministration` | The second copy (line 4320) is used. The first (line 4300) is truncated; see §10 Q1.1. |
+| Menu Access | 1160 | `TAccessMenus` | Contains a `tbSpread`. |
+| Company Profile | 1021 | `TGLProfile` (`gl_profi.cpp`) | `gl_new.rc` version (see above). |
+| Period Dates | 1028 | `TGLSetPeriodDates` | |
+| Account Setup | 1033 | `TGLSetAccounts` (from Company Profile) | The draft called this the Chart of Accounts. |
+| Cash Accounts | 1034 | `TAPCashAccts` | The draft called this the Account List. |
+| Cash Accounts list | 1011 | `TAPCashAcctsList` (child of 1034) | Contains a `tbSpread`. |
+| List Window Parameters | 1035 | `TSetQuery` (`gl_acctl.cpp`) | `TAccountList` itself is a `TWindow` and has no template. |
+| `MANILA`, `GLE`, `GLSUB` menus | — | `gl.cpp` | From `gl_new.rc`. The Window menu is still position 7. See Q4 for the AP/AR items. |
+| `GL` accelerators | — | `gl.cpp` | |
+| Bitmaps | all 83 | toolbars, `SetBitmap`, `STATUSBAR`, `PLUS`/`MINUS` | Every bitmap in either file is kept, keyed by resolved ID with `gl_new.rc` winning. There are 82 from `gl_new.rc` plus 4376 from `gl.rc`. Three IDs differ between the files: 1094, 4044 and 4076. |
+| Icons | `GL`, `SHEET`, 1111 | frame icon | |
+| `STRINGTABLE` | all 408 | everywhere | All of `gl_new.rc`'s strings, plus the one from `gl.rc` whose ID `gl_new.rc` lacks. The draft kept only referenced strings. That isn't workable: the status bar loads a menu-help string by command ID for every menu item (`gl.cpp`), and `GetString` IDs are computed in places. |
+
+**Excluded from the Spec #1 build** (still on disk for reference):
+- every dialog not listed above, including 1017 (Budget, `TGLBudget`, not in Spec #1);
+- the `MEMO` and `SPREAD` menus;
+- `gl.rc`'s `AP` and `AR` menus.
+
+**`gl_new.rc` has three unterminated templates:** 1044 (line 2617), 1061 (line 3019) and the first 1159 (line 4300). Each breaks off where the next resource starts, so `gl_new.rc` as a whole could not have been compiled. 1044 and 1061 aren't needed.
+
+**M4 check:**
+- `gl/res/gl.rc` compiles with `windres` on Linux.
+- `gl.exe /checkres` creates every dialog above and loads the menus, bitmaps, icons, accelerators and sample strings from the built exe (`gl/port/ResourceCheck.cpp`). The `tbSpread` dialogs (1011, 1160) report their template as present, but they can't be created until a grid control exists.
 
 Original `gl.rc` and `gl_new.rc` files remain in the repo unchanged for reference and for sourcing additional resources in later specs.
 
@@ -504,16 +528,16 @@ Custom controls registering with their **original class names** means the dialog
 
 ### 6.4 Bitmap modernization
 
-- One-time script extracts hex-embedded bitmaps to `bitmaps/<id>.bmp`.
-- `.rc` declarations rewritten as `<id> BITMAP "bitmaps/<id>.bmp"`.
+- `gl/res/tools/prune_rc.py` writes each hex-embedded bitmap to `bitmaps/<name>.bmp` and each icon to `icons/<name>.ico`. `<name>` is the resource's name as written, e.g. `1003`, `STATUSBAR` or `ID_SETDATA`.
+- `.rc` declarations are rewritten as `<name> BITMAP "bitmaps/<name>.bmp"`. The rc include path (`gl.vcxproj`) has `gl\res` on it.
 - Visuals look dated (4-bit, 11px) — acceptable for Spec #1; a future spec replaces them with PNG image lists.
 
 ### 6.5 Chart of Accounts port targets
 
 | Source file       | Header(s)             | Becomes                                     | Notes                                |
 |-------------------|-----------------------|---------------------------------------------|--------------------------------------|
-| `gl/src/gl_accts.cpp` | `gl_accts.h`, `gl_acct.h`, `glclass.h`, `db_dept.h` (missing — §10 Q9) | `gl/port/ChartOfAccounts.h/.cpp` | TGLAcctsAdd, TGLAcctsDelete; dialogs 1033 + 1032; also opens `GLDEPT` via `Tgldept` |
-| `gl/src/gl_acctl.cpp` | `gl_acctl.h`, `gl_main.h`              | `gl/port/AccountList.h/.cpp`       | TAccountList; dialog 1034            |
+| `gl/src/gl_accts.cpp` | `gl_accts.h`, `gl_acct.h`, `glclass.h`, `db_dept.h` (recovered — §10 Q9) | `gl/port/ChartOfAccounts.h/.cpp` | TGLAcctsAdd, TGLAcctsDelete; dialog 1010 (corrected in M4, §6.2); also opens `GLDEPT` via `Tgldept` |
+| `gl/src/gl_acctl.cpp` | `gl_acctl.h`, `gl_main.h`              | `gl/port/AccountList.h/.cpp`       | TAccountList, a `TWindow` with no template; TSetQuery uses dialog 1035 |
 
 **DB:** `glaccts` table. The only CodeBase tag the Chart of Accounts ports actually use is **`"accounts"`** (verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`). `gl_acctl.cpp::TListWindow::SetFields` accepts a tag name from the caller (`szIndex`), but every Spec #1 caller of `TAccountList` passes the default; no DESCRIP-tag switch is exercised. Other tags on `glaccts` (if present in the original `.cdx`) are migrated for completeness by `dbf2sqlite` but are not required by Spec #1 acceptance.
 
@@ -669,18 +693,20 @@ This section started as open questions during brainstorming. Most were resolved 
 
 1. **Login & company-profile dialog IDs.** Verified by `grep` of source:
    - `TGLAccess` (login) → dialog `1158` in `gl_new.rc` only.
-   - `TGLAdministration` (admin) → dialog `1159` in `gl_new.rc` only (also at line 4320 — likely a duplicate; pick line 4300 and document).
+   - `TGLAdministration` (admin) → dialog `1159` in `gl_new.rc` only (twice; see 1.1).
    - `TAccessMenus` → dialog `1160` in `gl_new.rc` only.
-   - `TGLProfile` (company profile) → dialog `1021` (canonical version in `gl.rc`; `gl_new.rc` also has 1021 at different dimensions — choose `gl.rc`'s version).
+   - `TGLProfile` (company profile) → dialog `1021`. **Revised in M4: `gl_new.rc`'s version**, because it has the controls `gl_profi.cpp` uses (1017, 4026) and `gl.rc`'s does not (§6.2).
    See §6.2 table.
 
-   1.1. **`gl_new.rc:1159` duplicate disposition.** Two definitions of dialog 1159 exist (lines 4300 and 4320). Pick one for the pruned build. **Decision: use the entry at line 4300** (first occurrence; cross-check fields match the `TGLAdministration` member references in `gl_acces.cpp`).
+   1.1. **`gl_new.rc:1159` duplicate disposition.** Two definitions of dialog 1159 exist (lines 4300 and 4320). Pick one for the pruned build. The original decision was the entry at line 4300. **Revised in M4: the entry at line 4320.** The one at 4300 is a truncated copy: 20 lines identical to the start of 4320, with no closing brace, followed directly by the 4320 header. So 4320 is the only complete definition.
 
 2. **`glaccts` index tag names.** Verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`. The chart-of-accounts ports use exactly one tag: **`"accounts"`**. `dbf2sqlite` will migrate any other tags present on the source `.cdx` (so the SQLite database stays a faithful representation), but Spec #1 acceptance does not depend on them. See §6.5.
 
 3. **DBF reader library final choice.** **Decision (revised 2026-11-06): shapelib `dbfopen.c` + `safileio.c` v1.6.3**, vendored under `dbf2sqlite_core/vendor/shapelib/`, used under its MIT licence option. The original choice, `libdbf`, was dropped during M0 vendoring: the GitHub repo the plan cited does not exist, and the real libdbf (SourceForge) is LGPL, not BSD, which is awkward for a statically linked single-exe distribution. shapelib reads `.dbf` only; `.ndx`/`.cdx` index-expression parsing stays our own code in `dbf2sqlite_core` (§4.5 item 4), as before. See `VENDORED.md`.
 
 4. **AP / AR menu items in the pruned `gl.rc`.** **Decision: keep MANILA menu items routing to AP/AR; AP and AR sub-menu definitions are excluded from the build.** Items 2210 (Accounts Payable...) and 1002 (Accounts Receivable...) on the MANILA File menu route to "not yet ported" stubs in `ApStubs.cpp` / `ArStubs.cpp`. The standalone `AP` and `AR` `MENU` resource definitions (lines 1457 and 1559 of `gl.rc`) are pruned.
+
+   **Revised in M4:** MANILA now comes from `gl_new.rc` (§6.2), which has no 2210/1002/1000 module items. AP and AR functions appear instead as ordinary items inside MANILA's popups: vouchers under Transactions, cheques and receipts under Receipts/Payments, the Accounts Payable and Accounts Receivable reports under Reporting. M5 routes those AP/AR commands to the stubs. The M5 exit check "AP/AR/Reporting items show the stub" applies to those items. Switching MANILA back to `gl.rc`'s version is a one-line change in `prune_rc.py`, but `gl.rc`'s menu lacks 48 items the later code has.
 
 5. **Menu-merge behavior in Spec #1.** Menu merging IS exercised — when Chart of Accounts (or any GL MDI child) has focus, the `GLE` and `GLSUB` menus merge onto the MANILA frame menu. The merge is non-trivial in Spec #1; not identity-only. `MdiFrame::OnMdiChildActivate` must implement the merge correctly. Document the merge points in `win32fx/MdiFrame.cpp`.
 
