@@ -11,7 +11,7 @@ A static library: light C++ helpers over the Win32 SDK that let ports of the OWL
 | `StringUtil.h` | `LoadResString`, `Format`, `Utf8ToWide`, `WideToUtf8`, `Trim`, `GetText`, `GetDlgItemString`. |
 | `Verify.h` | `FX_VERIFY(cond, msg)`: live in Debug and Release (spec §7.2). |
 | `MessageLoop.h` | `RunMessageLoop(frame, mdiClient, accel)`: MDI accelerators, the accelerator table, `IsDialogMessageW` for every live modeless `Dialog`. |
-| `MdiFrame.h` | `MdiFrame` (owns MDICLIENT, lays it out between docked bars, handles the OWL `CM_TILECHILDREN`…`CM_EXIT` commands) and `MdiChild` (`CreateMDIWindowW`, `DefMDIChildProcW`). `OnMdiChildActivate(child)` is the menu-merge hook; **the merge itself is plan M5** (merge points are in `MdiFrame.cpp`). |
+| `MdiFrame.h` | `MdiFrame` (owns MDICLIENT, lays it out between docked bars, handles the OWL `CM_TILECHILDREN`…`CM_EXIT` commands) and `MdiChild` (`CreateMDIWindowW`, `DefMDIChildProcW`). `OnMdiChildActivate(child)` is the menu-merge hook. The GL frame's swap of MANILA and GLE is in `gl/port/ManilaGL.cpp`; the merge points are in `MdiFrame.cpp`. |
 | `Toolbar.h` | `DialogBar`: a modeless child dialog from a template whose button clicks go to the parent (`TToolBar::Mssg`); `PlaceButton` is the original `SetPic`. `Toolbar` adds the stretched background bitmap. |
 | `VerticalToolbar.h` | The original `TVToolBar` (dialog 2057): the module buttons and the status fields 3222–3224. It docks at the *bottom*, as the original did. |
 | `StatusBar.h` | A wrapper over the common-controls status bar. |

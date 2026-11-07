@@ -8,9 +8,9 @@
 //
 // Menu merging (spec 10 Q5): MdiChild calls OnMdiChildActivate(child) when a
 // child is activated and OnMdiChildActivate(nullptr) when the last one goes
-// away. *** M3 ships the hook only. *** Plan M5 puts the merge of the GLE /
-// GLSUB menus onto MANILA here, in a subclass (gl/port/ManilaGL.cpp), and
-// documents the merge points in MdiFrame.cpp.
+// away. The library ships only the hook; the GL frame's menu swap (MANILA /
+// GLE) is in its subclass, gl/port/ManilaGL.cpp (plan M5). The merge points
+// are documented in MdiFrame.cpp.
 //
 #pragma once
 
@@ -50,7 +50,7 @@ public:
     // The active MDI child, or null.
     HWND activeChild() const noexcept;
 
-    // M5: menu merge goes here (see the header comment).
+    // The menu-merge hook (see the header comment).
     virtual void OnMdiChildActivate(HWND /*child*/) {}
 
 protected:
