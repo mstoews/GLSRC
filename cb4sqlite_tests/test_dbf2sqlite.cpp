@@ -38,8 +38,13 @@ namespace {
 // from the project dir; the command line usually from the root or x64\Debug).
 fs::path repoRoot()
 {
-    if (const char* env = std::getenv("GL_REPO_ROOT"))
-        return env;
+    char* env = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&env, &len, "GL_REPO_ROOT") == 0 && env) {
+        fs::path p = env;
+        std::free(env);
+        return p;
+    }
     for (fs::path p = fs::current_path(); !p.empty(); p = p.parent_path()) {
         if (fs::exists(p / "dbf2sqlite_core" / "test" / "fixtures"))
             return p;
