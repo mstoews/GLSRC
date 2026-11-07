@@ -42,6 +42,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="port\AccountList.h" />
+    <ClInclude Include="port\Accounts.h" />
+    <ClInclude Include="port\ChartOfAccounts.h" />
     <ClInclude Include="port\Company.h" />
     <ClInclude Include="port\CompanyProfile.h" />
     <ClInclude Include="port\Globals.h" />
@@ -56,7 +59,10 @@
     <ClInclude Include="res\resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="port\AccountList.cpp" />
+    <ClCompile Include="port\Accounts.cpp" />
     <ClCompile Include="port\App.cpp" />
+    <ClCompile Include="port\ChartOfAccounts.cpp" />
     <ClCompile Include="port\Company.cpp" />
     <ClCompile Include="port\CompanyProfile.cpp" />
     <ClCompile Include="port\Ini.cpp" />
