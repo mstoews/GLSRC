@@ -108,7 +108,7 @@ DbfFile::DbfFile(const std::filesystem::path& path)
     records_ = DBFGetRecordCount(h);
 
     // Language driver id: header byte 29 (shapelib exposes it only as "LDID/n").
-    if (const char* cp = DBFGetCodePage(h); cp && std::sscanf(cp, "LDID/%d", &ldid_) != 1)
+    if (const char* cp = DBFGetCodePage(h); cp && sscanf_s(cp, "LDID/%d", &ldid_) != 1)
         ldid_ = 0;
 }
 
