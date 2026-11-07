@@ -17,6 +17,7 @@
 //
 #include "CompanyProfile.h"
 
+#include "Accounts.h"   // AccountKey
 #include "Company.h"
 #include "Globals.h"
 #include "Ini.h"
@@ -47,14 +48,6 @@ std::wstring FormatYmd(const char* ymd)
     const std::string s = StrTrim(ymd ? ymd : "");
     if (s.size() != 8 || s.find_first_not_of("0123456789") != std::string::npos) return {};
     return fx::Utf8ToWide(s.substr(4, 2) + "/" + s.substr(6, 2) + "/" + s.substr(2, 2));
-}
-
-// The seek key for account + dept: the account padded to its field width.
-std::string AccountKey(const std::string& account, const std::string& dept, unsigned accountWidth)
-{
-    std::string key = StrTrim(account);
-    if (key.size() < accountWidth) key.append(accountWidth - key.size(), ' ');
-    return key + StrTrim(dept);
 }
 
 // String 8121, "Unable to locate the account number: %s  %s".

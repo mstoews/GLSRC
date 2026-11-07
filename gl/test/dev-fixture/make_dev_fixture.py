@@ -144,19 +144,24 @@ def main():
     glaccts += [n(f"PERIOD{i}") for i in range(1, 13)] + [n("OPENBAL")]
     glaccts += [n(f"PREVIOUS{i}") for i in range(1, 13)] + [n(f"BUDGET{i}") for i in range(1, 13)]
 
-    def acct(no, dept, desc, typ, bal):
-        return (no, dept, desc, desc, typ, None, bal) + (None,) * 12 + (bal,) + (None,) * 24
+    # The opening balance is OPENBAL and PREVIOUS12 (the Chart of Accounts shows PREVIOUS12);
+    # `period` puts activity in one period, which the Chart of Accounts won't delete.
+    def acct(no, dept, desc, typ, bal, period=None):
+        periods = [None] * 12
+        if period:
+            periods[period[0] - 1] = period[1]
+        return (no, dept, desc, desc, typ, None, bal) + tuple(periods) + (bal,) + (None,) * 11 + (bal,) + (None,) * 12
 
     dbf(os.path.join(d, "GLACCTS.DBF"), glaccts, [
-        acct("101000", None, "PETTY CASH AND CASH IN HAND", "R", 500.0),
-        acct("102101", None, "CHECKING ACCOUNT", "B", 12500.0),
+        acct("101000", None, "PETTY CASH AND CASH IN HAND", "B", 500.0),
+        acct("102101", None, "CHECKING ACCOUNT", "B", 12500.0, period=(7, 250.0)),
         acct("111101", None, "ACCOUNTS RECEIVABLE - TRADE", "B", 8200.0),
         acct("144910", None, "TRANSIT ACCOUNT", "B", 0.0),
         acct("148000", None, "PREPAID VAT", "B", 310.0),
         acct("221002", None, "ACCOUNTS PAYABLE - TRADE", "B", -4100.0),
         acct("260004", None, "WITHHOLDING TAX PAYABLE", "B", -120.0),
         acct("260007", None, "VAT PAYABLE", "B", -450.0),
-        acct("340000", None, "RETAINED EARNINGS", "B", -16840.0),
+        acct("340000", None, "RETAINED EARNINGS", "R", -16840.0),
         acct("410001", "10", "SALES REVENUE - R&D", "I", 0.0),
         acct("410001", "20", "SALES REVENUE - GENERAL", "I", 0.0),
     ], mdx=True)

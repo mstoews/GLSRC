@@ -328,6 +328,14 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** Full Chart of Accounts CRUD round-trip, navigation, account-list popup. Acceptance §6.7 #2-#8.
 
+> **As built (2026-11-07).** The tasks below were drafted before the original code was read; where they differ, the original wins:
+> - **Dialog 1010** has no top/bottom/next/prev buttons and no `ID_ADD`/`ID_MODIFY`/`ID_VIEW`. Its commands are Add/Mod (`IDOK`), Search (`ID_GLINQ`), Set Data (`ID_SETDATA`), Delete (`ID_DELETE`), Close, the three type radios and Show Foreign. Navigation is through the account list and Set Data (spec §6.7 #2, corrected).
+> - **Delete** is `deleteRec()` + `pack()`, so the row leaves the table (spec §6.7 #5, corrected).
+> - **The account list** is `TAccountList` (defined in `gl_btche.cpp`): a captioned window owned by the dialog, holding a `tbSpread` grid, not dialog 1034. The port's grid is a ListView (`gl/port/AccountList.cpp`).
+> - **No menu merge** (spec §10 Q5, resolved). The Chart of Accounts is modal and the list is an owned popup; neither is an MDI child, so the frame menu stays MANILA. The exit check below is replaced.
+> - **Code:** `gl/port/Accounts.h/.cpp` holds the table classes and record operations without Win32 (checked on Linux). `gl/port/ChartOfAccounts.cpp` is the dialog: `TGLAcctsAdd` and `TGLAcctsDelete`, wired to `ID_ACCTADD` (Accounts > Chart of Accounts, GLSUB > Add Accounts) and `ID_ACCTDEL` (GLSUB > Delete Accounts).
+> - **Stress and leaks:** `gl.exe /stress [/quiet]` opens and closes the dialog 100 times and returns the GDI + USER object growth. Debug builds report CRT leaks at exit.
+
 ### Tasks
 
 1. **`ChartOfAccounts.h/.cpp`** — port of `gl_accts.cpp` (`TGLAcctsAdd`, `TGLAcctsDelete`).
@@ -352,8 +360,9 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 ### Exit criteria
 
 - Acceptance §6.7 #2-#8 pass on Debug|x64.
-- **Leak check via `_CrtDumpMemoryLeaks`** over the full sequence: open dialog → add a row → modify a row → delete a row → top → bottom → next → previous → close dialog → reopen → close. No reported leaks.
-- Menu merge verified: opening Chart of Accounts merges `GLE` onto `MANILA`; opening the Account List child within Chart of Accounts merges `GLSUB`; closing each restores the prior menu.
+- **Leak check via `_CrtDumpMemoryLeaks`** (Debug, at exit) over the full sequence: open dialog → add a row → modify a row → delete a row → Search / pick rows in the account list → Set Data → close dialog → reopen → close. No reported leaks.
+- `gl.exe /stress /quiet` exits 0 (no GDI/USER object growth over 100 open/close cycles).
+- ~~Menu merge verified: opening Chart of Accounts merges `GLE` onto `MANILA`; opening the Account List child within Chart of Accounts merges `GLSUB`; closing each restores the prior menu.~~ *Replaced (spec §10 Q5):* the frame menu stays MANILA while the Chart of Accounts and its account list are open, and GLSUB stays the right-click popup.
 
 ---
 

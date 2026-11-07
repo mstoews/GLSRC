@@ -4,6 +4,7 @@
 #include "ManilaGL.h"
 
 #include "Company.h"
+#include "ChartOfAccounts.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -215,6 +216,12 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         RunCompanyProfile(hwnd());
         RefreshStatus();                   // the original updated a status bar it never created
         return true;
+    case ID_ACCTADD:                       // TGlWindow::GLAcctAdd: Accounts > Chart of Accounts, GLSUB
+        RunChartOfAccounts(hwnd());
+        return true;
+    case ID_ACCTDEL:                       // TGlWindow::GLAcctDel: GLSUB > Delete Accounts
+        RunDeleteAccounts(hwnd());
+        return true;
     case ID_ABOUT: {                       // TGlWindow::CMAbout
         fx::Dialog about;
         about.DoModal(hInst, 1008, hwnd());
@@ -253,10 +260,7 @@ void ManilaGL::NotPorted(WORD id)
         ArStubs::Show(hwnd(), item.c_str());
     } else {
         std::wstring text = item.empty() ? fx::Format(L"Command %u", id) : item;
-        if (id == ID_ACCTADD || id == ID_ACCTDEL)
-            text += L"\n\nThe Chart of Accounts is ported in plan milestone M6.";
-        else
-            text += L"\n\nThis General Ledger function is not part of Spec #1.";
+        text += L"\n\nThis General Ledger function is not part of Spec #1.";
         MessageBoxW(hwnd(), text.c_str(), szApp, MB_OK | MB_ICONINFORMATION);
     }
 }

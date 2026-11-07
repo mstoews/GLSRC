@@ -551,7 +551,8 @@ Custom controls registering with their **original class names** means the dialog
 | Source file       | Header(s)             | Becomes                                     | Notes                                |
 |-------------------|-----------------------|---------------------------------------------|--------------------------------------|
 | `gl/src/gl_accts.cpp` | `gl_accts.h`, `gl_acct.h`, `glclass.h`, `db_dept.h` (recovered — §10 Q9) | `gl/port/ChartOfAccounts.h/.cpp` | TGLAcctsAdd, TGLAcctsDelete; dialog 1010 (corrected in M4, §6.2); also opens `GLDEPT` via `Tgldept` |
-| `gl/src/gl_acctl.cpp` | `gl_acctl.h`, `gl_main.h`              | `gl/port/AccountList.h/.cpp`       | TAccountList, a `TWindow` with no template; TSetQuery uses dialog 1035 |
+| `gl/src/gl_acctl.cpp` | `gl_acctl.h`, `gl_main.h`, `tlist_w.h` | `gl/port/AccountList.h/.cpp`       | TListWindow (the grid) and TSetQuery (dialog 1035). TAccountList's methods are in `gl/src/gl_btche.cpp`. A `TWindow` with no template, owned by the dialog |
+| — | — | `gl/port/Accounts.h/.cpp` | The `Tglaccts`/`Tgldept` subclasses and the add / modify / delete record operations, without Win32 (M6) |
 
 **DB:** `glaccts` table. The only CodeBase tag the Chart of Accounts ports actually use is **`"accounts"`** (verified by `grep SetIndex gl_accts.cpp gl_acctl.cpp`). `gl_acctl.cpp::TListWindow::SetFields` accepts a tag name from the caller (`szIndex`), but every Spec #1 caller of `TAccountList` passes the default; no DESCRIP-tag switch is exercised. Other tags on `glaccts` (if present in the original `.cdx`) are migrated for completeness by `dbf2sqlite` but are not required by Spec #1 acceptance.
 
@@ -588,12 +589,18 @@ Method bodies port near-verbatim with the §4 (DB) and §5 (string) transforms a
    (c) the status line in the module bar, showing the company name (from the company-profile table) and the current accounting period.
 
    *Corrected in M5:* the draft said the GLE menu, a toolbar on the left, and a separate status bar. The original frame menu is MANILA; GLE replaced it only while a spreadsheet child was active (§10 Q5). `TGlWindow::WMSize` puts the module bar 2057 at the bottom, and its fields are the status line: `HStatusBar` was never created.
-2. **Chart of Accounts navigation:** GL → Chart of Accounts opens dialog 1033; top / bottom / next / prev navigate `glaccts` rows in the `"accounts"` tag order (matches original; no other tags exercised by these ports).
-3. **Add:** Enter required fields (ACCT_NO, DESCRIP at minimum), click Add/Mod → row appears in SQLite (verify externally with `sqlite3 <co>.db "select * from glaccts"`).
+2. **Chart of Accounts navigation:** Accounts → Chart of Accounts opens dialog 1010 with the account list beside it. The list shows the `glaccts` rows in `"accounts"` tag order (account + dept). Picking a row (double-click or Enter) shows that account in the dialog; Search jumps the list to the account typed in the dialog; Set Data shows the typed account, or the nearest one after it.
+
+   *Corrected in M6:* the draft said dialog 1033 with top / bottom / next / prev. 1033 is Account Setup, and 1010 has no navigation buttons: the original moved between accounts with the list and Set Data.
+3. **Add:** Enter the account and description, choose a type, click Add/Mod → row appears in SQLite (verify externally with `sqlite3 <co>.db "select * from glaccts"`). Without a type the original refuses (string 4071), and it refuses a second Retained Earnings account (string 16011).
 4. **Modify:** Navigate to a row, edit fields, click Add/Mod → row updated in SQLite (compare row before/after).
-5. **Delete:** Click Delete → `_deleted` flag set in SQLite; navigation skips deleted rows.
+5. **Delete:** Click Delete (or open GLSUB > Delete Accounts, where the OK button is Delete) on an account with no period or previous-year balance → the row is gone from SQLite and from the list. An account with activity is refused (string 1027).
+
+   *Corrected in M6:* the draft said the `_deleted` flag is set. The original called `deleteRec()` and then `pack()`, which removes the row.
 6. **Persistence:** Close `gl.exe`, reopen → all changes from steps 3-5 survive across process restart.
-7. **Account list:** Dialog 1034 lists accounts ordered by `ACCT_NO`. Selecting a row and confirming returns to the parent dialog with the parent's `ACCT_NO` field populated from the selection (other fields refresh from the DB on parent navigation).
+7. **Account list:** The "General Ledger Accounts List" window lists account, dept and description in `"accounts"` tag order. Selecting a row hides the list and fills the dialog's account, dept, description, balances and type from that record. Typing on the list jumps to the first account starting with the typed characters. Right-click edits the list query (dialog 1035).
+
+   *Corrected in M6:* the draft said dialog 1034 (Cash Accounts). The list is `TAccountList`, a window with a `tbSpread` grid and no template; the port's grid is a ListView.
 8. **`tb*` validation:** `tbInteger` rejects non-digit input, `tbFloat` enforces at most one decimal point, `tbPic` enforces its mask character-by-character (matches original behavior on the same input strings).
 9. **Framework reusability:** The (future) AP project can compile against `win32fx.lib`, declare a trivial `fx::Dialog` subclass with one `OnCommand` handler, and run it as a modal dialog without modifying any `win32fx/` source. Demonstrated by a 30-line example program in `win32fx/examples/trivial_dialog.cpp`.
 
@@ -734,7 +741,9 @@ This section started as open questions during brainstorming. Most were resolved 
    - **GLSUB** was never on the menu bar. It is the right-click popup on the MDI client (`TGlWindow::PopUpMenu`).
    - **Chart of Accounts** is a modal dialog (`ExecDialog(new TGLAcctsAdd(this, 1010))`), not an MDI child, so it doesn't change the menu.
 
-   **Port:** `ManilaGL::OnMdiChildActivate` does the swap for any child that has called `ManilaGL::UseGleMenu` (`gl/port/ManilaGL.cpp`), and GLSUB is the right-click popup. **Open for M6:** the M6 exit check "opening Chart of Accounts merges GLE; the Account List merges GLSUB" doesn't match the original. M6 should check what `TAccountList` (an OWL `TWindow`) is a child of, and replace that check with the behaviour it finds.
+   **Port:** `ManilaGL::OnMdiChildActivate` does the swap for any child that has called `ManilaGL::UseGleMenu` (`gl/port/ManilaGL.cpp`), and GLSUB is the right-click popup.
+
+   **Resolved in M6:** `TAccountList` is created with the Chart of Accounts dialog as its parent and no `WS_CHILD`: an owned, captioned popup, not an MDI child. Neither window changes the frame menu, so the M6 exit check is now "the menu stays MANILA" (plan M6). No Spec #1 window uses `UseGleMenu`; it waits for the spreadsheet port.
 
 ### Resolved during plan-writing
 
