@@ -42,10 +42,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="port\App.cpp" />
+    <ClInclude Include="port\ResourceCheck.h" />
+    <ClInclude Include="res\resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="res\gl.rc" />
+    <ClCompile Include="port\App.cpp" />
+    <ClCompile Include="port\ResourceCheck.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="res\gl.rc">
+      <AdditionalIncludeDirectories>$(ProjectDir)res;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemGroup>
   <!-- Common controls v6 + per-monitor DPI v2 (spec 7.1); mt.exe merges it into the linker's manifest. -->
   <ItemGroup>

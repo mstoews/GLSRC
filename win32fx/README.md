@@ -49,7 +49,7 @@ All four edits return `DLGC_WANTCHARS | DLGC_WANTARROWS` from `WM_GETDLGCODE` (s
 
 **Not implemented** (nothing in Spec #1 needs them): `SBS_NOPOINTERFOCUS` (a click focuses the button), the button frame/shadow/colour styles, `IS_SPIN`/`DS_SPIN` arrows, `IntSetRange`/`FloatSetRange`, `DS_DDMONYY` (unused by the resources; read as MM/DD/YY), and the `EN_INVALIDDATA` notifications (no legacy code handles them). `tbSpread` and `tbStatusBar` (the TBOWL grid and status bar) are not registered. Spec #1 dialogs don't use them, and the grid is out of plan.
 
-The input rules are plain C++ in `src/controls/EditRules.cpp` (no Win32).
+The input rules are plain C++ in `src/controls/EditRules.cpp` (no Win32). `src/controls/styles.md` lists the style words the Spec #1 dialogs use, decoded. It also records which ported screens turn out to depend on a particular bit.
 
 ## Reusability example
 

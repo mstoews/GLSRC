@@ -235,6 +235,18 @@ S = small (< 1 day), M = medium (1-3 days), L = large (3-5 days). Sizes are wall
 
 **Goal:** `gl/res/gl.rc` plus extracted bitmaps compile cleanly through `rc.exe`.
 
+> **As built (2026-11-07):** spec §6.2 has the corrected resource table. Where M4 differs from the tasks below:
+> - **Tasks 1, 2, 4:** one script, `gl/res/tools/prune_rc.py`, does the extraction, merging and rewriting. It is kept in the repo so later specs can add dialogs. The source is **`gl_new.rc`, not `gl.rc`**: the legacy code matches `gl_new.rc` (Company Profile 1021, Chart of Accounts 1010, toolbar 1032), and `gl.rc` adds only one bitmap and one string. The symbolic IDs resolve through the legacy headers into `gl/res/resource.h`. `gl.rc` stays UTF-16 LE with BOM (spec §5.3).
+> - **Task 2, dialog set:** the draft table had wrong IDs. The Chart of Accounts is 1010, not 1033; 1033 is Account Setup, and 1034 is Cash Accounts. About is 1008, and 1001 is Fixed Assets Disposal. `TAccountList` has no template. 1159 uses the second, complete copy.
+> - **Task 2, other resources:** all bitmaps (83) and all strings (408) are kept. MANILA comes from `gl_new.rc`, so its AP/AR module items 2210/1002 are gone (spec §10 Q4, revised).
+> - **Task 3:** the manifest was already added in M3.
+> - **Task 5:** every bitmap the toolbar (`SetPic`), `SetBitmap` and `LoadBitmap` calls in the Spec #1 sources name is present. There are two exceptions, both already missing in the originals:
+>   - 1208 (`ID_SEARCH` in `gl_acces.cpp`) is in neither file.
+>   - 1000/1002 are no longer controls in `gl_new.rc`'s 2057.
+> - **Task 6:** `windres` compiles `gl/res/gl.rc` cleanly on Linux. `rc.exe` runs in the Windows build.
+> - **Task 7:** the file is `win32fx/src/controls/styles.md`. It already lists the style words that the Spec #1 dialogs use, decoded.
+> - **Exit criteria:** the debug program is `gl.exe /checkres [/quiet]`. It creates all 13 dialogs, with 1010 standing in for 1033 as the Chart of Accounts, and loads the menus, bitmaps, icons, accelerators and sample strings. 1011 and 1160 contain `tbSpread`. They are reported as present but can't be created, because win32fx doesn't register `tbSpread`.
+
 ### Tasks
 
 1. **Throwaway bitmap-extraction script** — Python or PowerShell. Reads `gl/gl.rc` and `gl/gl_new.rc`, writes each hex-embedded `BITMAP` block to `gl/res/bitmaps/<id>.bmp`.

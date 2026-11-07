@@ -8,11 +8,17 @@
 // with the real WinMain (ManilaGL frame, login, company profile). The legacy
 // reference is gl/src/gl.cpp.
 //
+//   gl.exe /checkres [/quiet]   loads every Spec #1 resource (plan M4; ResourceCheck.cpp)
+//
 #include <Windows.h>
 
 #include "win32fx.h"
 
+#include "ResourceCheck.h"
+
 #include "cb4sqlite.h"
+
+#include <string>
 
 #include "legacy_headers_begin.h"
 #include "db_accts.h"
@@ -75,15 +81,19 @@ private:
 
 } // namespace
 
-int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int show)
+int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, _In_ int show)
 {
     hInst = inst;
     if (!fx::RegisterCustomControls(inst)) return 1;
+    const std::wstring args = cmdLine ? cmdLine : L"";
+    if (args.find(L"/checkres") != std::wstring::npos)
+        return RunResourceCheck(inst, args.find(L"/quiet") != std::wstring::npos);
+
     HGLMenu = LoadMenuW(inst, L"MANILA");   // destroyed with the frame
     if (!HGLMenu) return 1;
 
     SmokeFrame frame;
-    if (!frame.CreateFrame(inst, L"TManilaGL", szApp, HGLMenu, WINDOW_MENU_POS)) return 1;
+    if (!frame.CreateFrame(inst, L"TManilaGL", szApp, HGLMenu, WINDOW_MENU_POS, LoadIconW(inst, L"GL"))) return 1;
     ShowWindow(frame, show);
     UpdateWindow(frame);
     return fx::RunMessageLoop(frame, frame.mdiClient());
