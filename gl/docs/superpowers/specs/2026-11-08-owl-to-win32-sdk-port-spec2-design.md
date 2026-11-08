@@ -21,7 +21,7 @@
 6. **Backup** and **Restore** of the company database (D5).
 7. **`fx::Grid`**, a reusable `win32fx` grid registered as the `tbSpread` window class, so dialog templates that contain one load unchanged. Spec #1's grid-dependent gaps close with it:
    - the User Access Menu button (1159 → 1160);
-   - the Cash Accounts list beside 1034.
+   - the Cash Accounts list (1011, `TAPCashAcctsList`) beside 1034.
 8. **`cb4sqlite` additions:** a `querySet` expression subset (§5.1), transactions (§5.2), and an online backup call (§5.3).
 
 ### 1.2 Non-Goals
@@ -284,7 +284,7 @@ These follow the style of Spec #1 §6.7 and are signed off in `2026-11-08-spec2-
 12. **Backup and Restore.** Back up, then add an account, then restore. The account is gone, the `.bak` file exists, and `gl.exe` keeps running on the restored database.
 13. **Grid.**
     - The account list behaves as Spec #1 §6.7 #7 describes.
-    - The User Access Menu button and the 1034 Cash list work.
+    - The User Access Menu button (1160) and the Cash Accounts list (1011) work.
     - A `GL.INI [GLACCTS] QUERY` of `ACCOUNT = '4'` lists only the 4xxxxx accounts.
 14. **Regression and resources.**
     - Spec #1 §6.7 #1–#9 still pass.
@@ -299,7 +299,7 @@ These follow the style of Spec #1 §6.7 and are signed off in `2026-11-08-spec2-
 | Layer | Required | What |
 |---|---|---|
 | `cb4sqlite_tests` | Yes | the `querySet` grammar: each operator, `.AND.`, left-match `=`, trailing blanks, rejected expressions; transactions (commit, rollback, RAII, nested `begin` throws); `backupTo` |
-| Linux harness (`Vouchers.cpp`) | Yes | append and replace, post (balanced, out of balance, adjustment), single-voucher post, recover, cancel, year end (zero, one or two `R` accounts), each against a copy of the fixture database, under ASan/UBSan, as the M6 harness did for `Accounts.cpp` |
+| `gl_tests` (new, Catch2; `Accounts.cpp`, `Vouchers.cpp`) | Yes | append and replace, post (balanced, out of balance, adjustment), single-voucher post, recover, cancel, year end (zero, one or two `R` accounts), each against a copy of the fixture database. It runs on Windows and also builds on Linux under ASan/UBSan, replacing the uncommitted M6 harness. |
 | `trivial_dialog /selftest` | Yes | `fx::Grid`: columns, data, pick notification, an editable float cell |
 | Manual | Yes | §8, signed off |
 
@@ -321,7 +321,7 @@ These follow the style of Spec #1 §6.7 and are signed off in `2026-11-08-spec2-
 
 | # | Milestone | Depends on |
 |---|---|---|
-| S2-M0 | `fx::Grid` as `tbSpread`, read-only, then the editable float column. Move `AccountList` onto it. User Access Menu button; 1034 Cash list. | none |
+| S2-M0 | `fx::Grid` as `tbSpread`, read-only, then the editable float column. Move `AccountList` onto it. User Access Menu button (1160); Cash Accounts list (1011). | none |
 | S2-M1 | `cb4sqlite`: `querySet` subset, transactions, `backupTo`, tests. Correct `Tgldist` and check the other headers. Fixture. | none |
 | S2-M2 | Master data (1023, 1006, 1007, 1040). Prune the dialogs into `gl.rc`. | M0 |
 | S2-M3 | `Vouchers.cpp` and harness. Voucher entry (1013) and Prior Period Entry. | M0, M1, M2 |
