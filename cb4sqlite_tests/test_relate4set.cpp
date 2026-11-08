@@ -86,5 +86,6 @@ TEST_CASE("Unsupported query expressions are reported, not ignored", "[relate]")
 {
     Loaded fx;
     Relate4set q(fx.d);
-    CHECK_THROWS_WITH(q.querySet("ACCOUNT <> ' '"), ContainsSubstring("not implemented in spec #1"));
+    CHECK_THROWS_WITH(q.querySet("UPPER(ACCOUNT) = 'X'"), ContainsSubstring("not implemented"));   // spec #2 5.1 grammar
+    CHECK_THROWS_WITH(q.querySet("ACCOUNT <> ' ' .OR. DEPT = '10'"), ContainsSubstring("not implemented"));
 }

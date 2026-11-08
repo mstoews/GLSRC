@@ -11,6 +11,17 @@
 //   - Ok() read the user name with WM_GETTEXT(sizeof(char*)), i.e. its
 //     first 3 characters, and relied on seek()'s partial match. The port
 //     reads the whole name.
+//   - TAccessMenus (1160) shows its two-state PLUS / MINUS button cells as
+//     pictures in fx::Grid; the row state lives beside the grid, not in the
+//     cell text.
+//   - Menu access, corrected (Spec #2 design section 6, D9). The original's
+//     TAccessMenus edited the global szMsg (the logged-in user's string), so
+//     1160 showed the session's menus instead of the selected level's, and
+//     TGLAdministration::Menus saved szMsg even after Close. Reset then wrote
+//     szMsg into the level, the reverse of its message (8152). The port:
+//     1160 starts from the level's own code, as login resolves it
+//     (LevelMenuCode); only OK saves; editing never changes the session;
+//     Reset applies the selected level's code to the session.
 //
 #include "Login.h"
 
@@ -20,8 +31,11 @@
 
 #include "cb4sqlite.h"
 
+#include <CommCtrl.h>
+
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include "legacy_headers_begin.h"
 #include "db_acces.h"
@@ -70,6 +84,16 @@ void copyField(char* dst, size_t size, const char* src)
 {
     const std::string s = src ? src : "";
     dst[s.copy(dst, size - 1)] = '\0';
+}
+
+// The menu code a user of `level` gets at login: the level's accessl
+// record, or the first record if the level has none (TGLAccess::Ok); ""
+// without any record.
+std::string LevelMenuCode(AccessLevels& accessl, const char* level)
+{
+    if (!accessl.isValid()) return {};
+    if (accessl.seek(level) != r4success) accessl.top();
+    return accessl.eof() ? std::string() : std::string(accessl.fMenuCode->str());
 }
 
 // ---- TGLAccess ------------------------------------------------------------
@@ -128,13 +152,8 @@ void Login::Ok()
             accept = true;
             copyField(szAccessLevel, sizeof szAccessLevel, access_.fLevel->str());
             copyField(szUser, sizeof szUser, access_.fUsername->str());
-            AccessLevels accessl;
-            if (accessl.isValid()) {
-                if (accessl.seek(szAccessLevel) != r4success) accessl.top();
-                copyField(szMsg, sizeof szMsg, accessl.fMenuCode->str());
-            } else {
-                szMsg[0] = '\0';   // no accessl table: nothing is grayed
-            }
+            AccessLevels accessl;   // no accessl table: "", nothing is grayed
+            copyField(szMsg, sizeof szMsg, LevelMenuCode(accessl, szAccessLevel).c_str());
         } else {
             Message(GetString(1032), MB_ICONEXCLAMATION);   // "The current password that was entered is incorrect."
         }
@@ -157,6 +176,121 @@ void Login::Cancel()
     // TGLAccess::Cancel: no closeAll here; the caller closes the program.
     access_.close();
     End(IDCANCEL);
+}
+
+// ---- TAccessMenus ---------------------------------------------------------
+
+// Dialog 1160: one row per accessm record ("menu" tag order) with its
+// description (field 3) and a two-state picture, PLUS for '0' (enabled) and
+// MINUS for '1' (grayed). Double-click or Enter toggles a row. It starts
+// from `code`, the edited level's menu code, and on OK Code() is the new
+// string, one character per row; UserAdministration::Menus saves it.
+class AccessMenus : public MainDialog {
+public:
+    explicit AccessMenus(std::string code) : code_(std::move(code)) {}
+    const std::string& Code() const { return code_; }
+
+protected:
+    bool OnInitDialog() override;
+    bool OnCommand(WORD id, WORD code, HWND ctl) override;
+    bool OnDestroy() override;
+    void Cancel() override { End(IDCANCEL); }   // TAccessMenus::Cancel: ShutDownWindow only
+
+private:
+    enum { kPlus = 0, kMinus = 1 };
+    void Show(int row);    // row's picture and colour from state_
+    void Toggle(int row);  // TAccessMenus::Select
+    void Ok();
+
+    fx::Grid grid_;
+    HIMAGELIST images_ = nullptr;
+    std::string state_;    // '0' / '1' per row
+    std::string code_;     // the starting code; after OK, the edited one
+};
+
+bool AccessMenus::OnInitDialog()
+{
+    MainDialog::OnInitDialog();   // SetBitmap(IDOK), SetBitmap(IDCANCEL)
+    bUpdate = FALSE;
+    grid_ = fx::Grid(GetDlgItem(hwnd(), ID_DISTLIST));
+    if (!grid_.IsGrid()) return true;
+
+    images_ = ImageList_Create(11, 11, ILC_COLOR24, 2, 0);
+    for (const wchar_t* name : {L"PLUS", L"MINUS"}) {   // kPlus, kMinus
+        auto bmp = static_cast<HBITMAP>(LoadImageW(hInst, name, IMAGE_BITMAP, 0, 0, 0));
+        if (images_ && bmp) ImageList_Add(images_, bmp, nullptr);
+        if (bmp) DeleteObject(bmp);
+    }
+    grid_.SetImageList(images_);
+
+    // SetColWidth(2, 4) characters; column 1 takes the rest.
+    grid_.SetColumns({{GetString(8149), 0}, {L" ", 4 * grid_.CharWidth(), fx::GridAlign::Center}});
+    grid_.SetStretchColumn(1);
+
+    Data4 accessm(cb, "accessm");
+    if (accessm.isValid()) {
+        accessm.SetIndex("menu");
+        Field4 menu(accessm, 3);
+        int row = 0;
+        for (accessm.top(); !accessm.eof(); accessm.skip()) {
+            grid_.SetData(1, ++row, fx::Utf8ToWide(menu.isValid() ? menu.str() : ""));
+            state_ += '0';
+        }
+        accessm.close();
+    }
+    // The level's code; characters past the last menu row are ignored.
+    for (size_t i = 0; i < state_.size() && i < code_.size(); ++i)
+        if (code_[i] == '1') state_[i] = '1';
+    for (int row = 1; row <= static_cast<int>(state_.size()); ++row) Show(row);
+    return true;
+}
+
+bool AccessMenus::OnCommand(WORD id, WORD code, HWND ctl)
+{
+    if (id == ID_DISTLIST) {
+        if (code == GRN_PICK) Toggle(grid_.ActiveRow());   // [WM_FIRST + SSM_DBLCLK]
+        return true;
+    }
+    if (id == IDOK) {
+        Ok();
+        return true;
+    }
+    return MainDialog::OnCommand(id, code, ctl);
+}
+
+bool AccessMenus::OnDestroy()
+{
+    grid_.SetImageList(nullptr);
+    if (images_) ImageList_Destroy(images_);
+    images_ = nullptr;
+    return MainDialog::OnDestroy();
+}
+
+void AccessMenus::Show(int row)
+{
+    const bool grayed = state_[static_cast<size_t>(row - 1)] == '1';
+    grid_.SetCellImage(2, row, grayed ? kMinus : kPlus);
+    if (grayed)
+        grid_.SetColor(fx::Grid::kAll, row, RGB(192, 220, 192), RGB(0, 0, 255));   // RGBCOLOR_BLUE
+    else
+        grid_.SetColor(fx::Grid::kAll, row, RGB(255, 255, 255), RGB(0, 0, 0));
+}
+
+void AccessMenus::Toggle(int row)
+{
+    if (row < 1 || row > static_cast<int>(state_.size())) return;
+    char& c = state_[static_cast<size_t>(row - 1)];
+    c = c == '1' ? '0' : '1';
+    Show(row);
+    bUpdate = TRUE;
+}
+
+void AccessMenus::Ok()
+{
+    // One character per row. (The original wrote into a buffer one byte
+    // short: new char[rows], then [rows] = 0.)
+    code_ = state_;
+    End(IDOK);
 }
 
 // ---- TGLAdministration ----------------------------------------------------
@@ -333,13 +467,11 @@ void UserAdministration::Modify()
 void UserAdministration::Reset()
 {
     if (Message(GetString(8152), MB_ICONQUESTION | MB_YESNO) == IDYES) {
-        // As the original: the level's menu code is set to the current
-        // string (written when the table is next flushed or closed), and the
-        // frame menu is re-grayed from it on the next WM_INITMENUPOPUP.
-        if (accessl_.isValid() && accessl_.seek(GetField(ID_ACCESSLEVEL).c_str()) == r4success) {
-            accessl_.fMenuCode->assign(szMsg);
-            copyField(szMsg, sizeof szMsg, accessl_.fMenuCode->str());
-        }
+        // As string 8152 says: the session takes the selected level's menu
+        // code, and the frame menu is re-grayed from it on the next
+        // WM_INITMENUPOPUP. (The original wrote szMsg into the level instead,
+        // which worked only while 1160 edited szMsg; see the notes above.)
+        copyField(szMsg, sizeof szMsg, LevelMenuCode(accessl_, GetField(ID_ACCESSLEVEL).c_str()).c_str());
         bMenuSetup = FALSE;
     }
 }
@@ -350,12 +482,22 @@ void UserAdministration::Menus()
         Message(GetString(6095), MB_ICONINFORMATION);   // "Enter a user code before designing a menu choose."
         return;
     }
-    // TAccessMenus (dialog 1160) edits the string in a tbSpread grid, then
-    // this saved it to accessl. Without the grid there is nothing to edit,
-    // so nothing is saved either.
-    Message(L"Menu access editing needs the spreadsheet grid control (tbSpread), which is not part "
-            L"of Spec #1.\n\nThe access levels in the accessl table are unchanged.",
-            MB_ICONINFORMATION);
+    const std::string level = GetField(ID_ACCESSLEVEL);
+    AccessMenus dlg(LevelMenuCode(accessl_, level.c_str()));
+    // Only OK saves. A level accessl doesn't have yet is added; an existing
+    // one is changed if a row was toggled and the user agrees (string 6096).
+    if (dlg.DoModal(1160, hwnd()) != IDOK || !accessl_.isValid()) return;
+    if (accessl_.seek(level.c_str()) == r4success) {
+        if (bUpdate && Message(GetString(6096), MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            accessl_.fMenuCode->assign(dlg.Code().c_str());
+            accessl_.flush();
+        }
+    } else {
+        accessl_.appendStart();
+        accessl_.fLevel->assign(level.c_str());
+        accessl_.fMenuCode->assign(dlg.Code().c_str());
+        accessl_.append();
+    }
 }
 
 } // namespace

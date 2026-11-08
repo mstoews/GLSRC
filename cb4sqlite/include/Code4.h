@@ -14,6 +14,20 @@
 //   init()       - as CodeBase: resets error state; no-op otherwise.
 //   initUndo()   - compile-only stub, returns 0 (CodeBase undo log not modelled).
 //
+// New in spec #2 (not CodeBase; spec #2 5.2, 5.3):
+//   begin() / commit() / rollback(), inTransaction(), and the RAII guard
+//   cb4sqlite::Transaction below. Data4's record-buffer writes are unchanged:
+//   each flush/navigation still writes immediately, but inside a transaction
+//   those writes commit together, or not at all. Not nestable.
+//
+//   After rollback() the record buffers of open Data4s may hold values that
+//   were never stored, and their cursors may point at rows that no longer
+//   exist. The caller re-reads: close the tables, or closeAll() and reopen
+//   them, before using them again.
+//
+//   backupTo(path) - copies the open database to `path` with SQLite's online
+//   backup API. Throws Error on failure, leaving no partial file behind.
+//
 
 #include "cb4sqlite_compat.h"
 #include "Errors.h"
@@ -54,6 +68,19 @@ public:
 
     sqlite3* handle() noexcept { return db_; }
 
+    // Transactions (spec #2 5.2). begin() throws Error if no database is open
+    // or a transaction is already open; commit()/rollback() throw if none is.
+    void begin();
+    void commit();
+    void rollback();
+    bool inTransaction() const noexcept { return inTransaction_; }
+
+    // Online backup (spec #2 5.3), UTF-8 path. Overwrites an existing file.
+    void backupTo(const char* utf8Path);
+#ifdef _WIN32
+    void backupTo(std::wstring_view path);
+#endif
+
     // Last error code, as in CodeBase (0 = none). Set by failed opens.
     int errorCode = 0;
 
@@ -64,6 +91,44 @@ private:
 
     sqlite3*            db_ = nullptr;
     std::vector<Data4*> open_;   // Data4 objects currently attached
+    bool                inTransaction_ = false;
+};
+
+// Rolls back unless commit() is called. Use one per D1 operation:
+//
+//   cb4sqlite::Transaction t(cb);
+//   ...writes through Data4...
+//   t.commit();
+//
+// An exception thrown before commit() unwinds through the destructor, which
+// rolls back (a failed rollback there is swallowed: the connection then holds
+// nothing, since SQLite rolls back a failed transaction itself).
+class Transaction {
+public:
+    explicit Transaction(Code4& code) : code_(code) { code_.begin(); }
+    ~Transaction()
+    {
+        if (open_) {
+            try { code_.rollback(); } catch (...) {}
+        }
+    }
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+
+    void commit()
+    {
+        code_.commit();
+        open_ = false;
+    }
+    void rollback()
+    {
+        open_ = false;
+        code_.rollback();
+    }
+
+private:
+    Code4& code_;
+    bool   open_ = true;
 };
 
 // CodeBase numeric helpers. In CodeBase Str4ptr was a class with operator

@@ -12,10 +12,16 @@
 // Iteration moves the parent Data4 itself (its Field4s read each match), in
 // the parent's selected tag order.
 //
-// Supported querySet() expressions in Spec #1 (case and spaces ignored):
-//   nullptr / ""                    every record
-//   ".NOT. DELETED()" / "!DELETED()" records not marked deleted
-// Anything else throws cb4sqlite::Error ("not implemented in spec #1").
+// Supported querySet() expressions (spec #2 5.1; keywords and field names
+// case-insensitive, spaces ignored):
+//   nullptr / ""                       every record
+//   .NOT. DELETED()  /  !DELETED()     records not marked deleted
+//   FIELD = 'text'                     character field starts with text (dBase SET EXACT OFF)
+//   FIELD <> 'text'  (also # and !=)   the negation
+//   clause .AND. clause ...
+// Literals may use ' or ". Text outside this grammar throws cb4sqlite::Error
+// ("not implemented"); an unknown or non-character field throws Error too.
+// The values are bound as SQL parameters, never pasted into the SQL.
 //
 
 #include "Data4.h"
@@ -40,7 +46,7 @@ public:
 
 private:
     Data4*      data_ = nullptr;
-    std::string filter_;                          // SQL predicate, empty = none
+    detail::QueryFilter filter_;                  // empty sql = every record
 };
 
 } // namespace cb4sqlite

@@ -10,8 +10,9 @@
 //   LoginRequired       GL.INI [ACCESS] PSW=T (TGlWindow::SetupWindow).
 //
 // TAccessMenus (dialog 1160, the menu-access editor behind 1159's Menu
-// button) needs the tbSpread grid, which Spec #1 doesn't have; the button
-// says so (see UserAdministration::Menus).
+// button) lists the accessm menus in an fx::Grid; double-click or Enter
+// toggles one. The Menu button then saves the string as the menu code of the
+// level shown in 1159 (UserAdministration::Menus).
 //
 #pragma once
 

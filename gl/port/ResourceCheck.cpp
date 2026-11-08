@@ -26,7 +26,6 @@ struct Report {
         log += L"\n";
         if (!ok) ++failures;
     }
-    void note(const std::wstring& what) { log += L"note    " + what + L"\n"; }
 };
 
 INT_PTR CALLBACK ProbeProc(HWND, UINT, WPARAM, LPARAM) { return FALSE; }
@@ -34,7 +33,7 @@ INT_PTR CALLBACK ProbeProc(HWND, UINT, WPARAM, LPARAM) { return FALSE; }
 struct DialogCase {
     int id;
     const wchar_t* what;
-    bool needsSpread;   // contains a tbSpread grid, which win32fx does not register (spec 3.6)
+    bool hasGrid;   // contains a tbSpread grid (fx::Grid, Spec #2 S2-M0): checked to hold its ListView
 };
 
 // Spec 6.2 as corrected in M4. The three named in the M4 exit criteria come first.
@@ -67,15 +66,8 @@ void checkDialogs(HINSTANCE inst, Report& r)
             continue;
         }
         HWND dlg = CreateDialogParamW(inst, MAKEINTRESOURCEW(d.id), parent, ProbeProc, 0);
-        if (d.needsSpread) {
-            if (dlg) {
-                r.check(true, name);
-            } else {
-                r.note(name + L": template present; not created (tbSpread is not registered)");
-            }
-        } else {
-            r.check(dlg != nullptr, name);
-        }
+        r.check(dlg != nullptr, name);
+        if (dlg && d.hasGrid) r.check(fx::Grid(GetDlgItem(dlg, 1075)).IsGrid(), name + L": tbSpread grid (ID_DISTLIST)");
         if (dlg) DestroyWindow(dlg);
     }
     if (parent) DestroyWindow(parent);

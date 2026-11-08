@@ -161,6 +161,24 @@ Every Spec #2 screen except Budget Data uses the grid for display only:
 
 Budget Data is the only screen that reads back edited cells.
 
+*Read in S2-M0* (every `SS*` call in `gl_acctl.cpp`, `gl_btche.cpp`, `gl_postb.cpp`, `gl_postr.cpp`, `gl_btcan.cpp`, `gl_delrq.cpp`, `gl_trans.cpp`, `gl_budgt.cpp`, `gl_acces.cpp`, and `gl_profi.cpp`'s 1011 list):
+
+- **Notifications.** `SSM_DBLCLK` is the only grid message any GL screen handles: `SelectCell` / `HandleListBox` / `Select` in every header under `gl/header/` that declares one, `HandleDoubleClick` in `gl_postr.cpp`. Its `SS_CELLCOORD` gives the row (and column). The port's `GRN_PICK` replaces it; Enter also picks.
+- **Colours.** One convention throughout:
+  - green on blue, `RGB(192,220,192)` / `RGBCOLOR_BLUE`, marks the row picked or matched (`gl_acctl` Seek, `gl_postb` pick, `gl_btche` line and voucher lists) or a grayed menu (`gl_acces`);
+  - white or `RGB(250,250,250)` on black is the normal colour, reset with `SS_ALLCOLS, SS_ALLROWS` before each mark;
+  - the voucher line list's total row writes "Voucher Out Of Balance" in white on red in column 2 when debits and credits differ, and colours its two total cells green on blue (`gl_btche.cpp:813–827`).
+  
+  `fx::Grid::SetColor` covers all three cases (all cells, one row, one cell).
+- **Two-state button cells.** `gl_acces.cpp` (1160) uses `SSSetTypeButton` with the `PLUS` / `MINUS` bitmaps for each menu's on/off state. The port shows them with `SetImageList` + `SetCellImage`.
+- **Editable cells.** `gl_btche` and `gl_budgt` use `SSSetTypeEdit` and `SSSetTypeFloat` cells. Only `gl_budgt` reads edited values back. `gl_postr` and `gl_delrq` set `SSB_ARROWSEXITEDITMODE`, `SS_ENTERACTION_NEXT` and lock columns 5 and 6 of 4-column grids, which looks copied from another screen; they never read a cell other than column 1.
+- **Not mapped:**
+  - `SSSetFont` with "HELV" at `GetFontSize()`: the grid uses the dialog's font;
+  - `SSGetColor` (`gl_btche.cpp:192`, saving the default colours): S2-M3 adds a getter if voucher entry needs it;
+  - `SSGetRowHeightInPixels` (`gl_btche`, `gl_acctl`, to fill the window with blank rows): S2-M3 likewise;
+  - `SSSaveToFile` (`gl_budgt`, a debugging aid);
+  - `SSBuildDependencies` / `SSReCalc` (formulas; none are used).
+
 ### 4.2 Design
 
 - **Control.** `fx::Grid` is a window class registered as **`tbSpread`**, alongside the `tb*` controls (Spec #1 §3.6), so the dialogs 1015, 1017, 1029, 1043 and 1061 load unchanged. Internally it is a report-mode ListView child that fills the control.
@@ -168,9 +186,10 @@ Budget Data is the only screen that reads back edited cells.
 - **API.** Rows and columns are 1-based, as in `SS*`:
   - `SetColumns({header, width, align})`, `SetMaxRows`, `Clear`;
   - `SetData(col, row, text)`, `GetData(col, row)`;
-  - `SetRowColor(row, back, fore)`, done with `NM_CUSTOMDRAW`.
-- **Notifications.** A pick (double-click or Enter) and a selection change go to the parent as `WM_COMMAND` with notification codes defined in `CustomControls.h`. This replaces OWL's `SelectCell` and `HandleListBox` messages.
-- **Editable columns** (Budget Data). `SetColumnEditable(col, EditKind::Float)`. Enter or F2 opens a `tbFloat` over the cell. Enter or losing focus commits the value, and Esc cancels. AP's grid screens will extend the same mechanism (Spec #1 §7.5).
+  - `SetColor(col, row, back, fore)`, done with `NM_CUSTOMDRAW`. *As built:* the draft's `SetRowColor` became `SetColor` with `Grid::kAll` for either argument, because `gl_btche` colours single cells (§4.1).
+  - *Added in S2-M0:* `SetStretchColumn` (the column that takes the remaining width), `SetImageList` / `SetCellImage` (1160's PLUS / MINUS cells), `ActiveRow` / `ActiveCol` / `SetActiveCell`, `SetRedraw`, and `Grid::Create` for grids made in code.
+- **Notifications.** A pick (double-click or Enter) and a selection change go to the parent as `WM_COMMAND` with notification codes defined in `CustomControls.h`. This replaces OWL's `SelectCell` and `HandleListBox` messages. *As built:* `GRN_PICK`, `GRN_SELCHANGE`, `GRN_CELLCHANGED`, `GRN_KEYDOWN` and `GRN_RCLICK`, numbered as the `SSM_*` messages they replace. The last two exist for `AccountList`, which handles Esc and right-click. Inside a dialog the grid asks for Enter, so Enter picks a row instead of pressing the default button.
+- **Editable columns** (Budget Data). `SetColumnEditable(col, EditKind::Float)`. Enter or F2 opens a `tbFloat` over the cell. Enter or losing focus commits the value, and Esc cancels. AP's grid screens will extend the same mechanism (Spec #1 §7.5). *As built:* `SetColumnEditable(col, floatMask, tbStyle)`, since a float column is the only kind Spec #2 needs; a double-click also starts editing; Tab commits; Up and Down commit and edit the cell above or below (`SSB_ARROWSEXITEDITMODE`).
 - **`AccountList`** moves onto `fx::Grid`. Its behaviour stays as Spec #1 §6.7 #7 describes.
 
 ---
@@ -188,15 +207,19 @@ clause := ".NOT." "DELETED()"
 op     := "=" | "<>" | "#" | "!="
 ```
 
-**Comparison** follows CodeBase's dBase rules, verified against `include/e4expr.h` and the CodeBase 4 documentation in S2-M1:
+**Comparison** follows dBase with `SET EXACT OFF`:
 
-- The field value is compared at its full stored width, with trailing blanks.
-- `=` on strings is a **left match**, the length of the right-hand literal (dBase `SET EXACT OFF`).
-- `<>` is its negation.
+- The field value is compared at its full stored width, with trailing blanks. So `ACCOUNT = '100    '` matches account "100", and `ACCOUNT = '10 '` doesn't.
+- `=` on strings is a **left match** over the length of the right-hand literal. So `ACCOUNT = '4'` matches "410001", and `ACCOUNT = ''` matches every record. A literal longer than the field never matches.
+- `<>`, `#` and `!=` are its negation.
+- Values compare case-sensitively, byte by byte. Only character fields can be compared with a text literal; a numeric, date or logical field is an error, as it was a type mismatch in dBase.
+- A NULL character value reads as blanks, as dBase saw an empty field.
 
-A query outside the grammar still throws `notImplemented`, and `AccountList` keeps its fallback message.
+*Corrected in S2-M1:* the draft said these rules would be "verified against `include/e4expr.h` and the CodeBase 4 documentation". The tree has neither CodeBase's source nor its documentation. `include/e4expr.h` only defines operator codes (`E4EQUAL` 26, `E4NOT_EQUAL` 30, …), and no header has an EXACT setting, nor does any GL source set one. The reference is therefore the rule `dbf2sqlite` already applies to the real tags' FOR conditions (`dbf2sqlite_core/src/KeyExpr.cpp:24–27`, `dbf2sqlite_core/README.md`): `type = 'AR '` becomes `substr("TYPE", 1, length('AR ')) = 'AR '`. The query translation uses the same SQL, so a tag's FOR condition and a query on the same expression select the same rows. Confirming it against real CodeBase behaviour needs the original binary or documentation (§12).
 
-**Translation.** The query becomes a SQL `WHERE` clause with bound parameters, never string concatenation.
+**Unsupported text.** A query outside the grammar still throws, now `Error("… not implemented: expression …")` (the "in spec #1" wording is gone from `notImplemented`). `AccountList` keeps its fallback message.
+
+**Translation** (`cb4sqlite/src/QueryExpr.cpp`). Each literal becomes a named parameter (`:q1`, `:q2`, …) bound at each `top`/`bottom`/`skip`, never pasted into the SQL. Unknown fields throw `Error("… has no field X …")`. If a `querySet` call fails, the previous filter stays in place.
 
 This covers `gl_trans.cpp` and `gl_acctl.cpp` (`ACCOUNT <> ' '`), so it also closes Spec #1 gap G2.
 
@@ -206,10 +229,22 @@ This covers `gl_trans.cpp` and `gl_acctl.cpp` (`ACCOUNT <> ' '`), so it also clo
 - While a transaction is open, the record-buffer write semantics (Spec #1 §4.6) stay the same, but all the writes commit together.
 - After a rollback, the in-memory record buffers of open `Data4`s may hold values that were never stored. The rule is that the caller re-reads: it closes the tables, or does `closeAll` and reopens them, as the original did after posting.
 - Nesting is not supported. `begin()` inside a transaction throws.
+- *As built (S2-M1):*
+  - `begin()` first flushes every open `Data4`'s changed record, so earlier edits aren't swept into the transaction. It then runs `BEGIN IMMEDIATE`.
+  - `commit()` also flushes the changed records first, as moving off them would have.
+  - `rollback()` discards changed-but-unwritten records, so a later move doesn't write them back.
+  - `close()` with a transaction open rolls it back.
+  - `inTransaction()` reports the state. There is no global `using` for `Transaction`, so write `cb4sqlite::Transaction`.
 
 ### 5.3 Backup
 
 `Code4::backupTo(path)` copies the open database with SQLite's online backup API (`sqlite3_backup_*`). Restore is handled by the application (D5).
+
+*As built (S2-M1):*
+- It flushes changed records first.
+- It refuses while a transaction is open.
+- It writes `<path>.part`, then moves it over `path` (replacing an existing file), so a failure leaves neither file behind.
+- Paths are UTF-8, and a `std::wstring_view` overload is provided on Windows.
 
 ### 5.4 Table headers
 
@@ -219,6 +254,24 @@ This covers `gl_trans.cpp` and `gl_acctl.cpp` (`ACCOUNT <> ' '`), so it also clo
 - puts it in `gl/port/`, generated with `dbf2sqlite --headers-out` from the real table and then hand-checked;
 - leaves `include/db_dist.h` untouched as legacy reference, because AR code may still include it;
 - checks every other header in §2.1 against the real `.dbf` field lists in S2-M1, and records any difference here.
+
+*As built (S2-M1).* `gl/port/db_gl_dist.h` (`Tgldist`) and `gl/port/db_gl_distb.h` (`Tgldistb`) were generated from the real tables and then hand-checked. Their default tag is **`batchno`**, string 8140, which `gl_postr.cpp` selects. The generator picked the first tag, `ardist`, which has `FOR TYPE = 'AR '` and would hide every GL line.
+
+The other headers, compared with the real `.dbf` layouts. `gl_tests/test_tables.cpp` pins each finding against the fixture, which copies the real layouts.
+
+| Header | Finding | Consequence for S2-M2/M3 |
+|---|---|---|
+| `include/db_btch.h` (`Tglbtch`) | Opens `descript`, which `gl_btch` doesn't have; the real table has `reference` instead. `gl_btche.cpp` `AppendHeader` assigns `descript` too. | Port with a GL header for `gl_btch`, mapping the voucher description to `reference`, the real column. |
+| `include/db_btchd.h` (`Tglbtchd`) | Lacks `medrep`, `drcode` and `prod`, which the real `gl_btchd` has and voucher entry and posting use. The original code calls the product field `product`; the real column is **`prod`**. | Needs a correct GL header, generated like `Tgldist`. |
+| `include/db_drcod.h` (`Tgldrcodes`) | Opens fields **by number**, and from field 9 on the numbers don't match the real order: the header's 9 "fax" is the real `territory`, 10 "contact" is `fax`, and so on to 17 "territory", which is `balance`. `creditlmt` (18) is never opened. | Don't use it. Open by name, generated or hand-written. |
+| `include/db_medrp.h` (`Tglmedreps`) | Every field it opens exists; `territory` and `type` aren't opened. | Usable. |
+| `include/db_itemm.h` (`Tprods`) | Every field it opens exists; `felement` and `fshop2` aren't opened. Its `Man()` selects a tag **`MAN`** that the real `GL_ITEMM.MDX` doesn't have; the real tags are `ffulln` and `fpcode`. | Usable; don't call `Man()`. |
+| `include/db_dept.h` (`Tgldept`) | Matches. | none |
+
+The format of the real values, which the fixture copies:
+- `gl_btchd.period` is C(2), holding the period number right-aligned (`" 7"`).
+- `gl_dist` copies the period and date into wider character fields, left-aligned (`" 7  "`, `"20261015  "`).
+- A voucher line's `mode` is blank until posting sets `"0"`. `AppendDetail` never sets it; only the header gets `"1"` (open) or `"3"` (adjustment).
 
 ### 5.5 `dbf2sqlite`
 
@@ -238,6 +291,7 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 | D6 | Reindex shows a message instead of rebuilding. | There are no `.mdx` files after migration, and SQLite maintains its own indexes. |
 | D7 | Maintain External Vouchers stays a stub. | Its handler only opens dialog 1058, and nothing shows what that dialog was for. |
 | D8 | Budget Data edits in the grid (§4.2) rather than in 12 separate fields. | It keeps the original layout, and AP needs grid editing anyway. |
+| D9 | **Menu Access (1160)** starts from the edited level's own menu code (its `accessl` record, or the first record if it has none, as login resolves it), and only OK saves. Editing no longer changes the session. **Reset** (1159, string 8152) applies the selected level's code to the session and re-grays the frame menu. | The original edited the global `szMsg`, the logged-in user's string, so 1160 showed the session's menus rather than the selected level's. Its `Menus()` then saved that string even after Close, and Reset wrote `szMsg` into the level, the reverse of what 8152 says. |
 
 ---
 
@@ -255,6 +309,17 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 - **`GL.INI`:** `[PERIOD] BATCHNO` for the empty-table case.
 
 The fixture's 101000 keeps type `B`, so its year end has exactly one Retained Earnings account.
+
+*As built (S2-M1):*
+- **Vouchers:**
+  - 100 is posted: 102101 Dr 250 / 101000 Cr 250 in period 7, with its two `gl_dist` rows. 101000 now has −250 in `period7`, so the books' period columns agree with `gl_dist`.
+  - 101 is open and balanced: 111101 Dr 1,150 / 410001-10 Cr 600 / 410001-20 Cr 550, the 410001 lines with reps MR001/MR002, doctors DR001/DR002 and products P100/P200.
+  - 102 is open and out of balance: 100 / 90.
+  - 103 is an open adjustment (`mode "3"`): 144910 / 111101, 75.
+- **Master data:** three rows each in `gl_medrp`, `gl_drcod` and `gl_itemm`.
+- **Archive:** `gl_distb` is empty, as in the real company.
+- **Departments** 10 and 20 were already there.
+- **`GL.INI`:** `[PERIOD] BATCHNO=99`.
 
 ---
 
@@ -339,4 +404,16 @@ Corrections found while porting are recorded under each milestone here, as Spec 
 1. **Recover's effect on `curr_bal` and on the voucher tables** (§2.5, R4). Settle in S2-M4.
 2. **The adjustment-voucher rules** (`PostAdjustment`), in particular which balance fields it changes and how adjustments differ from prior-period entries. Settle in S2-M3/M4 from `gl_postb.cpp` and `gl_prior.cpp`.
 3. **How voucher entry chooses the date** and whether it checks the date against the period. Settle in S2-M3.
-4. **What the `SSSetBool` options change** in each grid. Settle in S2-M0 and map each one to a ListView style, or record that it is ignored.
+4. ~~**What the `SSSetBool` options change** in each grid. Settle in S2-M0 and map each one to a ListView style, or record that it is ignored.~~ *Resolved in S2-M0:*
+
+   | Option | Where | Port |
+   |---|---|---|
+   | `SSB_REDRAW` | all | `Grid::SetRedraw` (`WM_SETREDRAW`) |
+   | `SSB_PROTECT` TRUE | post, recover, cancel, delete, budget, 1160, line list | the default: cells are read-only unless `SetColumnEditable` |
+   | `SSB_SHOWROWHEADERS` FALSE | all that set it | the default: a ListView has no row headers |
+   | `SSB_ALLOWUSERSELBLOCK` | TRUE in inquiry, 1160, 1011; FALSE elsewhere | ignored: one row is selected at a time (`LVS_SINGLESEL`) |
+   | `SSB_MOVEACTIVEONFOCUS` FALSE | all | the default: focus doesn't move the active row |
+   | `SSB_SCROLLBAREXTMODE` TRUE, `SSB_HORZSCROLLBAR` FALSE | inquiry, recover, 1160, 1011 / post, cancel, delete | the default: scroll bars only when needed; the stretch column avoids a horizontal one |
+   | `SSB_ARROWSEXITEDITMODE` TRUE | recover, delete | Up and Down end an edit |
+   | `SSB_AUTOSIZE`, `SSB_ALLOWUSERRESIZE` FALSE, `SSB_NOBEEP`, `SSB_ALLOWUSERFORMULAS` | 1160, 1011, line list / budget | ignored. The port's header lets the user resize columns. |
+5. **The dBase comparison rules against real CodeBase 4** (§5.1). They follow `dbf2sqlite`'s FOR-condition translation, not CodeBase's own source or documentation, which aren't in the tree. Confirm them if either turns up, or with the original 16-bit build on the real data, for example by comparing the account list's rows under a `GL.INI [GLACCTS] QUERY`.

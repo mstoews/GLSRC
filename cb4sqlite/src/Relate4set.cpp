@@ -4,24 +4,15 @@
 
 #include "Relate4set.h"
 #include "Internal.h"
-
-#include <cctype>
+#include "QueryExpr.h"
 
 namespace cb4sqlite {
 
 int Relate4set::querySet(const char* expression)
 {
-    std::string norm;
-    for (const char* p = expression ? expression : ""; *p; ++p)
-        if (!std::isspace(static_cast<unsigned char>(*p)))
-            norm += static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
-
-    if (norm.empty())
-        filter_.clear();
-    else if (norm == ".NOT.DELETED()" || norm == "!DELETED()")
-        filter_ = "_deleted = 0";
-    else
-        notImplemented("Relate4set::querySet", std::string("expression \"") + expression + "\"");
+    if (!data_) return e4info;
+    // A missing table has no fields, so only the DELETED() forms translate.
+    filter_ = detail::translateQuery(data_->info_, expression ? expression : "");
     return r4success;
 }
 

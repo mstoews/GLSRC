@@ -8,12 +8,12 @@
 //   SetAccounts      TGLSetAccounts, dialog 1033 (Profile > Accounts): the
 //                    eight GL control accounts in gl_setat (TYPE="GL").
 //   CashAccounts     TAPCashAccts, dialog 1034 (Accounts > Cash): the bank
-//                    accounts in gl_setat (TYPE="CA").
+//                    accounts in gl_setat (TYPE="CA"), with TAPCashAcctsList
+//                    (dialog 1011, an fx::Grid) beside it. Double-click or
+//                    Enter on a row shows that account in 1034;
+//                    double-clicking 1034 itself steps to the next one.
 //
 // Not ported:
-//   - TAPCashAcctsList (dialog 1011), the account list beside dialog 1034:
-//     it is a tbSpread grid. Dialog 1034 works without it; you type the
-//     account, and double-clicking the dialog steps to the next one.
 //   - TGLProfile::GetCalc. A right-click on Company Profile asked "Not
 //     fooling around here..." and, on Yes, zapped every table listed in the
 //     `clear` table and zeroed every balance in glaccts. It is a destructive

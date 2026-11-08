@@ -13,8 +13,8 @@
 // WM_COMMAND ID_ACCTLIST, and hides the list. Right-click opens List Window
 // Parameters (dialog 1035) to edit the query.
 //
-// The grid is a report-mode ListView, since Spec #1 has no tbSpread. Typing
-// on it selects the first account starting with the typed characters (the
+// The grid is fx::Grid, the port's tbSpread (Spec #2 S2-M0). Typing on it
+// selects the first account starting with the typed characters (the
 // ListView's own type-ahead, which replaces TListWindow::GetKey).
 //
 #pragma once
@@ -49,16 +49,17 @@ protected:
     bool OnCreate(LPCREATESTRUCTW cs) override;
     bool OnSize(UINT type, int cx, int cy) override;
     bool OnDestroy() override;
+    bool OnCommand(WORD id, WORD code, HWND ctl) override;   // the grid's GRN_* notifications
     bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
 
 private:
-    void SelectRow(int row);   // TAccountList::HandleListBox
+    void SelectRow(int row);   // TAccountList::HandleListBox; row is 1-based
     void SetQuery();           // TListWindow::SetParamenters
-    std::string RowText(int row, int column) const;
+    std::string RowText(int row, int column) const;   // 1-based, as SSGetData
     void SavePosition() const;
 
     HWND owner_ = nullptr;
-    HWND list_ = nullptr;
+    fx::Grid grid_;
     Tglaccts* gl_ = nullptr;
     std::unique_ptr<Data4> rows_;   // the list's own handle on glaccts, as TListWindow::SetFields opened
     int fields_[3] = {1, 2, 3};     // GL.INI [GLACCTS] FIELD1..3

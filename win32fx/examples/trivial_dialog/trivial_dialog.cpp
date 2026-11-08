@@ -11,7 +11,8 @@
 // The self-test is the plan's two-instance dispatch test (risk P2): two live
 // instances of one dialog class, and two MDI children of one window class,
 // each receive their own messages. It also drives the custom controls with
-// WM_SETTEXT / WM_CHAR.
+// WM_SETTEXT / WM_CHAR, and the tbSpread grid (fx::Grid, Spec #2 plan M0)
+// through its API, its keyboard and its custom draw.
 //
 #include <Windows.h>
 
@@ -19,23 +20,41 @@
 #include "resource.h"
 
 #include <string>
+#include <utility>
 
 namespace {
 
 class TrivialDialog : public fx::Dialog {
 public:
-    explicit TrivialDialog(const wchar_t* name) : name_(name) {}
+    explicit TrivialDialog(const wchar_t* name, bool editableGrid = true) : name_(name), editable_(editableGrid) {}
     int pings = 0;
+    int picks = 0, changes = 0, selChanges = 0;   // GRN_* from IDC_GRID
 
 protected:
     bool OnInitDialog() override
     {
         SetDlgItemTextW(hwnd(), IDC_NAME, name_);
+        fx::Grid grid(GetDlgItem(hwnd(), IDC_GRID));
+        const int ch = grid.CharWidth();
+        grid.SetColumns({{L"Account", 9 * ch}, {L"Description", 20 * ch}, {L"Amount", 12 * ch, fx::GridAlign::Right}});
+        grid.SetStretchColumn(2);
+        const wchar_t* rows[][3] = {{L"101000", L"Petty cash", L"500.00"},
+                                    {L"102101", L"Checking account", L"12,500.00"},
+                                    {L"340000", L"Retained earnings", L"-16,840.00"}};
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) grid.SetData(c + 1, r + 1, rows[r][c]);
+        if (editable_) grid.SetColumnEditable(3, L"9999999999.99", 0x2000);   // FS_SEPARATOR
         return true;
     }
 
     bool OnCommand(WORD id, WORD code, HWND) override
     {
+        if (id == IDC_GRID) {
+            if (code == GRN_PICK) ++picks;
+            if (code == GRN_CELLCHANGED) ++changes;
+            if (code == GRN_SELCHANGE) ++selChanges;
+            return true;
+        }
         if (id != IDC_PING || code != BN_CLICKED) return false;
         SetDlgItemInt(hwnd(), IDC_PINGS, static_cast<UINT>(++pings), FALSE);
         return true;
@@ -49,6 +68,7 @@ protected:
 
 private:
     const wchar_t* name_;
+    bool editable_;
 };
 
 class ProbeChild : public fx::MdiChild {
@@ -166,6 +186,105 @@ void dialogInstances(HINSTANCE inst, Results& r)
     r.check(a.hwnd() == nullptr && b.hwnd() == nullptr, L"modeless dialogs detach on WM_NCDESTROY");
 }
 
+void key(HWND ctl, WPARAM vk)
+{
+    SendMessageW(ctl, WM_KEYDOWN, vk, 1);
+    SendMessageW(ctl, WM_KEYUP, vk, 0xC0000001);
+}
+
+void gridChecks(HINSTANCE inst, Results& r)
+{
+    TrivialDialog d(L"grid", false);   // column 3 is made editable after the pick checks
+    HWND dlg = d.CreateModeless(inst, IDD_TRIVIAL, nullptr);
+    if (!dlg) {
+        r.check(false, L"grid: dialog created");
+        return;
+    }
+    ShowWindow(dlg, SW_SHOW);
+    SetActiveWindow(dlg);
+    fx::Grid grid(GetDlgItem(dlg, IDC_GRID));
+    r.check(grid.IsGrid() && grid.list() != nullptr, L"tbSpread from a dialog template holds a ListView");
+    r.check(grid.Columns() == 3 && grid.Rows() == 3, L"grid: SetColumns / SetData built 3 x 3");
+    r.check(grid.GetData(1, 2) == L"102101" && grid.GetData(3, 3) == L"-16,840.00", L"grid: GetData round-trip");
+    r.check(grid.GetData(4, 1).empty() && grid.GetData(1, 4).empty() && grid.GetData(0, 1).empty(),
+            L"grid: GetData outside the grid is empty");
+
+    grid.SetData(1, 5, L"999999");
+    r.check(grid.Rows() == 5 && grid.GetData(1, 5) == L"999999" && grid.GetData(1, 4).empty(),
+            L"grid: SetData past the last row adds rows");
+    grid.SetMaxRows(3);
+    r.check(grid.Rows() == 3 && grid.GetData(1, 3) == L"340000", L"grid: SetMaxRows removes rows from the end");
+
+    {
+        RECT rc{};
+        GetClientRect(grid.list(), &rc);
+        const int total = grid.ColumnWidth(1) + grid.ColumnWidth(2) + grid.ColumnWidth(3);
+        r.check(total == rc.right - rc.left, L"grid: the stretch column takes the remaining width");
+    }
+
+    const int sel = d.selChanges;
+    grid.SetActiveCell(1, 2);
+    r.check(grid.ActiveRow() == 2 && grid.ActiveCol() == 1 && d.selChanges == sel + 1,
+            L"grid: SetActiveCell selects the row, GRN_SELCHANGE sent");
+
+    SetFocus(grid.list());
+    key(grid.list(), VK_RETURN);   // column 1 isn't editable: a pick
+    r.check(d.picks == 1 && grid.ActiveRow() == 2, L"grid: Enter on a row sends GRN_PICK");
+    r.check((SendMessageW(grid.list(), WM_GETDLGCODE, VK_RETURN, 0) & DLGC_WANTARROWS) != 0,
+            L"grid: the list keeps the arrow keys in a dialog");
+
+    // Custom draw: what the list would paint for row 2, column 2.
+    grid.SetColor(fx::Grid::kAll, fx::Grid::kAll, RGB(250, 250, 250), RGB(0, 0, 0));
+    grid.SetColor(fx::Grid::kAll, 2, RGB(192, 220, 192), RGB(0, 0, 255));
+    const auto paint = [&](int row) {
+        NMLVCUSTOMDRAW cd{};
+        cd.nmcd.hdr.hwndFrom = grid.list();
+        cd.nmcd.hdr.idFrom = 1;
+        cd.nmcd.hdr.code = NM_CUSTOMDRAW;
+        cd.nmcd.dwDrawStage = CDDS_ITEMPREPAINT | CDDS_SUBITEM;
+        cd.nmcd.dwItemSpec = static_cast<DWORD_PTR>(row - 1);
+        cd.iSubItem = 1;
+        SendMessageW(grid.hwnd(), WM_NOTIFY, 1, reinterpret_cast<LPARAM>(&cd));
+        return std::make_pair(cd.clrTextBk, cd.clrText);
+    };
+    r.check(paint(2) == std::make_pair(RGB(192, 220, 192), RGB(0, 0, 255)), L"grid: a row colour is painted");
+    r.check(paint(1) == std::make_pair(RGB(250, 250, 250), RGB(0, 0, 0)), L"grid: other rows get the default colour");
+    grid.SetColor(2, 1, RGB(255, 255, 255), RGB(255, 0, 0));
+    r.check(paint(1) == std::make_pair(RGB(255, 255, 255), RGB(255, 0, 0)), L"grid: a cell colour beats the row's");
+
+    // Editing column 3 (tbFloat 9999999999.99 with separators).
+    grid.SetColumnEditable(3, L"9999999999.99", 0x2000);   // FS_SEPARATOR
+    r.check(!grid.BeginEdit(1, 1) && !grid.IsEditing(), L"grid: a column that isn't editable doesn't edit");
+    r.check(grid.BeginEdit(3, 1) && grid.IsEditing(), L"grid: BeginEdit on an editable cell");
+    HWND editor = GetDlgItem(grid.list(), 2);
+    r.check(editor && fx::GetText(editor) == L"500.00", L"grid: the editor starts with the cell's value");
+    typeText(editor, L"1234.5");
+    key(editor, VK_RETURN);
+    r.check(!grid.IsEditing() && grid.GetData(3, 1) == L"1,234.50", L"grid: Enter commits, in the mask's format");
+    r.check(d.changes == 1 && grid.LastChangedRow() == 1 && grid.LastChangedCol() == 3,
+            L"grid: GRN_CELLCHANGED with the changed cell");
+    grid.BeginEdit(3, 1);
+    typeText(GetDlgItem(grid.list(), 2), L"99");
+    key(GetDlgItem(grid.list(), 2), VK_ESCAPE);
+    r.check(!grid.IsEditing() && grid.GetData(3, 1) == L"1,234.50" && d.changes == 1, L"grid: Esc cancels the edit");
+    grid.BeginEdit(3, 1);
+    typeText(GetDlgItem(grid.list(), 2), L"7");
+    key(GetDlgItem(grid.list(), 2), VK_DOWN);
+    r.check(grid.IsEditing() && grid.ActiveRow() == 2 && grid.GetData(3, 1) == L"7.00",
+            L"grid: Down commits and edits the cell below");
+    grid.EndEdit(false);
+    r.check(!grid.IsEditing() && grid.GetData(3, 2) == L"12,500.00", L"grid: EndEdit(false) leaves the cell");
+
+    grid.Clear();
+    r.check(grid.Rows() == 0 && grid.Columns() == 3, L"grid: Clear removes the rows, keeps the columns");
+
+    HWND made = fx::Grid::Create(dlg, 1099, 0, 0, 100, 50);
+    r.check(made && fx::Grid(made).IsGrid(), L"Grid::Create makes one in code");
+
+    DestroyWindow(dlg);
+    r.check(d.hwnd() == nullptr, L"grid: dialog destroyed");
+}
+
 void mdiInstances(HINSTANCE inst, Results& r)
 {
     ProbeFrame frame;
@@ -200,6 +319,7 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     }
     Results r;
     dialogInstances(inst, r);
+    gridChecks(inst, r);
     mdiInstances(inst, r);
     if (args.find(L"/quiet") == std::wstring::npos) {
         r.log += r.failures ? fx::Format(L"\n%d check(s) FAILED", r.failures) : std::wstring(L"\nAll checks passed");

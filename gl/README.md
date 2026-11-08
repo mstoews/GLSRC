@@ -24,7 +24,23 @@ x64\Debug\gl.exe
 | `ADMIN` | `ADMIN` | A | everything |
 | `CLERK` | `clerk` | B | the Maintenance menu is grayed |
 
-Company "Dev Fixture Company Ltd.", fiscal year April 2026 to March 2027, current period "Oct 26". The chart has 11 accounts. 340000 is the Retained Earnings account, and 102101 has period activity, so the Chart of Accounts won't delete it. To regenerate the `.dbf` files after editing them, run `python3 gl/test/dev-fixture/make_dev_fixture.py`.
+Company "Dev Fixture Company Ltd.", fiscal year April 2026 to March 2027, current period "Oct 26". The chart has 11 accounts. 340000 is the Retained Earnings account. 102101 and 101000 have period-7 activity (posted voucher 100, below), so the Chart of Accounts won't delete them. The deletable accounts are 144910 and 410001 depts 10 and 20.
+
+For the Spec #2 voucher screens, the fixture also has:
+
+| Voucher | State (`gl_btch.mode`) | Lines |
+|---|---|---|
+| 100 | posted (`0`), with its `gl_dist` rows | 102101 Dr 250, 101000 Cr 250 |
+| 101 | open (`1`), balanced | 111101 Dr 1,150; 410001-10 Cr 600 and 410001-20 Cr 550, with medical reps, doctors and products |
+| 102 | open (`1`), out of balance | 148000 Dr 100, 260007 Cr 90 |
+| 103 | open adjustment (`3`) | 144910 Dr 75, 111101 Cr 75 |
+
+- **Master data:** three medical reps (MR001–MR003), doctors (DR001–DR003) and products (P100, P200, P300).
+- **Departments:** 10 and 20.
+- **Archive:** `gl_distb` is empty.
+- **`GL.INI`:** `[PERIOD] BATCHNO=99`.
+
+To regenerate the `.dbf` files after editing them, run `python3 gl/test/dev-fixture/make_dev_fixture.py`.
 
 ## A real company
 
@@ -66,10 +82,10 @@ DIR=D:\GL\company.db
   - the MANILA menu and the top toolbar;
   - a module bar along the bottom whose fields show the company name, menu help and the current period;
   - right-click on the background for the GLSUB menu.
-- **Login** (dialog 1158). **Maintenance > User Access** (1159). The Menu button there needs the grid control, which Spec #1 doesn't have.
+- **Login** (dialog 1158). **Maintenance > User Access** (1159). Its Menu button opens Menu Access (1160) with the menus of the level shown: double-click or Enter on a menu grays or enables it, and OK saves them as that level's menu code. Reset applies the level shown to the current session's menus.
 - **File > Company Profile** (1021), with:
   - Periods (1028);
-  - Accounts (1033) and its Cash button (1034, without the grid list beside it).
+  - Accounts (1033) and its Cash button (1034, with the cash accounts list, 1011, beside it).
 - **Accounts > Chart of Accounts** (1010), also GLSUB > Add Accounts:
   - **Add/Mod:** adds the typed account + dept, or updates it if it exists;
   - **Search:** shows the account list at the typed account;

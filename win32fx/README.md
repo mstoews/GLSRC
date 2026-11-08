@@ -47,7 +47,9 @@ All four edits return `DLGC_WANTCHARS | DLGC_WANTARROWS` from `WM_GETDLGCODE` (s
 
 **Toolbox API kept** (same names, same message numbers as `include/toolbox.h`): `EPM_SETMASK`, `EPM_GETMASK`, `EPM_SETCALLBACK` (`gl_accts.cpp` uses these on `ID_CURRBAL`), `FloatGetValue`, `FloatSetValue`, `IntGetValue`, `IntSetValue` and their `…DlgItem…` macros, and `SBM_SETPICT`. The other `SBM_*` messages are accepted and ignored.
 
-**Not implemented** (nothing in Spec #1 needs them): `SBS_NOPOINTERFOCUS` (a click focuses the button), the button frame/shadow/colour styles, `IS_SPIN`/`DS_SPIN` arrows, `IntSetRange`/`FloatSetRange`, `DS_DDMONYY` (unused by the resources; read as MM/DD/YY), and the `EN_INVALIDDATA` notifications (no legacy code handles them). `tbSpread` and `tbStatusBar` (the TBOWL grid and status bar) are not registered. Spec #1 dialogs don't use them, and the grid is out of plan.
+**Not implemented** (nothing in Spec #1 needs them): `SBS_NOPOINTERFOCUS` (a click focuses the button), the button frame/shadow/colour styles, `IS_SPIN`/`DS_SPIN` arrows, `IntSetRange`/`FloatSetRange`, `DS_DDMONYY` (unused by the resources; read as MM/DD/YY), and the `EN_INVALIDDATA` notifications (no legacy code handles them). `tbStatusBar` (the TBOWL status bar) is not registered.
+
+**`tbSpread`, the grid** (Spec #2 design §4, `include/controls/Grid.h`). It is a container window holding a report-mode ListView, registered under the original name, so templates with a `tbSpread` control load unchanged; `fx::Grid::Create` makes one in code. `fx::Grid` is a non-owning handle with the `SS*` calls the GL screens make, 1-based like `SS*`: columns and widths, data, row and cell colours, cell pictures (for `SSSetTypeButton`'s two-state buttons), the active cell, and an editable `tbFloat` column. The parent gets `WM_COMMAND` with `GRN_PICK` (double-click or Enter, was `SSM_DBLCLK`), `GRN_SELCHANGE`, `GRN_CELLCHANGED`, `GRN_KEYDOWN` and `GRN_RCLICK`. Inside a dialog the grid takes Enter, so Enter picks a row instead of pressing the default button. Not implemented: row headers, formulas, block selection, user column resizing, and right-aligning the first column.
 
 The input rules are plain C++ in `src/controls/EditRules.cpp` (no Win32). `src/controls/styles.md` lists the style words the Spec #1 dialogs use, decoded. It also records which ported screens turn out to depend on a particular bit.
 
@@ -55,6 +57,6 @@ The input rules are plain C++ in `src/controls/EditRules.cpp` (no Win32). `src/c
 
 `examples/trivial_dialog/` is a standalone solution: it isn't in `gl.sln`, and it links the built `x64\<Config>\win32fx.lib` the way AP and AR will (acceptance §6.7 #9). Build `gl.sln` first, then `trivial_dialog.sln` for the same configuration.
 
-- `trivial_dialog.exe` shows a dialog with all five controls.
-- `trivial_dialog.exe /selftest` runs the two-instance dispatch test (plan risk P2) and drives the controls with `WM_SETTEXT`/`WM_CHAR`; it reports in a message box. Some rejected characters beep on purpose.
+- `trivial_dialog.exe` shows a dialog with all six controls; the grid's Amount column is editable.
+- `trivial_dialog.exe /selftest` runs the two-instance dispatch test (plan risk P2), drives the controls with `WM_SETTEXT`/`WM_CHAR`, and checks the grid: data, rows, the stretch column, the active row, Enter as a pick, custom-draw colours, and editing with Enter, Esc and Down. It reports in a message box. Some rejected characters beep on purpose.
 - Add `/quiet` to skip the message box: the exit code is the number of failures. From `cmd`, run `start /wait trivial_dialog.exe /selftest /quiet` and then `echo %errorlevel%`.

@@ -2,10 +2,11 @@
 // original Toolbox class name, with the original style bits:
 //   0x0400 ES_3D, 0x6400 DS_MMDDYY|ES_3D, 0x2400 FS_SEPARATOR|ES_3D,
 //   0x8010 / 0x8011 SBS_NOPOINTERFOCUS|SBS_TEXTRIGHT_PICTLEFT (|SBS_DEFPUSHBUTTON).
+// The tbSpread grid's template text is its class name, as in gl.rc's 1011.
 #include <windows.h>
 #include "resource.h"
 
-IDD_TRIVIAL DIALOGEX 0, 0, 230, 150
+IDD_TRIVIAL DIALOGEX 0, 0, 230, 266
 STYLE DS_MODALFRAME | DS_SHELLFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "win32fx trivial dialog"
 FONT 8, "MS Shell Dlg"
@@ -24,6 +25,7 @@ BEGIN
     CONTROL     "9999", IDC_QUANTITY, "tbInteger", 0x0400 | WS_TABSTOP, 80, 87, 30, 12
     CONTROL     "&Ping", IDC_PING, "tbSuperBtn", 0x8010 | WS_TABSTOP, 7, 107, 50, 16
     LTEXT       "0", IDC_PINGS, 62, 111, 40, 8
-    CONTROL     "&OK", IDOK, "tbSuperBtn", 0x8011 | WS_TABSTOP, 116, 127, 50, 16
-    CONTROL     "&Cancel", IDCANCEL, "tbSuperBtn", 0x8010 | WS_TABSTOP, 173, 127, 50, 16
+    CONTROL     "tbSpread", IDC_GRID, "tbSpread", WS_BORDER | WS_TABSTOP, 7, 129, 216, 110
+    CONTROL     "&OK", IDOK, "tbSuperBtn", 0x8011 | WS_TABSTOP, 116, 243, 50, 16
+    CONTROL     "&Cancel", IDCANCEL, "tbSuperBtn", 0x8010 | WS_TABSTOP, 173, 243, 50, 16
 END
