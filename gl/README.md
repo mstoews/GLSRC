@@ -105,6 +105,15 @@ DIR=D:\GL\company.db
   - Delete removes the typed code.
   - Medical Reps, Doctor Codes and Product Codes also have New and Top / Bottom / Next / Previous.
   - Each has a list beside it, like the account list. Search, or the Med Reps / Doctor / Products button, shows the list at the typed code, and picking a row shows that record. The lists keep their positions and queries in `GL.INI [GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]` and `[GL_ITEMM]`.
+- **Transactions > General Ledger Voucher** (1013, also GLSUB and the toolbar's batch button) and **Transactions > Prior Period Entry** (the same dialog, for adjustment vouchers):
+  - **Fields:** a voucher has a description, a date, a period (only open periods are offered), a cheque number and its lines.
+  - **Add/Mod** (or Enter) saves the line shown into the voucher, creating the voucher with the number displayed if it's new. A line typed with an existing line number replaces that line.
+  - **Delete** removes the line shown.
+  - **New** starts the next voucher. For a voucher created in this session, New and Close first ask whether to keep it; No removes it.
+  - **Top / Bottom / Next / Previous** move between vouchers not yet posted.
+  - **Windows:** the Distribution List below the dialog shows the voucher's lines and totals; double-click a line to edit it. List shows the account list, Voucher the list of vouchers, and Show the floating tool box.
+  - **Print** is the Spec #3 "not yet ported" message.
+  - The lists keep their positions in `GL.INI [GL_DISTLIST]`, `[GL_BTCH]` and `[GLACCTS]`.
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
@@ -113,5 +122,5 @@ DIR=D:\GL\company.db
 ## Checks
 
 - **`gl.exe /checkres`** loads every Spec #1 resource. Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, then Department, Medical Rep, Doctor and Product Codes 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, then Department, Medical Rep, Doctor and Product Codes and Voucher Entry 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.

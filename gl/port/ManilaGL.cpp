@@ -6,6 +6,7 @@
 #include "Company.h"
 #include "ChartOfAccounts.h"
 #include "MasterData.h"
+#include "VoucherEntry.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -234,6 +235,13 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_PRODCODE:                      // TManilaGL::GLProductCode
         RunProductCodes(hwnd());
+        return true;
+    case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
+    case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
+        RunVoucherEntry(hwnd());
+        return true;
+    case CM_PRIOR:                         // TGlWindow::GLPrior: Transactions > Prior Period Entry
+        RunPriorPeriodEntry(hwnd());
         return true;
     case ID_ABOUT: {                       // TGlWindow::CMAbout
         fx::Dialog about;

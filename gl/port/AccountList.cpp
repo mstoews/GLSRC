@@ -11,7 +11,7 @@
 
 #include "LegacyIds.h"   // last: see LegacyIds.h
 
-bool AccountList::Create(HWND owner, Tglaccts& gl)
+bool AccountList::Create(HWND owner, Tglaccts& gl, bool show)
 {
     gl_ = &gl;
     Spec spec;
@@ -21,7 +21,7 @@ bool AccountList::Create(HWND owner, Tglaccts& gl)
     spec.caption = fx::LoadResString(hInst, 6084);   // "General Ledger Accounts List"
     // TAccountList::SetWndDetail: 6068 "Acct", 6054 "Dept", 6044 "Description".
     spec.headers = {fx::LoadResString(hInst, 6068), fx::LoadResString(hInst, 6054), fx::LoadResString(hInst, 6044)};
-    return TableList::Create(owner, std::move(spec), [this](int row) { SelectRow(row); });
+    return TableList::Create(owner, std::move(spec), [this](int row) { SelectRow(row); }, true, show);
 }
 
 void AccountList::SelectRow(int row)

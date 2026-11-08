@@ -56,6 +56,8 @@ const DialogCase kDialogs[] = {
     {1006, L"Medical Reps (TGLMedReps)", false},
     {1040, L"Doctor Codes (TGLDrCodes)", false},
     {1007, L"Product Codes (TGLProd)", false},
+    // Spec #2 S2-M3.
+    {1013, L"Voucher Entry (TGLBatchEntry, TGLPrior)", false},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)
