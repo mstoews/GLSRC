@@ -144,6 +144,14 @@ The portable core is **`Vouchers.h/.cpp`**, built like `Accounts.cpp`: no Win32.
 - 1043 "Cancel Accounts Payable Journal" becomes "Cancel General Ledger Voucher";
 - 1017 "General Ledger Account Maintenance - Add" becomes "General Ledger Budget Data".
 
+*Added in S2-M2:* list headers and prompts copied from other screens, corrected the same way:
+
+- the Department Code list's headers "Acct" / "Dept" / "Description", over its two fields, become "Dept" / "Description";
+- the Medical Reps list's third header, string 8127 ("The invoice has already been cleared…"), becomes 6044 "Description", as on the Doctor list;
+- the Product list's headers "Code" / "Description" / "Description" become "Code" / "Name" / "Description";
+- the Product Codes update prompt 8102 ("The current asset has already been added…") becomes 8122 ("Record has already been added…");
+- the Doctor Codes delete prompt 8113 ("…delete the current Medical Representative?") becomes 6052 ("Delete the record?").
+
 Any further wrong caption found during porting is added to this list.
 
 ---
@@ -292,6 +300,7 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 | D7 | Maintain External Vouchers stays a stub. | Its handler only opens dialog 1058, and nothing shows what that dialog was for. |
 | D8 | Budget Data edits in the grid (§4.2) rather than in 12 separate fields. | It keeps the original layout, and AP needs grid editing anyway. |
 | D9 | **Menu Access (1160)** starts from the edited level's own menu code (its `accessl` record, or the first record if it has none, as login resolves it), and only OK saves. Editing no longer changes the session. **Reset** (1159, string 8152) applies the selected level's code to the session and re-grays the frame menu. | The original edited the global `szMsg`, the logged-in user's string, so 1160 showed the session's menus rather than the selected level's. Its `Menus()` then saved that string even after Close, and Reset wrote `szMsg` into the level, the reverse of what 8152 says. |
+| D10 | The master-data screens (S2-M2) stop losing data. Department Codes' Delete removes the department typed, not whatever record was current. Medical Reps and Doctor Codes no longer write `balance` from control 6039, which neither template has. Medical Reps reads territory from its own control, 1076, not 6038. Product Codes no longer writes `flotsize` from the missing control 6007, and refuses a blank code on Add/Mod (string 4072), as its Delete did. | Each one silently changed or lost saved data on every save: balances and lot sizes reset to 0, territories saved blank, and the wrong department deleted. |
 
 ---
 

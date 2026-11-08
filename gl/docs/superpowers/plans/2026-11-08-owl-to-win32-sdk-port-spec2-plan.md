@@ -151,6 +151,22 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** Department Codes, Medical Reps, Product Codes and Doctor Codes add, modify and delete records. Spec §8 #1.
 
+> **As built (2026-11-09).**
+> - **What the originals are.** Each screen is a modal dialog with a `TListWindow` list window beside it, the same machinery as the Chart of Accounts' account list.
+>   - The lists' `GL.INI` sections are `GLDEPT`, `GL_MEDRP`, `GL_DRCOD` and `GL_ITEMM`, the windows' class names. `TDeptList`'s declaration isn't in the tree, and `GLDEPT` follows the others.
+>   - Medical Reps, Doctor Codes and Product Codes have New / Top / Bottom / Next / Previous, a list button (1074), Delete and Add/Mod. Department Codes has only Add, Delete, Search and Close; its Modify handler had no button.
+>   - `gl_prods.cpp` opens `gl_itemm` through `Tprods` (`db_itemm.h`).
+> - **`gl/port/TableList.h/.cpp`** is the generic port of `TListWindow`: the section, table, tag, caption, headers and a pick callback are parameters. `AccountList` is now a thin `TableList` on `glaccts`, with its public API and behaviour unchanged.
+> - **`gl/port/MasterTables.h/.cpp`** has the table classes and record operations, without Win32. The classes open fields by name from the real layouts, not from the recovered headers (spec §5.4): `RepTable` for `gl_medrp` / `gl_drcod`, `ProductTable`, `DepartmentTable`. It also has `SeekCode` (whole-code match), `SaveRecord` (append or confirmed update) and `DeleteRecord`.
+> - **`gl/port/MasterData.h/.cpp`** has the four dialogs, wired to `ID_DEPTCODES`, `ID_MEDREPS`, `ID_DOCTOR` and `ID_PRODCODE`. Medical Reps and Doctor Codes share one class.
+> - **Corrections:**
+>   - wrong headers and prompts (spec D3, added list);
+>   - five data-losing defects (spec D10);
+>   - Next / Previous stop at the ends instead of showing a blank record;
+>   - Department Codes redraws its list after Add/Mod, as the other screens did.
+> - **Resources:** `prune_rc.py` adds 1006, 1007, 1023 and 1040. Before the change, the tool still reproduced the committed `gl.rc` byte for byte. `/checkres` creates the four dialogs. `/stress` opens each one 25 times after the 100 Chart of Accounts cycles.
+> - **Tests:** `gl_tests/test_master.cpp` has 6 cases. `gl_tests` now has 14 cases and 249 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** `gl_deptc.cpp`, `gl_medrp.cpp`, `gl_prods.cpp` and `gl_drcod.cpp` in full. Record each screen's buttons, its navigation (these dialogs have top / bottom / next / previous buttons; 1010 didn't) and its delete rule. Note what `gl_prods.cpp` opens, since it names no table class.

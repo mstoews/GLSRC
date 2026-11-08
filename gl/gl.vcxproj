@@ -53,7 +53,10 @@
     <ClInclude Include="port\Login.h" />
     <ClInclude Include="port\MainDialog.h" />
     <ClInclude Include="port\ManilaGL.h" />
+    <ClInclude Include="port\MasterData.h" />
+    <ClInclude Include="port\MasterTables.h" />
     <ClInclude Include="port\ResourceCheck.h" />
+    <ClInclude Include="port\TableList.h" />
     <ClInclude Include="port\Tables.h" />
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
@@ -71,7 +74,10 @@
     <ClCompile Include="port\Login.cpp" />
     <ClCompile Include="port\MainDialog.cpp" />
     <ClCompile Include="port\ManilaGL.cpp" />
+    <ClCompile Include="port\MasterData.cpp" />
+    <ClCompile Include="port\MasterTables.cpp" />
     <ClCompile Include="port\ResourceCheck.cpp" />
+    <ClCompile Include="port\TableList.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />
     <ClCompile Include="port\stubs\ReportingStubs.cpp" />

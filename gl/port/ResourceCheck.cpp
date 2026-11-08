@@ -51,6 +51,11 @@ const DialogCase kDialogs[] = {
     {1159, L"User Access Update (TGLAdministration)", false},
     {1011, L"Cash Accounts list (TAPCashAcctsList)", true},
     {1160, L"Menu Access (TAccessMenus)", true},
+    // Spec #2 S2-M2.
+    {1023, L"Department Codes (TGLDeptCodes)", false},
+    {1006, L"Medical Reps (TGLMedReps)", false},
+    {1040, L"Doctor Codes (TGLDrCodes)", false},
+    {1007, L"Product Codes (TGLProd)", false},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

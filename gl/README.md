@@ -75,8 +75,9 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[ACCESS] PSW` | `T`: log in at startup. Anything else: no login, user `NOLOGIN`, no menu items grayed |
 | `GL.INI` | `[WITHHOLDING] TAX` | Company Profile's "Withholding Tax Excluded" box (written on Save) |
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
+| `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (plans M5 and M6)
+## What runs (Spec #1, and Spec #2 so far)
 
 - **Frame:**
   - the MANILA menu and the top toolbar;
@@ -98,7 +99,12 @@ DIR=D:\GL\company.db
   - typing jumps to an account;
   - right-click edits the list query.
 
-  Its position and query are kept in `GL.INI [GLACCTS]`. Spec #1 can only run the query `.NOT. DELETED()` (the default), so leave `QUERY` empty.
+  Its position and query are kept in `GL.INI [GLACCTS]`. `QUERY` accepts `.NOT. DELETED()` (the default) and comparisons of a text field with a quoted value, joined with `.AND.`: for example `ACCOUNT = '4'` lists the accounts starting with 4.
+- **Accounts > Department Codes** (1023, also GLSUB), **Medical Reps** (1006), **Doctor Codes** (1040) and **Product Codes** (1007):
+  - Add/Mod adds the typed code, or updates it after asking.
+  - Delete removes the typed code.
+  - Medical Reps, Doctor Codes and Product Codes also have New and Top / Bottom / Next / Previous.
+  - Each has a list beside it, like the account list. Search, or the Med Reps / Doctor / Products button, shows the list at the typed code, and picking a row shows that record. The lists keep their positions and queries in `GL.INI [GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]` and `[GL_ITEMM]`.
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
@@ -107,5 +113,5 @@ DIR=D:\GL\company.db
 ## Checks
 
 - **`gl.exe /checkres`** loads every Spec #1 resource. Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times on the company database and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, then Department, Medical Rep, Doctor and Product Codes 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.
