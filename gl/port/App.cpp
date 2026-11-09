@@ -15,9 +15,10 @@
 //
 //   gl.exe /checkres [/quiet]   loads every Spec #1 resource and reports
 //   gl.exe /stress [/quiet]     opens and closes the Chart of Accounts 100
-//                               times, then each master-data screen 25 times,
-//                               on the company database (plan risk P6); the
-//                               exit code is the GDI + USER object growth
+//                               times, each master-data screen 25 times and
+//                               Voucher Entry 25 times, on the company
+//                               database (plan risk P6); the exit code is the
+//                               GDI + USER object growth
 //
 // Debug builds report CRT heap leaks at exit (_CrtDumpMemoryLeaks, to the
 // debugger's output window).
@@ -31,6 +32,7 @@
 
 #include "ChartOfAccounts.h"
 #include "MasterData.h"
+#include "VoucherEntry.h"
 #include "Globals.h"
 #include "Ini.h"
 #include "ManilaGL.h"
@@ -98,12 +100,13 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     if (args.find(L"/stress") != std::wstring::npos) {
         const int accounts = StressChartOfAccounts(100);
         const int master = StressMasterData(25);
-        const int growth = (accounts < 0 || master < 0) ? -1 : accounts + master;
+        const int vouchers = StressVoucherEntry(25);
+        const int growth = (accounts < 0 || master < 0 || vouchers < 0) ? -1 : accounts + master + vouchers;
         cb.close();
         if (args.find(L"/quiet") == std::wstring::npos)
             MessageBoxW(nullptr,
                         fx::Format(L"Chart of Accounts opened and closed 100 times, and Department, Medical Rep, "
-                                   L"Doctor and Product Codes 25 times each.\nGDI + USER objects: %+d.",
+                                   L"Doctor and Product Codes and Voucher Entry 25 times each.\nGDI + USER objects: %+d.",
                                    growth).c_str(),
                         szApp, MB_OK | (growth == 0 ? MB_ICONINFORMATION : MB_ICONEXCLAMATION));
         return growth;

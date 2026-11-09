@@ -301,6 +301,7 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 | D8 | Budget Data edits in the grid (§4.2) rather than in 12 separate fields. | It keeps the original layout, and AP needs grid editing anyway. |
 | D9 | **Menu Access (1160)** starts from the edited level's own menu code (its `accessl` record, or the first record if it has none, as login resolves it), and only OK saves. Editing no longer changes the session. **Reset** (1159, string 8152) applies the selected level's code to the session and re-grays the frame menu. | The original edited the global `szMsg`, the logged-in user's string, so 1160 showed the session's menus rather than the selected level's. Its `Menus()` then saved that string even after Close, and Reset wrote `szMsg` into the level, the reverse of what 8152 says. |
 | D10 | The master-data screens (S2-M2) stop losing data. Department Codes' Delete removes the department typed, not whatever record was current. Medical Reps and Doctor Codes no longer write `balance` from control 6039, which neither template has. Medical Reps reads territory from its own control, 1076, not 6038. Product Codes no longer writes `flotsize` from the missing control 6007, and refuses a blank code on Add/Mod (string 4072), as its Delete did. | Each one silently changed or lost saved data on every save: balances and lot sizes reset to 0, territories saved blank, and the wrong department deleted. |
+| D11 | **Voucher Entry (S2-M3)** saves what it shows. The voucher description goes to `gl_btch.reference`, not the missing `descript`. A new voucher gets the number displayed, not 1 when `gl_btch` is empty. Totals come from the voucher's own lines. Add/Mod replaces the line with the typed number, or appends one. Editing keeps the voucher's mode. Picking a line selects its medical rep, product and doctor. The account check requires that account and dept, not a prefix. IDOK is Add/Mod instead of closing the dialog without the save question. | Each of these silently saved something other than what was on the screen: a lost description, a voucher renumbered to 1, totals copied from another voucher, an edit dropped, an adjustment turned into a normal voucher, codes taken from the previous line, or a line posted to the wrong account. |
 
 ---
 
@@ -411,8 +412,8 @@ Corrections found while porting are recorded under each milestone here, as Spec 
 ## 12. Still open
 
 1. **Recover's effect on `curr_bal` and on the voucher tables** (§2.5, R4). Settle in S2-M4.
-2. **The adjustment-voucher rules** (`PostAdjustment`), in particular which balance fields it changes and how adjustments differ from prior-period entries. Settle in S2-M3/M4 from `gl_postb.cpp` and `gl_prior.cpp`.
-3. **How voucher entry chooses the date** and whether it checks the date against the period. Settle in S2-M3.
+2. ~~**The adjustment-voucher rules** (`PostAdjustment`), in particular which balance fields it changes and how adjustments differ from prior-period entries.~~ *Partly settled in S2-M3:* they are the same thing. Prior Period Entry (`TGLPrior`) is Voucher Entry writing mode `"3"`, which posting treats as an adjustment (`Tglbtch::Adjustment`). Which balance fields `PostAdjustment` changes is still to settle in S2-M4.
+3. ~~**How voucher entry chooses the date** and whether it checks the date against the period.~~ *Settled in S2-M3:* the user enters it in the `tbDate` control. Add only requires one (string 8090) and never compares it with the period. The port keeps that.
 4. ~~**What the `SSSetBool` options change** in each grid. Settle in S2-M0 and map each one to a ListView style, or record that it is ignored.~~ *Resolved in S2-M0:*
 
    | Option | Where | Port |

@@ -19,6 +19,7 @@
 #define ID_NEXT                  1071
 #define ID_PASSWORD              1207
 #define ID_PREVIOUS              1072
+#define ID_PRINT                 3068
 #define ID_RESET                 1094
 #define ID_SETDATA               4076
 #define ID_TOP                   4066

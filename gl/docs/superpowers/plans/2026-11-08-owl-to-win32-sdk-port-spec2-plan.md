@@ -186,6 +186,32 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** vouchers can be created, edited and deleted. Spec §8 #2–#4.
 
+> **As built (2026-11-09).**
+> - **Read findings (task 1):**
+>   - **Modes:** `gl_btch.mode` is `"1"` open, `"0"` posted, `"3"` adjustment. Prior Period Entry is the same dialog writing `"3"` (spec §12 Q2).
+>   - **Date:** the user types it, and Add only requires one (spec §12 Q3).
+>   - **Voucher description:** it is `gl_btch.reference`.
+>   - **Line numbers:** `CurrentBatch` renumbers the lines in display order (debit lines, then credit, then both) and writes the numbers back.
+>   - **Windows:** the line list is `TGLDistList` (`GL.INI [GL_DISTLIST]`). The voucher list is a `TListWindow` on `gl_btch` (`[GL_BTCH]`). The tool box duplicates ten of the dialog's buttons, and the Show check box toggles it while narrowing the dialog.
+>   - **Combo boxes:** medical reps load in `rpname` order, doctors in `drcode` order, products in `ffulln` order, each with a blank entry.
+> - **`gl/port/Vouchers.h/.cpp`:** the portable core.
+>   - Table classes from the real layouts: `VoucherHeaders`, `VoucherLines`.
+>   - Operations: `NextVoucherNumber`, `SeekVoucher`, `LoadVoucher` (`CurrentBatch`), `SaveLine` (`Add`), `DeleteLine`, `DeleteVoucher` (`RollBack`), `UpdateTotals`, `OpenPeriods` (`::SetPeriods`).
+>   - `gl_tests/test_vouchers.cpp` has 8 cases.
+> - **`gl/port/VoucherLists.h/.cpp`:** `LineList` and `ToolBox`.
+> - **`gl/port/VoucherEntry.h/.cpp`:** the dialog. It is wired to `ID_MODBATCH` (menu, GLSUB, toolbar), `ID_BATCHENT` and `CM_PRIOR`.
+> - **`TableList::Create` and `AccountList::Create`** take a `show` flag: voucher entry creates its account and voucher lists hidden, as the original did.
+> - **Corrections:**
+>   - spec D11;
+>   - Prior Period Entry checks the mode before touching a voucher, as `TGLPrior::CurrentBatch` did;
+>   - Add/Mod asks for a period when none is open (the original saved period 0).
+> - **Not ported:** Print, the voucher slip report, is the Spec #3 stub.
+> - **Resources and checks:**
+>   - `prune_rc.py` adds 1013, and `windres` compiles the result;
+>   - `/checkres` creates 1013;
+>   - `/stress` opens Voucher Entry 25 times, alternating with Prior Period Entry.
+> - **Tests:** `gl_tests` has 22 cases and 342 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** all of `gl_btche.cpp`, `gl_btche.h`, `gl_prior.cpp` and `ap_repts.cpp` `SetPeriods`. Settle spec §12 Q2 (adjustments vs. prior-period entries) and Q3 (date vs. period checks). Record what each tool-box button does, and how the four windows are created, positioned, shown and destroyed.

@@ -93,7 +93,7 @@ std::string TableList::CurrentQuery() const
     return q.empty() ? kDefaultQuery : q;
 }
 
-bool TableList::Create(HWND owner, Spec spec, std::function<void(int row)> onPick, bool hideOnPick)
+bool TableList::Create(HWND owner, Spec spec, std::function<void(int row)> onPick, bool hideOnPick, bool show)
 {
     owner_ = owner;
     spec_ = std::move(spec);
@@ -126,7 +126,7 @@ bool TableList::Create(HWND owner, Spec spec, std::function<void(int row)> onPic
                             right - left, bottom - top, owner, nullptr, hInst))
         return false;
     Redraw();
-    ShowWindow(hwnd(), SW_SHOWNOACTIVATE);
+    if (show) ShowWindow(hwnd(), SW_SHOWNOACTIVATE);
     return true;
 }
 

@@ -20,9 +20,9 @@ class Tglaccts;
 
 class AccountList : public TableList {
 public:
-    // Creates the window, shown beside `owner` without taking the focus.
-    // `gl` is the dialog's table, which a selection positions.
-    bool Create(HWND owner, Tglaccts& gl);
+    // Creates the window beside `owner`, shown without taking the focus if
+    // `show`. `gl` is the dialog's table, which a selection positions.
+    bool Create(HWND owner, Tglaccts& gl, bool show = true);
 
 private:
     void SelectRow(int row);   // TAccountList::HandleListBox; row is 1-based

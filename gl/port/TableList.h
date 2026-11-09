@@ -51,8 +51,10 @@ public:
     TableList() = default;
     ~TableList() override;
 
-    // Creates the window, shown beside `owner` without taking the focus.
-    bool Create(HWND owner, Spec spec, std::function<void(int row)> onPick, bool hideOnPick = true);
+    // Creates the window beside `owner`; shown without taking the focus if
+    // `show`, otherwise hidden until Seek or ShowWindow.
+    bool Create(HWND owner, Spec spec, std::function<void(int row)> onPick, bool hideOnPick = true,
+                bool show = true);
 
     // TListWindow::Redraw: reload the rows.
     void Redraw();
