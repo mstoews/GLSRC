@@ -151,7 +151,7 @@ A new top-level project, `report/`, beside `win32fx/` and `cb4sqlite/`, so the A
 report/
 ├── include/report/          Report.h  Layout.h  Format.h  TextRender.h    (portable)
 ├── include/report/win32/    Preview.h  Print.h  PrinterSetup.h            (Windows)
-├── src/                     Report.cpp Layout.cpp Format.cpp TextRender.cpp
+├── src/                     Layout.cpp Format.cpp TextRender.cpp    (Report.h is header-only)
 ├── src/win32/               GdiMeasure.cpp Preview.cpp Print.cpp PrinterSetup.cpp
 └── report.vcxproj           static library
 report_tests/                Catch2, portable core; also built on Linux under ASan/UBSan
@@ -175,14 +175,16 @@ Totals are computed by the builders, in integer cents (as Spec #2 D12), not by t
 
 - `PageSetup`: paper size and margins in twips, from the printer, or A4 when there is none.
 - `Measure`: text width and line height in twips per font role (`Title`, `Heading`, `Body`, `Bold`). Win32 measures with the printer's DC; tests use a fixed-pitch fake.
-- Relative column widths scale to the printable width. Text that doesn't fit is clipped; amounts that don't fit print `###`. Nothing wraps.
+- Relative column widths scale to the printable width. Text that doesn't fit is clipped; amounts that don't fit print `###`. Only `Note` rows wrap (at spaces).
 - Each page: header (company, title, subtitles, "Printed on <date>", "Page n of m"), the column headers, as many rows as fit, the footer note. Headings and group headers aren't left at the foot of a page; a statement's final total stays with the row before it.
+  - *As built (S3-M0):* "Printed on" and "Page n of m" sit at the left and right of the company's line when they fit beside it, and on a line of their own above it when they don't. Pagination works on blocks: a `Heading`, `GroupHeader` or `Slip` row is glued to the row after it, a `GroupFooter`, `Subtotal` or `Total` to the row before it, and a block that fits on a page is never split. A `Blank` at the top of a page is dropped; a `PageBreak` on an empty page does nothing.
 - A `Page` is a list of draw operations in twips (`Text`, `Rule`). Preview and print draw the same pages.
 
 ### 4.3 Formatting (`Format.h`)
 
 - Amounts: `1,234,567.89`; negatives with a leading minus on lists, in parentheses `(1,234.56)` on the statements (F3–F5), the accounting convention; blank for zero when the column asks.
 - Dates as the port's screens show them (rule fixed in S3-M0 from the stored forms of `gl_btch.DATE`, `gl_btchd.DATE` and `gl_dist.DATE`); period-end dates from `gl_pds`.
+  - *Settled in S3-M0:* all three are stored as `yyyymmdd` text: `gl_btch` and `gl_btchd` as dBase `D` fields, `gl_dist` in a `C(10)` field, blank-padded (`"19950302  "`). The screens' `tbDate` controls use `DS_MMDDYY` with a two-digit year (style `0x6440` on voucher entry's 3035). Reports print **`MM/DD/YYYY`**: the screens' order, with a four-digit year so a printout is never ambiguous. Statement subtitles use the long form, "October 31, 2026".
 
 ### 4.4 Report builders (GL side)
 
@@ -407,10 +409,12 @@ A read-only wrapper over `sqlite3_prepare_v2` on `Code4::handle()`:
 
 ```cpp
 cb4sqlite::Query q(cb, "SELECT ACCOUNT, DEPT, DESCRIPT, CURR_BAL FROM glaccts "
-                       "WHERE _deleted = 0 ORDER BY ACCOUNT, DEPT");
-q.bind(1, ...);                 // text, integer, double
-while (q.next()) { q.text(0); q.number(3); q.isNull(2); }
+                       "WHERE _deleted = 0 AND TYPE = ?1 ORDER BY ACCOUNT, DEPT");
+q.bindText(1, "B");             // also bindInt, bindDouble, bindNull; reset() to run again
+while (q.next()) { q.text(0); q.number(3); q.integer(4); q.isNull(2); }
 ```
+
+*As built (S3-M0):* the bind calls are named by type (`bindText`, `bindInt`, …) because an overloaded `bind(int, …)` is ambiguous for an `int` literal. Columns count from 0 and parameters from 1, as in SQLite.
 
 - Errors throw `cb4sqlite::Error` with the SQL and SQLite's message.
 - `text()` is right-trimmed (character columns are space-padded); `number()` is 0.0 for NULL and blank, as `Field4::getDouble` reads migrated numbers.

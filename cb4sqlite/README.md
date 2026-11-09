@@ -74,6 +74,8 @@ Every method is either exercised by a behavioural Catch2 assertion (file in `cb4
 
 **Added in Spec #2** (not CodeBase): transactions, through `Code4::begin` / `commit` / `rollback` / `inTransaction` and the RAII `cb4sqlite::Transaction`, and `Code4::backupTo`. See `Code4.h` and Spec #2 §5.2–5.3.
 
+**Added in Spec #3** (not CodeBase): `cb4sqlite::Query`, a read-only SQL query for reports (`Query.h`, Spec #3 §7). It refuses any statement that writes, trims text columns, and reads a missing number as 0.
+
 **Not provided at all** (port the call site instead): CodeBase `Str4*` string classes (`Str4large`, `Str4ten` …; use `std::string`/`std::wstring`, spec §5), `Data4::UpdateUserTime` (an app helper defined in legacy `gl.cpp`), locking, `Expr4`.
 
 ## Building the tests elsewhere
