@@ -119,6 +119,8 @@ DIR=D:\GL\company.db
 - **Transactions > Cancel Voucher > General Ledger Voucher** (1043) lists the vouchers not yet posted. Double-click one and confirm to delete it.
 - **Transactions > Voucher Reports > General Ledger Voucher Inquiry** (1029): type an account and dept, or pick one in the account list (Search shows and hides it), then Set Data. It lists the account's posted lines between its opening balance and its balance.
 - **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
+- **Maintenance > Backup Databases** saves a copy of the company database to a file you choose, by default `<name>-<yyyymmdd>.db` beside it. **Restore Databases** replaces the company database with a backup you choose, after checking it is one and asking. The replaced file is kept as `<name>.db.bak`. If anything goes wrong, the original is put back.
+- **Maintenance > Year End Consolidation** moves the income and expense balances into the Retained Earnings account and the period amounts into the previous-year columns. It runs only when exactly one account has type R; otherwise it names the type-R accounts so you can correct them in the Chart of Accounts. **Reindex Databases** explains that an SQLite company database needs no reindexing.
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.

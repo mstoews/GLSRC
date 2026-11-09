@@ -120,6 +120,49 @@ void Code4::rollback()
 
 // --- backup (spec #2 5.3) --------------------------------------------------------
 
+bool Code4::checkDatabase(const char* utf8Path, const std::vector<std::string>& tables, std::string* why)
+{
+    auto fail = [why](std::string reason) {
+        if (why) *why = std::move(reason);
+        return false;
+    };
+    if (!utf8Path || !*utf8Path) return fail("no file name");
+    sqlite3* db = nullptr;
+    if (sqlite3_open_v2(utf8Path, &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return fail("the file can't be opened");
+    }
+    struct Closer {
+        sqlite3* db;
+        ~Closer() { sqlite3_close(db); }
+    } closer{db};
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA quick_check", -1, &st, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(st);
+        return fail("it is not a database");
+    }
+    const int rc = sqlite3_step(st);
+    const unsigned char* text = rc == SQLITE_ROW ? sqlite3_column_text(st, 0) : nullptr;
+    const bool ok = text && std::string(reinterpret_cast<const char*>(text)) == "ok";
+    sqlite3_finalize(st);
+    if (!ok) return fail(rc == SQLITE_ROW || rc == SQLITE_DONE ? "the database is damaged" : "it is not a database");
+
+    for (const std::string& t : tables) {
+        st = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 COLLATE NOCASE",
+                               -1, &st, nullptr) != SQLITE_OK) {
+            sqlite3_finalize(st);
+            return fail("it is not a database");
+        }
+        sqlite3_bind_text(st, 1, t.c_str(), -1, SQLITE_TRANSIENT);
+        const bool found = sqlite3_step(st) == SQLITE_ROW;
+        sqlite3_finalize(st);
+        if (!found) return fail("it has no " + t + " table");
+    }
+    return true;
+}
+
 void Code4::backupTo(const char* utf8Path)
 {
     static const char* M = "Code4::backupTo";

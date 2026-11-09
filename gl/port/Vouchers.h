@@ -249,3 +249,29 @@ struct AccountActivity {
 // was a dBase left match, so a blank dept listed every dept's lines and a
 // short account its neighbours' (spec D13).
 AccountActivity AccountTransactions(Code4& code, const std::string& account, const std::string& dept);
+
+// ---- Year End (plan S2-M6) -------------------------------------------------
+
+struct RetainedAccount {
+    std::string account, dept;
+};
+
+struct YearEndResult {
+    bool closed = false;
+    // The accounts of type "R" found. Year end runs only with exactly one.
+    std::vector<RetainedAccount> retained;
+    // The total moved into it, its own balance included: its new balance.
+    double transferred = 0;
+};
+
+// TGlWindow::GLYearEnd (gl_postb.cpp), corrected (spec D2), in one
+// transaction:
+//   1. every account whose type isn't "B" adds its curr_bal to a total and
+//      is set to 0 (the Retained Earnings account included);
+//   2. every account's period1-12 are copied to previous1-12 and zeroed;
+//   3. the total is added to the Retained Earnings account (type "R").
+// The original's step 3 added it to every account that *isn't* type "R".
+// Refuses, changing nothing, unless exactly one account has type "R".
+// openbal is left alone, as before. Throws on a database failure, having
+// written nothing.
+YearEndResult YearEnd(Code4& code);

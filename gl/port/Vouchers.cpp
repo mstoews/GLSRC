@@ -634,3 +634,46 @@ AccountActivity AccountTransactions(Code4& code, const std::string& account, con
     out.balance = fromCents(toCents(out.openBal) + debit - credit);
     return out;
 }
+
+// ---- Year End -------------------------------------------------------------
+
+YearEndResult YearEnd(Code4& code)
+{
+    YearEndResult r;
+    AccountsTable gl(code);
+    if (!gl.isValid()) throw std::runtime_error("gl: the glaccts table is missing");
+    gl.SetIndex("accounts");
+    for (gl.top(); !gl.eof(); gl.skip())
+        if (!gl.deleted() && TrimText(gl.type->str()) == "R")
+            r.retained.push_back({TrimText(gl.accounts->str()), TrimText(gl.dept->str())});
+    if (r.retained.size() != 1) return r;
+
+    cb4sqlite::Transaction tx(code);
+    long long total = 0;   // cents
+    for (gl.top(); !gl.eof(); gl.skip()) {
+        if (gl.deleted()) continue;
+        if (TrimText(gl.type->str()) != "B") {
+            total += toCents(gl.curr_bal->num());
+            gl.curr_bal->assignDouble(0);
+        }
+        for (int p = 1; p <= 12; ++p) {
+            Field4* period = periodField(gl, p);
+            Field4* const previous[] = {gl.previous1, gl.previous2, gl.previous3, gl.previous4,
+                                        gl.previous5, gl.previous6, gl.previous7, gl.previous8,
+                                        gl.previous9, gl.previous10, gl.previous11, gl.previous12};
+            previous[p - 1]->assignDouble(fromCents(toCents(period->num())));
+            period->assignDouble(0);
+        }
+        UpdateUserTime(gl, szUser);
+        must(gl.flush(), "updating glaccts");
+    }
+    if (!SeekAccount(gl, r.retained[0].account, r.retained[0].dept))
+        throw std::runtime_error("gl: the Retained Earnings account disappeared during year end");
+    addCents(*gl.curr_bal, total);
+    UpdateUserTime(gl, szUser);
+    must(gl.flush(), "updating glaccts");
+    tx.commit();
+    r.closed = true;
+    r.transferred = fromCents(total);
+    return r;
+}

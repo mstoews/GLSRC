@@ -9,6 +9,8 @@
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
 #include "TransactionInquiry.h"
+#include "Backup.h"
+#include "YearEnd.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -250,6 +252,18 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_ACCTBUDGET:                    // TGlWindow::GLAcctBudget: Budget Data
         RunBudgetData(hwnd());
+        return true;
+    case ID_YEAREND:                       // TGlWindow::GLYearEnd: Year End Consolidation
+        RunYearEnd(hwnd());
+        return true;
+    case ID_BACKUP:                        // TGlWindow::GLBackup: Backup Databases
+        RunBackup(hwnd());
+        return true;
+    case ID_RESTORE:                       // TGlWindow::GLRestore: Restore Databases
+        if (RunRestore(hwnd())) RefreshStatus();   // the restored company's name and period
+        return true;
+    case ID_REINDEX:                       // TGlWindow::GLReindex: Reindex Databases
+        RunReindex(hwnd());
         return true;
     case ID_GLPOSTBATCH:                   // TGlWindow::GLPostBatch: Post Voucher > General Ledger, GLSUB, toolbar
         RunPostVouchers(hwnd());

@@ -71,7 +71,7 @@ g++ $SAN -o "$OUT/cb4sqlite_tests" $T $LIB $THIRD "$OUT/catch.o" -lm
 echo "gl_tests"
 G=""
 # The portable gl/port sources gl_tests links (keep in step with gl_tests.vcxproj).
-for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/MasterTables.cpp "$ROOT"/gl/port/Vouchers.cpp; do
+for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/MasterTables.cpp "$ROOT"/gl/port/Vouchers.cpp "$ROOT"/gl/port/CompanyFiles.cpp; do
   o="$OUT/g_$(basename "$f" .cpp).o"; compile "$f" "$o" $CATCH -I"$ROOT/gl/port" -I"$ROOT/gl_tests"; G="$G $o"
 done
 # shellcheck disable=SC2086
@@ -80,6 +80,10 @@ g++ $SAN -o "$OUT/gl_tests" $G $LIB $THIRD "$OUT/catch.o" -lm
 echo "built in $OUT"
 if [ $RUN = 1 ]; then
   cd "$ROOT"
+  # The tests' temporary databases go beside the build, not in /tmp: on a
+  # busy or nearly full root disk their fsyncs can stall for many minutes.
+  mkdir -p "$OUT/tmp"
+  export TMPDIR="${TMPDIR_FOR_TESTS:-$OUT/tmp}"
   "$OUT/cb4sqlite_tests"
   "$OUT/gl_tests"
 fi
