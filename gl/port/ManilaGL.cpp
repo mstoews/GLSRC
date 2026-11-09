@@ -5,6 +5,7 @@
 
 #include "Company.h"
 #include "ChartOfAccounts.h"
+#include "MasterData.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -221,6 +222,18 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_ACCTDEL:                       // TGlWindow::GLAcctDel: GLSUB > Delete Accounts
         RunDeleteAccounts(hwnd());
+        return true;
+    case ID_DEPTCODES:                     // TGlWindow::GLDeptCodes: Accounts > Department Codes, GLSUB
+        RunDepartmentCodes(hwnd());
+        return true;
+    case ID_MEDREPS:                       // TManilaGL::GLMedicalReps
+        RunMedicalReps(hwnd());
+        return true;
+    case ID_DOCTOR:                        // TManilaGL::GLDoctor
+        RunDoctorCodes(hwnd());
+        return true;
+    case ID_PRODCODE:                      // TManilaGL::GLProductCode
+        RunProductCodes(hwnd());
         return true;
     case ID_ABOUT: {                       // TGlWindow::CMAbout
         fx::Dialog about;

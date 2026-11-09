@@ -17,9 +17,11 @@ GL = os.path.join(ROOT, 'gl')
 OUT = os.path.join(GL, 'res')
 CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 
-# Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc.
+# Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc,
+# then Spec #2's as each milestone adds them (S2-M2: 1006, 1007, 1023, 1040).
 DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035',
-           '2057', '1158', '1159', '1160']
+           '2057', '1158', '1159', '1160',
+           '1006', '1007', '1023', '1040']
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
 HEAD = re.compile(r'^(\S+)\s+(BITMAP|ICON|CURSOR|MENU|DIALOG|ACCELERATORS)\b(.*)$', re.I)

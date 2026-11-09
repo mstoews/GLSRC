@@ -54,13 +54,16 @@
     <ClInclude Include="GlTestDb.h" />
     <ClInclude Include="..\gl\port\db_gl_dist.h" />
     <ClInclude Include="..\gl\port\db_gl_distb.h" />
+    <ClInclude Include="..\gl\port\MasterTables.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Stubs.cpp" />
     <ClCompile Include="test_accounts.cpp" />
     <ClCompile Include="test_tables.cpp" />
+    <ClCompile Include="test_master.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
+    <ClCompile Include="..\gl\port\MasterTables.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\cb4sqlite_tests\vendor\catch2\catch_amalgamated.cpp">
