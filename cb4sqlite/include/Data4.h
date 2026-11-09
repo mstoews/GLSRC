@@ -31,6 +31,7 @@
 #include "Schema.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 struct sqlite3_value;
@@ -40,6 +41,15 @@ namespace cb4sqlite {
 
 class Field4;
 class Relate4set;
+
+namespace detail {
+// A row filter: an SQL predicate and the values of its named parameters
+// (":q1", ...). Built by Relate4set::querySet; empty sql = every record.
+struct QueryFilter {
+    std::string sql;
+    std::vector<std::pair<std::string, std::string>> params;
+};
+} // namespace detail
 
 class Data4 {
 public:
@@ -92,8 +102,8 @@ private:
     friend class Relate4set;
     friend class Code4;
 
-    int  first(bool forward, const std::string& filter);
-    int  step(long n, const std::string& filter);
+    int  first(bool forward, const detail::QueryFilter& filter);
+    int  step(long n, const detail::QueryFilter& filter);
     void loadRow(sqlite3_stmt* s);
     void setEof();
     void refreshKey();

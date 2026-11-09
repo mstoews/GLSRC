@@ -55,6 +55,8 @@
     <ClInclude Include="port\ManilaGL.h" />
     <ClInclude Include="port\ResourceCheck.h" />
     <ClInclude Include="port\Tables.h" />
+    <ClInclude Include="port\db_gl_dist.h" />
+    <ClInclude Include="port\db_gl_distb.h" />
     <ClInclude Include="port\stubs\Stubs.h" />
     <ClInclude Include="res\resource.h" />
   </ItemGroup>

@@ -11,3 +11,4 @@
 #define IDC_QUANTITY  1006
 #define IDC_PING      1007
 #define IDC_PINGS     1008
+#define IDC_GRID      1009

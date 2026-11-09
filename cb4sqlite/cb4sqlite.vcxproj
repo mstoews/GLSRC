@@ -49,6 +49,7 @@
     <ClInclude Include="include\Errors.h" />
     <ClInclude Include="include\Schema.h" />
     <ClInclude Include="src\Internal.h" />
+    <ClInclude Include="src\QueryExpr.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Internal.cpp" />
@@ -59,6 +60,7 @@
     <ClCompile Include="src\Field4_win32.cpp" />
     <ClCompile Include="src\Date4.cpp" />
     <ClCompile Include="src\Relate4set.cpp" />
+    <ClCompile Include="src\QueryExpr.cpp" />
   </ItemGroup>
   <!--
     Vendored SQLite amalgamation (plan M0 task 3). See VENDORED.md. Compiled as C with the spec 7.1 defines;

@@ -35,6 +35,24 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** a `tbSpread` window class in `win32fx` that the original dialog templates load unchanged. `AccountList` and the two grid-dependent Spec #1 screens run on it.
 
+> **As built (2026-11-09; checked on Linux only, Windows not yet built or run).**
+> - **Tools** (task 1), in `tools/linux/` with a README:
+>   - `wincheck.sh` and `winhdr/`; `wincheck_all.sh`, which checks every gl.exe, win32fx and trivial_dialog source;
+>   - `genproj.py`, which now takes project names (`genproj.py . gl win32fx`). Without names it would also rewrite `cb4sqlite.vcxproj`, which was retargeted to PlatformToolset v145 by hand while every other project is v143. gl's file list is now every `.h` / `.cpp` in `gl/port/` and `gl/port/stubs/`, so a new port file needs only a rerun. It reproduces the committed `gl.vcxproj` byte for byte, and `win32fx.vcxproj` with `Grid.h` / `Grid.cpp` added;
+>   
+>   Not brought in: the Spec #1 sanitizer build script, which no longer builds the current sources (they call `sscanf_s` and `_dupenv_s`), and the fake `<Windows.h>` and M6 harness. S2-M1's `gl_tests` replaces the harness and brings the Linux test build.
+> - **Read findings** (task 2): spec §4.1 and §12 Q4. `SSM_DBLCLK` is the only grid notification the GL code handles. Colours follow one convention (green on blue marks the picked row). 1160's on/off cells are two-state picture buttons (`PLUS` / `MINUS`).
+> - **`fx::Grid`** (tasks 3–4): `win32fx/include/controls/Grid.h`, `win32fx/src/controls/Grid.cpp`, registered by `RegisterCustomControls`; `GRN_*` codes in `CustomControls.h`. The API differs from the draft in spec §4.2 as recorded there: `SetColor(col, row)` instead of `SetRowColor`, and `SetStretchColumn`, `SetImageList` / `SetCellImage`, `ActiveRow` / `ActiveCol` / `SetActiveCell`, `SetRedraw`, `Grid::Create`, `GRN_KEYDOWN` and `GRN_RCLICK` added.
+> - **Self-test** (task 5): `trivial_dialog` has a grid; `/selftest` adds 24 grid checks.
+> - **`AccountList`** (task 6) is on `fx::Grid`; its ListView code is gone.
+> - **1160** (task 7): `AccessMenus` in `gl/port/Login.cpp`. Two defects of the original are corrected (spec D9):
+>   - it starts from the menu code of the level shown in 1159, resolved as login does (`LevelMenuCode`), not from the global `szMsg`, the **logged-in** user's string;
+>   - only OK saves. The original saved after Close too: it added a level `accessl` didn't have yet, or asked with string 6096 to change an existing one if any row was toggled.
+>
+>   Editing no longer touches the session's `szMsg`, so Reset (string 8152) now applies the selected level's code to the session. The original's Reset wrote `szMsg` into the level, which with the fix would have overwritten it with the logged-in user's menus.
+> - **1011** (task 8): `CashAccountsList` in `gl/port/CompanyProfile.cpp`, a modeless dialog owned by 1034 and placed beside it. Its caption is string 6027, "Account Payable Bank Accounts", as in the original, although the list is GL cash accounts: a candidate for D3. A double-click or Enter on a row shows that account in 1034 (CM_SETDATA). The list is redrawn after Add/Mod and Delete, as the original did; the Spec #1 port had dropped those calls along with the list.
+> - **`/checkres`** (task 9) creates 1011 and 1160 and checks that each holds a grid.
+
 ### Tasks
 
 1. **Bring the Linux checking tools into the repository** at `tools/linux/`, with a README. They are currently in a session scratch directory and would be lost with it:
@@ -76,6 +94,23 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 ## Milestone 1 — Data layer, tests and fixture
 
 **Goal:** the shim supports everything the cycle needs, a test project exists for the portable GL code, and the fixture has vouchers.
+
+> **As built (2026-11-09).** Where the tasks below differ, this note wins.
+> - **Comparison rules (task 1).** The tree has no CodeBase source or documentation, only operator codes in `include/e4expr.h`. The rules are the ones `dbf2sqlite_core/src/KeyExpr.cpp` already uses for the real tags' FOR conditions: dBase `SET EXACT OFF`, a left match on the padded value, case-sensitive. They are recorded in spec §5.1, and confirming them against real CodeBase is spec §12 Q5.
+> - **Shim:**
+>   - `cb4sqlite/src/QueryExpr.cpp`: the grammar, with literals as named parameters `:qN`.
+>   - `Data4`'s internal filter is now `detail::QueryFilter {sql, params}`.
+>   - `Code4::begin/commit/rollback/inTransaction`, `cb4sqlite::Transaction` and `Code4::backupTo` (spec §5.2–5.3 "As built").
+>   - `notImplemented` no longer says "in spec #1".
+> - **Tests:** `cb4sqlite_tests` gained `test_queryexpr.cpp`, `test_transaction.cpp` and `test_backup.cpp`: 69 test cases and 1,374 assertions in all, up from 50 and 981.
+> - **Headers (task 6).** `gl/port/db_gl_dist.h` and `db_gl_distb.h` have default tag `batchno`, not the generator's `ardist`. The checks of the other headers found real mismatches in `db_btch.h`, `db_btchd.h`, `db_drcod.h` and `db_itemm.h` (spec §5.4 table). **S2-M3 needs correct GL headers for `gl_btch` and `gl_btchd`, and S2-M2 one for `gl_drcod`.** The name clash in task 6 doesn't arise: `gl_distl.h` only forward-declares `Tglbtchd`, and `gl_clsm.h` is legacy-only.
+> - **`gl_tests`** (task 7):
+>   - `gl_tests/` holds `GlTestDb.h`, which migrates the dev fixture once per run with `dbf2sqlite_core` and gives each test case its own copy.
+>   - `Stubs.cpp` supplies `szUser` and an `UpdateUserTime` that refuses tables with update/user/time fields.
+>   - `test_accounts.cpp` has the 48 M6 harness checks; `test_tables.cpp` checks the headers and the fixture's vouchers. That is 8 test cases and 139 assertions.
+>   - It is `{A0C1C001-0007-…}` in `gl.sln`.
+> - **Linux build:** `tools/linux/build_tests.sh [--run] [out]` builds `cb4sqlite_tests`, `gl_tests` and `dbf2sqlite` with ASan/UBSan. The MSVC-only `sscanf_s` / `_dupenv_s` come from `tools/linux/msvc_compat.h` via `-include`. It replaces both the Spec #1 sanitizer script and the planned `build_gl_tests.sh`.
+> - **Fixture (task 8):** spec §7 "As built". 101000 now has −250 of period-7 activity, the other side of posted voucher 100.
 
 ### Tasks
 

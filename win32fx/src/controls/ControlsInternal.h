@@ -62,6 +62,7 @@ bool RegisterDateEdit(HINSTANCE inst);
 bool RegisterFloatEdit(HINSTANCE inst);
 bool RegisterIntEdit(HINSTANCE inst);
 bool RegisterSuperBtn(HINSTANCE inst);
+bool RegisterGrid(HINSTANCE inst);
 
 std::wstring WindowText(HWND hwnd);
 

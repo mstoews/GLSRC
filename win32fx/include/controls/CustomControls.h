@@ -9,6 +9,7 @@
 //   tbFloat    decimal edit                (FloatEdit.cpp)
 //   tbInteger  integer edit                (IntEdit.cpp)
 //   tbSuperBtn push button with a picture  (SuperBtn.cpp)
+//   tbSpread   grid                        (Grid.cpp; fx::Grid in Grid.h)
 //
 // The edits superclass the system EDIT control and the button superclasses
 // BUTTON: the dialog code talks to them with the usual WM_SETTEXT /
@@ -29,7 +30,7 @@
 
 namespace win32fx {
 
-// Registers all five classes (CS_GLOBALCLASS) for `inst`; calls
+// Registers all six classes (CS_GLOBALCLASS) for `inst`; calls
 // InitCommonControlsEx first. False if any registration failed. Safe to call
 // more than once.
 bool RegisterCustomControls(HINSTANCE inst);
@@ -80,6 +81,16 @@ BOOL FloatGetValue(HWND ctl, double* value);
 BOOL FloatSetValue(HWND ctl, double value);
 BOOL IntGetValue(HWND ctl, LONG* value);
 BOOL IntSetValue(HWND ctl, LONG value);
+
+// tbSpread notifications to the parent (WM_COMMAND code; see Grid.h). The
+// values are those of the Toolbox SSM_* messages they replace.
+#ifndef GRN_PICK
+#define GRN_PICK        0x0501   // SSM_DBLCLK
+#define GRN_CELLCHANGED 0x0508   // SSM_DATACHANGE
+#define GRN_SELCHANGE   0x050A   // SSM_CLICK
+#define GRN_KEYDOWN     0x050B   // SSM_KEYDOWN
+#define GRN_RCLICK      0x050D   // SSM_RBUTTON
+#endif
 
 #define FloatGetDlgItemValue(h, i, v) FloatGetValue(GetDlgItem((h), (i)), (v))
 #define FloatSetDlgItemValue(h, i, v) FloatSetValue(GetDlgItem((h), (i)), (v))

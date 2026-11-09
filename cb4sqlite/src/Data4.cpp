@@ -33,6 +33,15 @@ std::string andWhere(std::string_view a, const std::string& filter)
     return w.empty() ? std::string() : " WHERE " + w;
 }
 
+void bindFilter(Stmt& q, const detail::QueryFilter& filter)
+{
+    for (const auto& [name, value] : filter.params) {
+        const int i = sqlite3_bind_parameter_index(q.get(), name.c_str());
+        if (i == 0) throw Error("Relate4set", "parameter " + name + " missing from the query");
+        q.bindText(i, value);
+    }
+}
+
 } // namespace
 
 // --- lifetime ------------------------------------------------------------------
@@ -196,13 +205,14 @@ void Data4::trimValue(int field)
 
 // --- navigation ---------------------------------------------------------------
 
-int Data4::first(bool forward, const std::string& filter)
+int Data4::first(bool forward, const detail::QueryFilter& filter)
 {
     if (!requireValid()) return e4data;
     writeBuffer();
     const char* dir = forward ? " ASC" : " DESC";
-    Stmt q(code_->handle(), selectList(tag_) + andWhere({}, tagFilter(tag_, filter)) + " ORDER BY " + keyExpr(tag_) +
+    Stmt q(code_->handle(), selectList(tag_) + andWhere({}, tagFilter(tag_, filter.sql)) + " ORDER BY " + keyExpr(tag_) +
                             dir + ", _rowid" + dir + " LIMIT 1", "Data4::top/bottom");
+    bindFilter(q, filter);
     if (!q.step("Data4::top/bottom")) {
         setEof();
         bof_ = true;
@@ -212,7 +222,7 @@ int Data4::first(bool forward, const std::string& filter)
     return r4success;
 }
 
-int Data4::step(long n, const std::string& filter)
+int Data4::step(long n, const detail::QueryFilter& filter)
 {
     if (!requireValid()) return e4data;
     writeBuffer();
@@ -233,12 +243,13 @@ int Data4::step(long n, const std::string& filter)
     const char* dir = fwd ? " ASC" : " DESC";
     Stmt q(code_->handle(),
            selectList(tag_) +
-           andWhere("(" + keyExpr(tag_) + ", _rowid) " + (fwd ? ">" : "<") + " (?1, ?2)", tagFilter(tag_, filter)) +
+           andWhere("(" + keyExpr(tag_) + ", _rowid) " + (fwd ? ">" : "<") + " (?1, ?2)", tagFilter(tag_, filter.sql)) +
            " ORDER BY " + keyExpr(tag_) + dir + ", _rowid" + dir +
            " LIMIT 1 OFFSET " + std::to_string(count - 1),
            "Data4::skip");
     q.bindValue(1, key_);
     q.bindInt(2, rowid_);
+    bindFilter(q, filter);
     if (q.step("Data4::skip")) {
         loadRow(q.get());
         return r4success;

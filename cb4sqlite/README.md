@@ -70,10 +70,12 @@ Every method is either exercised by a behavioural Catch2 assertion (file in `cb4
 | `Data4::appendStart(int memo)` argument | CodeBase's flag for keeping memo contents; memos live in the record buffer, so it's ignored |
 | `Field4::assignDouble(…, int newLen, …)` / `assignLong(…, int newLen, …)` | `newLen` resizes `Str4` strings in CodeBase; a field's width is fixed |
 
-**Not implemented** (throw `cb4sqlite::Error("… not implemented in spec #1 …")`): `Relate4set::querySet` with anything other than empty / `.NOT. DELETED()` / `!DELETED()`; `Data4::zap` with a record range.
+**Not implemented** (throw `cb4sqlite::Error("… not implemented …")`): `Relate4set::querySet` outside the Spec #2 grammar (see `Relate4set.h`: `.NOT. DELETED()`, `FIELD = 'text'` / `<>` / `#` / `!=` on character fields, joined by `.AND.`, with dBase `SET EXACT OFF` left matching); `Data4::zap` with a record range.
 
-**Not provided at all** (port the call site instead): CodeBase `Str4*` string classes (`Str4large`, `Str4ten` …; use `std::string`/`std::wstring`, spec §5), `Data4::UpdateUserTime` (an app helper defined in legacy `gl.cpp`), locking, transactions, `Expr4`.
+**Added in Spec #2** (not CodeBase): transactions, through `Code4::begin` / `commit` / `rollback` / `inTransaction` and the RAII `cb4sqlite::Transaction`, and `Code4::backupTo`. See `Code4.h` and Spec #2 §5.2–5.3.
+
+**Not provided at all** (port the call site instead): CodeBase `Str4*` string classes (`Str4large`, `Str4ten` …; use `std::string`/`std::wstring`, spec §5), `Data4::UpdateUserTime` (an app helper defined in legacy `gl.cpp`), locking, `Expr4`.
 
 ## Building the tests elsewhere
 
-The library and tests are portable C++20 apart from `Field4_win32.cpp` and `test_field4_win32.cpp`, which compile to nothing off Windows. The tests also run under g++ with AddressSanitizer and UBSan; that is how they were first verified.
+The library and tests are portable C++20 apart from `Field4_win32.cpp` and `test_field4_win32.cpp`, which compile to nothing off Windows. The tests also run under g++ with AddressSanitizer and UBSan; that is how they were first verified. `tools/linux/build_tests.sh --run` builds and runs them that way.

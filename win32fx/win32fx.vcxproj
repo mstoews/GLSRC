@@ -50,6 +50,7 @@
     <ClInclude Include="include\VerticalToolbar.h" />
     <ClInclude Include="include\StatusBar.h" />
     <ClInclude Include="include\controls\CustomControls.h" />
+    <ClInclude Include="include\controls\Grid.h" />
     <ClInclude Include="src\Internal.h" />
     <ClInclude Include="src\controls\ControlsInternal.h" />
     <ClInclude Include="src\controls\EditRules.h" />
@@ -72,6 +73,7 @@
     <ClCompile Include="src\controls\FloatEdit.cpp" />
     <ClCompile Include="src\controls\IntEdit.cpp" />
     <ClCompile Include="src\controls\SuperBtn.cpp" />
+    <ClCompile Include="src\controls\Grid.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

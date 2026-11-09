@@ -23,5 +23,6 @@
 #include "VerticalToolbar.h"
 #include "Window.h"
 #include "controls/CustomControls.h"
+#include "controls/Grid.h"
 
 namespace fx = win32fx;

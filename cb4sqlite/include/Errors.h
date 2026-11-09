@@ -17,7 +17,7 @@ public:
 
 [[noreturn]] inline void notImplemented(const char* method, const std::string& what = {})
 {
-    throw Error(method, "not implemented in spec #1" + (what.empty() ? std::string() : ": " + what));
+    throw Error(method, "not implemented" + (what.empty() ? std::string() : ": " + what));
 }
 
 } // namespace cb4sqlite

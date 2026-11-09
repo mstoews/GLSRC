@@ -77,6 +77,44 @@ bool AccountExists(const std::string& account, const std::string& dept, const st
     return found;
 }
 
+// ---- TAPCashAcctsList -------------------------------------------------------
+
+// Dialog 1011: a modeless list of the cash accounts beside 1034. A
+// double-click or Enter on a row sends the owner CM_SETDATA, which reads the
+// active row back (TAPCashAccts::Update), and puts the focus on the owner's
+// description.
+class CashAccountsList : public fx::Dialog {
+public:
+    fx::Grid grid;
+
+protected:
+    bool OnInitDialog() override
+    {
+        grid = fx::Grid(GetDlgItem(hwnd(), ID_DISTLIST));
+        if (!grid.IsGrid()) return true;
+        // The grid fills the client area (the original inflated it by the border).
+        RECT rc{};
+        GetClientRect(hwnd(), &rc);
+        MoveWindow(grid.hwnd(), 0, 0, rc.right, rc.bottom, TRUE);
+        const int ch = grid.CharWidth();
+        grid.SetColumns({{L"Account", 7 * ch}, {L"Dept", 5 * ch}, {L"Description", 0}});
+        grid.SetStretchColumn(3);
+        SetWindowTextW(hwnd(), fx::LoadResString(hInst, 6027).c_str());   // "Account Payable Bank Accounts"
+        return true;
+    }
+
+    bool OnCommand(WORD id, WORD code, HWND) override
+    {
+        if (id != ID_DISTLIST) return false;
+        if (code == GRN_PICK) {   // HandleListBox = [WM_FIRST + SSM_DBLCLK]
+            HWND owner = GetWindow(hwnd(), GW_OWNER);
+            SendMessageW(owner, WM_COMMAND, CM_SETDATA, 0);
+            SetFocus(GetDlgItem(owner, ID_DESCRIPT));
+        }
+        return true;
+    }
+};
+
 // ---- TAPCashAccts ---------------------------------------------------------
 
 class CashAccounts : public MainDialog {
@@ -87,6 +125,7 @@ protected:
     bool OnInitDialog() override;
     bool OnCommand(WORD id, WORD code, HWND ctl) override;
     bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
+    bool OnDestroy() override;
     void Cancel() override { End(IDCANCEL); }   // ShutDownWindow only
 
 private:
@@ -96,18 +135,37 @@ private:
     void GoNext();
     void Update();   // CM_SETDATA: record -> controls
     void Clear();
+    void Redraw();   // the cash accounts into the list
+    void Search();   // Redraw, then show the list
 
     GL_SETAT& gl_setat;
+    CashAccountsList list_;
 };
 
 bool CashAccounts::OnInitDialog()
 {
     MainDialog::OnInitDialog();
     gl_setat.SetIndex("cash");
+    // AcctList = new TAPCashAcctsList(this, 1011); MakeWindow: modeless,
+    // owned by this dialog. The original placed it by its template; the port
+    // puts it beside the dialog, as tall as the dialog.
+    if (HWND l = list_.CreateModeless(hInst, 1011, hwnd())) {
+        RECT dlg{}, own{};
+        GetWindowRect(hwnd(), &dlg);
+        GetWindowRect(l, &own);
+        SetWindowPos(l, nullptr, dlg.right, dlg.top, own.right - own.left, dlg.bottom - dlg.top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     SetBitmap(ID_CASHACCTS);
     SetWindowTextW(hwnd(), GetString(6023).c_str());   // "General Ledger Bank Accounts"
-    // Redraw() and AcctList->Show(): the tbSpread list (dialog 1011), not ported.
+    Search();
     return true;
+}
+
+bool CashAccounts::OnDestroy()
+{
+    if (list_.hwnd()) DestroyWindow(list_.hwnd());
+    return MainDialog::OnDestroy();
 }
 
 bool CashAccounts::OnCommand(WORD id, WORD code, HWND ctl)
@@ -118,9 +176,33 @@ bool CashAccounts::OnCommand(WORD id, WORD code, HWND ctl)
     case ID_MODIFY:     Modify(); return true;
     case CM_SETDATA:    Update(); return true;
     case ID_CLEAR:      Clear(); return true;
-    case ID_SEARCHCASH: return true;   // Search(): fills the tbSpread list
+    case ID_SEARCHCASH: Search(); return true;   // no control sends it in gl_new.rc's 1034
     default:            return MainDialog::OnCommand(id, code, ctl);
     }
+}
+
+void CashAccounts::Redraw()
+{
+    fx::Grid& grid = list_.grid;
+    if (!grid.IsGrid()) return;
+    const int active = grid.ActiveRow();   // a tbSpread kept its active cell across ClearData
+    grid.SetRedraw(false);
+    grid.Clear();
+    int row = 0;
+    for (gl_setat.top(); !gl_setat.eof(); gl_setat.skip()) {
+        ++row;
+        grid.SetData(1, row, fx::Utf8ToWide(gl_setat.account.str()));
+        grid.SetData(2, row, fx::Utf8ToWide(gl_setat.dept.str()));
+        grid.SetData(3, row, fx::Utf8ToWide(gl_setat.name.str()));
+    }
+    if (active > 0 && row > 0) grid.SetActiveCell(1, active < row ? active : row);
+    grid.SetRedraw(true);
+}
+
+void CashAccounts::Search()
+{
+    Redraw();
+    if (list_.hwnd()) ShowWindow(list_.hwnd(), SW_SHOWNOACTIVATE);
 }
 
 bool CashAccounts::OnMessage(UINT msg, WPARAM, LPARAM, LRESULT&)
@@ -151,7 +233,13 @@ void CashAccounts::GoNext()
 
 void CashAccounts::Update()
 {
-    // The original first re-seeked to the row selected in the list, if shown.
+    // With the list shown, first seek to its active row (account + dept).
+    if (list_.hwnd() && IsWindowVisible(list_.hwnd()) && list_.grid.ActiveRow() > 0) {
+        const int row = list_.grid.ActiveRow();
+        const std::string account = fx::WideToUtf8(list_.grid.GetData(1, row));
+        const std::string dept = fx::WideToUtf8(list_.grid.GetData(2, row));
+        gl_setat.seek(AccountKey(account, dept, gl_setat.account.len()).c_str());
+    }
     SetField(ID_ACCOUNTS, gl_setat.account);
     SetField(ID_DEPART, gl_setat.dept);
     SetField(ID_DESCRIPT, gl_setat.name);
@@ -174,6 +262,7 @@ void CashAccounts::Ok()
         Modify();
         Clear();
     }
+    Redraw();
 }
 
 void CashAccounts::Modify()
@@ -190,6 +279,7 @@ void CashAccounts::Delete()
     if (Message(GetString(6024), MB_ICONQUESTION | MB_YESNO) == IDYES) {   // "...delete the record?"
         gl_setat.deleteRec();
         gl_setat.pack();
+        Redraw();
     }
     Update();
 }
