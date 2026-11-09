@@ -98,7 +98,7 @@ Run these on the test machine, logged in as `ADMIN`, against the dev fixture. Th
 
 - [ ] Enter account `150000`, description `TEST ASSET`, no type, then click **Add/Mod**. You get "Choose a account type before appending" (4071), and nothing is added.
 - [ ] Choose **Balance Sheet** and click **Add/Mod**. The account appears in the list.
-- [ ] External check: `sqlite3 dev.db "select accounts, dept, descript, type, curr_bal, openbal from glaccts where accounts like '150000%'"` returns one row, type `B`.
+- [ ] External check: `sqlite3 dev.db "select account, dept, descript, type, curr_bal, openbal from glaccts where account like '150000%'"` returns one row, type `B`.
 - [ ] Enter account `350000`, description `SECOND RE`, choose **Retained earnings**, then click **Add/Mod**. You get "Only 1 Retained Earnings account may be entered." (16011), and nothing is added.
 - [ ] Leave Account blank and click **Add/Mod**. You get "The field ... must be completed before continuing." (4072).
 
@@ -106,7 +106,7 @@ Run these on the test machine, logged in as `ADMIN`, against the dev fixture. Th
 
 ### 4. Modify
 
-- [ ] Record the row first: `sqlite3 dev.db "select * from glaccts where accounts like '150000%'"`.
+- [ ] Record the row first: `sqlite3 dev.db "select * from glaccts where account like '150000%'"`.
 - [ ] Pick 150000 from the list and change its description to `TEST ASSET EDITED` and its opening balance to `100.00`. Click **Add/Mod**.
 - [ ] Run the query again. Only `descript`, `openbal` / `previous12` and `curr_bal` changed. `type` is still `B`.
 
@@ -115,7 +115,7 @@ Run these on the test machine, logged in as `ADMIN`, against the dev fixture. Th
 ### 5. Delete
 
 - [ ] With 150000 in the dialog, click **Delete**. You get "Are you sure you wish to delete this account?" (1021). Answer **No**: the account is still there.
-- [ ] Click **Delete** again and answer **Yes**. The account is gone from the list, and `sqlite3 dev.db "select count(*) from glaccts where accounts like '150000%'"` returns 0.
+- [ ] Click **Delete** again and answer **Yes**. The account is gone from the list, and `sqlite3 dev.db "select count(*) from glaccts where account like '150000%'"` returns 0.
 - [ ] Pick 102101 and click **Delete**, then **Yes**. You get "Account number must be empty to be deleted." (1027), and the account is still there.
 - [ ] GLSUB > Delete Accounts opens the same dialog. Its caption is "General Ledger Accounts Maintenance - Delete" and the OK button says **Delete**. Delete 144910 there: the account is gone.
 - [ ] Type an account that doesn't exist (`999999`) and click **Delete**. You get "Accounts number not found." (1026).

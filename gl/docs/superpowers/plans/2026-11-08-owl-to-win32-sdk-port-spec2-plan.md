@@ -365,6 +365,10 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** all 14 spec §8 criteria signed off.
 
+> **Status (2026-11-09).** Task 2 is done: `gl/docs/superpowers/specs/2026-11-08-spec2-acceptance.md`, with every check worked out against the fixture (the expected rows, balances and messages), run in order on one copy of `dev.db`. Tasks 1, 3 and 4 need Windows and a witness.
+>
+> Writing it found that the Spec #1 sheet's three `sqlite3` checks used a column `accounts`, which doesn't exist (the table's column is `ACCOUNT`; `accounts` is the tag), so they would fail with "no such column". They are corrected to `account`.
+
 ### Tasks
 
 1. Build Release x64 and confirm the hardening options, as in Spec #1 M7.
