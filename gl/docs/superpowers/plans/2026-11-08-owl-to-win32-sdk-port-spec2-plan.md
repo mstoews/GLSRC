@@ -246,6 +246,23 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** the cycle completes. Spec §8 #5–#8.
 
+> **As built (2026-11-09).**
+> - **Read findings (task 1),** recorded in spec §2.4 and §2.5:
+>   - **Recover** (spec §12 Q1) reverses `period<N>` and `curr_bal`, sets the header back to `"1"` and keeps the header and lines. It deletes every `gl_dist` row with the voucher's number, including AR and AP rows.
+>   - **Adjustments** change `openbal`, recompute `curr_bal` as `openbal` plus the periods, and become mode `"2"`, with no `gl_dist` rows.
+>   - **R3:** the original compared the header totals as `double`s.
+>   - **Cancel** is `gl_btcan.cpp`; `gl_delrq.cpp` isn't built.
+>   - **1061** has no complete copy in `gl_new.rc`, so `prune_rc.py` takes it from `gl.rc`.
+> - **`Vouchers.h/.cpp`:**
+>   - `ListVouchers`, `PostAll`, `PostVoucher`, `RecoverVoucher`, `CancelVoucher`. Each opens its own tables and runs in one `cb4sqlite::Transaction`. Cancel was added to D1, as this task asked.
+>   - `PostResult` lists the posted vouchers and the refused ones with the reason (out of balance, or the unknown account).
+>   - `SetPostFault(n)` / `PostFault`: the `/failpost` fault, thrown after the nth line written in `PostAll` or `PostVoucher`.
+>   - Mode `"2"` counts as posted everywhere (`IsPostedMode`), so Voucher Entry no longer opens a posted adjustment.
+> - **`gl/port/VoucherPosting.h/.cpp`** (one file, not three: the dialogs share a list base class): Post (1061), Recover (1015), Cancel (1043). Each refills its grid from a fresh `gl_btch` after every action, which also covers the re-read after a rollback. The 1061 caption is set in `OnInitDialog` (D3).
+> - **Corrections:** spec D12.
+> - **Wiring:** 10121 (`ID_GLPOSTBATCH`, also the toolbar's `ID_GLPOST` and GLSUB), 10122, 3054. `/checkres` creates the three dialogs and checks their grids; `/stress` opens each 25 times.
+> - **Tests:** `gl_tests/test_posting.cpp` has 10 cases. `gl_tests` has 32 cases and 513 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** all of `gl_postb.cpp` (`Ok`, `PostGLSlip`, `PostAdjustment`, `UpdateGL`, the single-voucher pick), `gl_postr.cpp`, `gl_btcan.cpp` and `gl_delrq.cpp`. Settle spec §12 Q1 (Recover and `curr_bal`; what remains in `gl_btch`) and spec risk R3 (the debit/credit comparison).

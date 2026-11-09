@@ -7,6 +7,7 @@
 #include "ChartOfAccounts.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
+#include "VoucherPosting.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -242,6 +243,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case CM_PRIOR:                         // TGlWindow::GLPrior: Transactions > Prior Period Entry
         RunPriorPeriodEntry(hwnd());
+        return true;
+    case ID_GLPOSTBATCH:                   // TGlWindow::GLPostBatch: Post Voucher > General Ledger, GLSUB, toolbar
+        RunPostVouchers(hwnd());
+        return true;
+    case ID_GLREPBATCH:                    // TGlWindow::GLRepBatch: Recover General Ledger Voucher
+        RunRecoverVoucher(hwnd());
+        return true;
+    case ID_BATCHDELETE:                   // TGlWindow::GLDeleteBatch: Cancel Voucher > General Ledger
+        RunCancelVoucher(hwnd());
         return true;
     case ID_ABOUT: {                       // TGlWindow::CMAbout
         fx::Dialog about;

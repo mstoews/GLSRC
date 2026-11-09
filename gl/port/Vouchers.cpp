@@ -20,11 +20,28 @@
 //   - CurrentBatch renumbered the lines but flushed only some of the new
 //     numbers; the port writes them all.
 //
+// Post / Recover / Cancel (corrections are spec D12):
+//   - PostGLSlip and PostAdjustment compared the header's debit and credit
+//     text with ==; the port compares the lines' totals to the cent (spec
+//     R3), so a stale header total can't post an unbalanced voucher.
+//   - A line whose account wasn't found got message 3081, but its curr_bal
+//     change went to whatever glaccts record was current, and the line was
+//     still marked posted and copied to gl_dist. PostAdjustment and Recover
+//     skipped such lines silently. The port refuses the whole voucher.
+//   - PostAdjustment skipped an out-of-balance adjustment without a word;
+//     the port refuses it with 8116, as an open voucher.
+//   - Recover left the lines' mode "0" on a reopened voucher, and deleted
+//     every gl_dist row with the voucher's number, AR and AP rows included;
+//     the port blanks the lines' mode and deletes only the GL rows.
+//   - Each operation is one transaction (D1); the original wrote row by row.
+//
 #include "Vouchers.h"
 
-#include "Accounts.h"   // TrimText
+#include "Accounts.h"   // TrimText, AccountsTable, SeekAccount
 #include "Company.h"    // UpdateUserTime
+#include "db_gl_dist.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -169,6 +186,11 @@ VoucherHeader ReadHeader(const VoucherHeaders& h)
     return v;
 }
 
+bool IsPostedMode(const std::string& mode)
+{
+    return mode == voucher_mode::kPosted || mode == voucher_mode::kPostedAdjustment;
+}
+
 bool Balanced(double debit, double credit)
 {
     return std::llround(debit * 100.0) == std::llround(credit * 100.0);
@@ -201,7 +223,7 @@ LoadResult LoadVoucher(VoucherHeaders& h, VoucherLines& l, long number, VoucherH
     lines.clear();
     if (!SeekVoucher(h, number)) return LoadResult::NotFound;
     header = ReadHeader(h);
-    if (header.mode == voucher_mode::kPosted) return LoadResult::Posted;
+    if (IsPostedMode(header.mode)) return LoadResult::Posted;
     if (!seekLines(l, number)) return LoadResult::NoLines;
 
     // Debit-only, then credit-only, then both (CurrentBatch's three passes).
@@ -315,4 +337,260 @@ std::vector<OpenPeriod> OpenPeriods(Code4& code)
     }
     pds.close();
     return out;
+}
+
+// ---- Post, Recover, Cancel ------------------------------------------------
+
+namespace {
+
+int gPostFault = 0;   // SetPostFault
+
+long long toCents(double v) { return std::llround(v * 100.0); }
+double fromCents(long long c) { return static_cast<double>(c) / 100.0; }
+
+void must(int rc, const char* what)
+{
+    if (rc < 0) throw std::runtime_error(std::string("gl: ") + what + " failed");
+}
+
+// The tables one operation works on, opened for it alone.
+struct Books {
+    explicit Books(Code4& c) : code(c), h(c), l(c), gl(c), dist(&c) {}
+    Code4& code;
+    VoucherHeaders h;
+    VoucherLines l;
+    AccountsTable gl;
+    Tgldist dist;
+
+    bool valid() const { return h.isValid() && l.isValid() && gl.isValid() && dist.isValid(); }
+};
+
+Field4* periodField(Tglaccts& gl, int period)
+{
+    Field4* const f[] = {gl.period1, gl.period2, gl.period3, gl.period4,  gl.period5,  gl.period6,
+                         gl.period7, gl.period8, gl.period9, gl.period10, gl.period11, gl.period12};
+    return period >= 1 && period <= 12 ? f[period - 1] : nullptr;
+}
+
+// Adds `delta` cents to a numeric field, to the cent.
+void addCents(Field4& f, long long delta) { f.assignDouble(fromCents(toCents(f.num()) + delta)); }
+
+// The record numbers of voucher `number`'s lines.
+std::vector<long> lineRecords(VoucherLines& l, long number)
+{
+    std::vector<long> recs;
+    if (seekLines(l, number))
+        for (; !l.eof() && toLong(l.batchno) == number; l.skip())
+            if (!l.deleted()) recs.push_back(l.recNo());
+    return recs;
+}
+
+// Checks the voucher's lines: balanced to the cent and every account+dept
+// in glaccts. Fills `why` and returns false otherwise.
+bool checkLines(Books& b, const std::vector<long>& recs, long number, VoucherRefusal& why)
+{
+    long long debit = 0, credit = 0;
+    for (long rec : recs) {
+        b.l.go(rec);
+        debit += toCents(b.l.debit.num());
+        credit += toCents(b.l.credit.num());
+    }
+    why = {};
+    why.number = number;
+    if (debit != credit) {
+        why.reason = PostRefusal::OutOfBalance;
+        return false;
+    }
+    for (long rec : recs) {
+        b.l.go(rec);
+        const std::string account = TrimText(b.l.account.str()), dept = TrimText(b.l.dept.str());
+        if (!SeekAccount(b.gl, account, dept)) {
+            why.reason = PostRefusal::UnknownAccount;
+            why.account = account;
+            why.dept = dept;
+            return false;
+        }
+    }
+    return true;
+}
+
+void countLine(int& written)
+{
+    ++written;
+    if (gPostFault > 0 && written == gPostFault) throw PostFault(written);
+}
+
+// PostGLSlip / PostAdjustment for one voucher, inside the caller's transaction.
+void postOne(Books& b, long number, PostResult& result, int& written)
+{
+    if (!SeekVoucher(b.h, number)) return;
+    const std::string mode = TrimText(b.h.mode.str());
+    const bool adjustment = mode == voucher_mode::kAdjustment;
+    if (mode != voucher_mode::kOpen && !adjustment) return;
+    const std::vector<long> recs = lineRecords(b.l, number);
+    if (recs.empty()) return;   // the original's loop never ran: the voucher stayed open
+    VoucherRefusal why;
+    if (!checkLines(b, recs, number, why)) {
+        result.refused.push_back(why);
+        return;
+    }
+    for (long rec : recs) {
+        must(b.l.go(rec), "reading a voucher line");
+        const long long amount = toCents(b.l.debit.num()) - toCents(b.l.credit.num());
+        SeekAccount(b.gl, TrimText(b.l.account.str()), TrimText(b.l.dept.str()));   // checked above
+        if (!adjustment) {
+            // UpdateGL: period<N> (no column for a period outside 1-12, as before), then curr_bal.
+            if (Field4* f = periodField(b.gl, std::atoi(TrimText(b.l.period.str()).c_str()))) addCents(*f, amount);
+            addCents(*b.gl.curr_bal, amount);
+        } else {
+            addCents(*b.gl.openbal, amount);
+            long long bal = toCents(b.gl.openbal->num());
+            for (int p = 1; p <= 12; ++p) bal += toCents(periodField(b.gl, p)->num());
+            b.gl.curr_bal->assignDouble(fromCents(bal));
+        }
+        UpdateUserTime(b.gl, szUser);
+        must(b.gl.flush(), "updating glaccts");
+        if (!adjustment) {
+            b.l.mode.assign(voucher_mode::kPosted);
+            must(b.l.flush(), "updating gl_btchd");
+            Tgldist& d = b.dist;
+            must(d.appendStart(), "adding to gl_dist");
+            d.account->assign(b.l.account.str());
+            d.dept->assign(b.l.dept.str());
+            d.period->assign(b.l.period.str());
+            d.date->assign(b.l.date.str());
+            d.batchno->assignLong(number);
+            d.reference->assign(b.l.reference.str());
+            d.cheque->assign(b.l.cheque.str());
+            d.medrep->assign(b.l.medrep.str());
+            d.prod->assign(b.l.prod.str());
+            d.drcode->assign(b.l.drcode.str());
+            d.descript->assign(b.l.descript.str());
+            d.debit->assignDouble(fromCents(toCents(b.l.debit.num())));
+            d.credit->assignDouble(fromCents(toCents(b.l.credit.num())));
+            UpdateUserTime(d, szUser);
+            must(d.append(), "adding to gl_dist");
+        }
+        countLine(written);
+    }
+    if (!SeekVoucher(b.h, number)) throw std::runtime_error("gl: voucher header lost while posting");
+    b.h.mode.assign(adjustment ? voucher_mode::kPostedAdjustment : voucher_mode::kPosted);
+    UpdateUserTime(b.h, szUser);
+    must(b.h.flush(), "updating gl_btch");
+    result.posted.push_back(number);
+}
+
+PostResult post(Code4& code, const std::vector<long>* only)
+{
+    PostResult result;
+    Books b(code);
+    if (!b.valid()) throw std::runtime_error("gl: a voucher table is missing");
+    std::vector<long> numbers;
+    if (only) {
+        numbers = *only;
+    } else {
+        for (const VoucherHeader& v : ListVouchers(b.h, {voucher_mode::kOpen, voucher_mode::kAdjustment}))
+            numbers.push_back(v.number);
+    }
+    cb4sqlite::Transaction tx(code);
+    int written = 0;
+    for (long n : numbers) postOne(b, n, result, written);
+    tx.commit();
+    return result;
+}
+
+bool isGlDistRow(const Tgldist& d)
+{
+    const std::string type = TrimText(d.type->str());
+    return type != "AR" && type != "AP";
+}
+
+} // namespace
+
+PostFault::PostFault(int line)
+    : std::runtime_error("Posting stopped by /failpost after line " + std::to_string(line) + ".")
+{
+}
+
+void SetPostFault(int nthLine) { gPostFault = nthLine > 0 ? nthLine : 0; }
+
+std::vector<VoucherHeader> ListVouchers(VoucherHeaders& h, const std::vector<std::string>& modes)
+{
+    std::vector<VoucherHeader> out;
+    if (!h.isValid()) return out;
+    h.SetIndex("batchno");
+    for (h.top(); !h.eof(); h.skip()) {
+        if (h.deleted()) continue;
+        const std::string mode = TrimText(h.mode.str());
+        if (std::find(modes.begin(), modes.end(), mode) != modes.end()) out.push_back(ReadHeader(h));
+    }
+    return out;
+}
+
+PostResult PostAll(Code4& code) { return post(code, nullptr); }
+
+PostResult PostVoucher(Code4& code, long number)
+{
+    const std::vector<long> one{number};
+    return post(code, &one);
+}
+
+RecoverResult RecoverVoucher(Code4& code, long number, std::string* account, std::string* dept)
+{
+    Books b(code);
+    if (!b.valid()) throw std::runtime_error("gl: a voucher table is missing");
+    if (!SeekVoucher(b.h, number) || TrimText(b.h.mode.str()) != voucher_mode::kPosted)
+        return RecoverResult::NotPosted;
+    const std::vector<long> recs = lineRecords(b.l, number);
+    for (long rec : recs) {
+        b.l.go(rec);
+        const std::string a = TrimText(b.l.account.str()), d = TrimText(b.l.dept.str());
+        if (!SeekAccount(b.gl, a, d)) {
+            if (account) *account = a;
+            if (dept) *dept = d;
+            return RecoverResult::UnknownAccount;
+        }
+    }
+
+    cb4sqlite::Transaction tx(code);
+    for (long rec : recs) {   // SetPeriodAmount
+        must(b.l.go(rec), "reading a voucher line");
+        const long long amount = toCents(b.l.debit.num()) - toCents(b.l.credit.num());
+        SeekAccount(b.gl, TrimText(b.l.account.str()), TrimText(b.l.dept.str()));
+        if (Field4* f = periodField(b.gl, std::atoi(TrimText(b.l.period.str()).c_str()))) addCents(*f, -amount);
+        addCents(*b.gl.curr_bal, -amount);
+        UpdateUserTime(b.gl, szUser);
+        must(b.gl.flush(), "updating glaccts");
+        b.l.mode.assign("");
+        must(b.l.flush(), "updating gl_btchd");
+    }
+    if (!SeekVoucher(b.h, number)) throw std::runtime_error("gl: voucher header lost while recovering");
+    b.h.mode.assign(voucher_mode::kOpen);
+    UpdateUserTime(b.h, szUser);
+    must(b.h.flush(), "updating gl_btch");
+
+    bool deleted = false;
+    b.dist.SetIndex("batchno");
+    if (b.dist.seek(static_cast<double>(number)) == r4success)
+        for (; !b.dist.eof() && std::lround(b.dist.batchno->num()) == number; b.dist.skip())
+            if (!b.dist.deleted() && isGlDistRow(b.dist)) {
+                b.dist.deleteRec();
+                deleted = true;
+            }
+    if (deleted) must(b.dist.pack(), "packing gl_dist");
+    tx.commit();
+    return RecoverResult::Recovered;
+}
+
+CancelResult CancelVoucher(Code4& code, long number)
+{
+    VoucherHeaders h(code);
+    VoucherLines l(code);
+    if (!h.isValid() || !l.isValid()) throw std::runtime_error("gl: a voucher table is missing");
+    if (!SeekVoucher(h, number)) return CancelResult::NotFound;
+    if (IsPostedMode(TrimText(h.mode.str()))) return CancelResult::Posted;
+    cb4sqlite::Transaction tx(code);
+    DeleteVoucher(h, l, number);
+    tx.commit();
+    return CancelResult::Cancelled;
 }
