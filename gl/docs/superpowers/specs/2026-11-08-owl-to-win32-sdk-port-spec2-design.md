@@ -124,6 +124,12 @@ After confirming with string 8111, `GLYearEnd` (`gl_postb.cpp`) does three thing
 2. For every account, it copies `period1`–`period12` into `previous1`–`previous12`, then sets the periods to zero.
 3. It adds the total to `curr_bal` of every account whose type **isn't** `R`. This is the defect D2 corrects.
 
+*Confirmed in S2-M6:*
+- Step 1 includes the Retained Earnings account itself, which isn't type `B`. Its balance joins the total and comes back in step 3, so its new balance is its old one plus the year's income and expenses.
+- Accounts with a blank or other type count as non-`B`, as before.
+- Year end leaves `openbal`, `gl_btchd` and `gl_dist` alone, as before; see §12 Q6.
+- It said nothing afterwards. The port reports the Retained Earnings account's new balance.
+
 ---
 
 ## 3. Screens and port files
@@ -143,8 +149,8 @@ New code goes in `gl/port/`, following Spec #1's split: portable logic separate 
 | Medical Reps (6042) | 1006 | `MasterData.cpp` | `gl_medrp.cpp` |
 | Product Codes (6005) | 1007 | `MasterData.cpp` | `gl_prods.cpp` |
 | Doctor Codes (6040) | 1040 | `MasterData.cpp` | `gl_drcod.cpp` |
-| Year End Consolidation (1068) | message box | `YearEnd.h/.cpp` | `gl_postb.cpp` |
-| Backup (1072), Restore (1074) | common file dialogs | `Backup.h/.cpp` | `gl.cpp` |
+| Year End Consolidation (1068) | message box | `YearEnd.h/.cpp` (the operation is `Vouchers.cpp` `YearEnd`) | `gl_postb.cpp` |
+| Backup (1072), Restore (1074), Reindex (3047) | common file dialogs, message box | `Backup.h/.cpp`, with the file work in the portable `CompanyFiles.h/.cpp` | `gl.cpp`, `gl_index.cpp` |
 
 The portable core is **`Vouchers.h/.cpp`**, built like `Accounts.cpp`: no Win32. It holds append and replace, post, post-adjustment, recover, cancel and year end as functions over the table classes. Each dialog collects input and calls them.
 
@@ -266,6 +272,8 @@ This covers `gl_trans.cpp` and `gl_acctl.cpp` (`ACCOUNT <> ' '`), so it also clo
 - It writes `<path>.part`, then moves it over `path` (replacing an existing file), so a failure leaves neither file behind.
 - Paths are UTF-8, and a `std::wstring_view` overload is provided on Windows.
 
+*Added in S2-M6:* `Code4::checkDatabase(path, tables)` opens a file **read-only** and checks that it is an SQLite database, that `PRAGMA quick_check` passes and that it has the named tables. Restore needs it because `Code4::open` creates the meta tables in any file it opens, which would change the file being checked.
+
 ### 5.4 Table headers
 
 `include/db_dist.h` came from the older `ar/` snapshot (Spec #1 §10 Q9). Its `Tgldist` opens **`ar_jsum`** and has no `medrep`, `drcode` or `prod` fields, but GL posting writes exactly those to `gl_dist`. Spec #2:
@@ -307,7 +315,7 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 | D2 | Year end adds the total to the **Retained Earnings** account (`type == "R"`), not to every other account. It **refuses** unless exactly one account has type `R`, and names the accounts it found. | The original's `strcmp(type, "R") != 0` contradicts its own purpose (§2.7). The real data has two type-R accounts, 340000 Retained Earnings and 101000 Petty Cash, which is clearly a data error, so the corrected test would credit both. Every `previous1`–`previous12` in the real data is zero, so the original's year end never ran on this company and nothing depends on its behaviour. The Spec #1 Chart of Accounts can correct 101000's type. |
 | D3 | Wrong dialog captions are corrected (§3). | They name other modules and would mislead users. |
 | D4 | Month close (1069, `gl_closm.cpp`) is **not ported**. | The deployed original had already retired it: no menu item or button sends 1069, its period-advance code is commented out, `CopyINI` is empty, and it would write an uninitialized buffer to `GL.INI [PERIOD] DATE`. Periods are closed in Company Profile > Periods (§2.2). The real `GL_DISTB`, its archive table, has no rows. |
-| D5 | Backup writes the database to a file chosen in a Save As dialog, using `Code4::backupTo`. The default name is `<database name>-<yyyymmdd>.db`. Restore picks a file, checks that it opens as a company database (`glaccts` and `_cb_fields` exist), confirms with string 1074, then closes the database. It saves the current file as `<name>.bak` and copies the chosen file over it. Then it reopens the database and refreshes the module bar. | The original ran external DOS programs, `savegl.pif` and `restore.pif`. With one `.db` file, a copy does the same job. |
+| D5 | Backup writes the database to a file chosen in a Save As dialog, using `Code4::backupTo`. The default name is `<database name>-<yyyymmdd>.db`. Restore picks a file, checks that it opens as a company database (`glaccts` and `_cb_fields` exist), confirms (*S2-M6:* with a new question naming the file and the `.bak`, because string 1074 is the menu's help line, "Restore the current databases to the GL directory."), then closes the database. It saves the current file as `<name>.bak` and copies the chosen file over it. Then it reopens the database and refreshes the module bar. | The original ran external DOS programs, `savegl.pif` and `restore.pif`. With one `.db` file, a copy does the same job. |
 | D6 | Reindex shows a message instead of rebuilding. | There are no `.mdx` files after migration, and SQLite maintains its own indexes. |
 | D7 | Maintain External Vouchers stays a stub. | Its handler only opens dialog 1058, and nothing shows what that dialog was for. |
 | D8 | Budget Data edits in the grid (§4.2) rather than in 12 separate fields. | It keeps the original layout, and AP needs grid editing anyway. |
@@ -441,3 +449,8 @@ Corrections found while porting are recorded under each milestone here, as Spec 
    | `SSB_ARROWSEXITEDITMODE` TRUE | recover, delete | Up and Down end an edit |
    | `SSB_AUTOSIZE`, `SSB_ALLOWUSERRESIZE` FALSE, `SSB_NOBEEP`, `SSB_ALLOWUSERFORMULAS` | 1160, 1011, line list / budget | ignored. The port's header lets the user resize columns. |
 5. **The dBase comparison rules against real CodeBase 4** (§5.1). They follow `dbf2sqlite`'s FOR-condition translation, not CodeBase's own source or documentation, which aren't in the tree. Confirm them if either turns up, or with the original 16-bit build on the real data, for example by comparing the account list's rows under a `GL.INI [GLACCTS] QUERY`.
+6. **Year end and the opening balance.** Year end leaves `openbal` alone and doesn't clear the posted lines, as the original did. Two things then disagree after a year end:
+   - Transaction Inquiry's balance (`openbal` plus every posted line, from every year);
+   - posting an adjustment, which sets `curr_bal` to `openbal` plus the 12 period columns, now zero, and so drops the earlier years' activity of a balance-sheet account.
+
+   The real data's year end has never run (D2), so nothing depends on it yet. Settle before the first real year end: probably year end should set `openbal` to the closing `curr_bal`, and the inquiry should list one year's lines.

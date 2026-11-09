@@ -44,8 +44,10 @@
   <ItemGroup>
     <ClInclude Include="port\AccountList.h" />
     <ClInclude Include="port\Accounts.h" />
+    <ClInclude Include="port\Backup.h" />
     <ClInclude Include="port\ChartOfAccounts.h" />
     <ClInclude Include="port\Company.h" />
+    <ClInclude Include="port\CompanyFiles.h" />
     <ClInclude Include="port\CompanyProfile.h" />
     <ClInclude Include="port\Globals.h" />
     <ClInclude Include="port\Ini.h" />
@@ -63,6 +65,7 @@
     <ClInclude Include="port\VoucherLists.h" />
     <ClInclude Include="port\VoucherPosting.h" />
     <ClInclude Include="port\Vouchers.h" />
+    <ClInclude Include="port\YearEnd.h" />
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
     <ClInclude Include="port\stubs\Stubs.h" />
@@ -72,8 +75,10 @@
     <ClCompile Include="port\AccountList.cpp" />
     <ClCompile Include="port\Accounts.cpp" />
     <ClCompile Include="port\App.cpp" />
+    <ClCompile Include="port\Backup.cpp" />
     <ClCompile Include="port\ChartOfAccounts.cpp" />
     <ClCompile Include="port\Company.cpp" />
+    <ClCompile Include="port\CompanyFiles.cpp" />
     <ClCompile Include="port\CompanyProfile.cpp" />
     <ClCompile Include="port\Ini.cpp" />
     <ClCompile Include="port\Login.cpp" />
@@ -88,6 +93,7 @@
     <ClCompile Include="port\VoucherLists.cpp" />
     <ClCompile Include="port\VoucherPosting.cpp" />
     <ClCompile Include="port\Vouchers.cpp" />
+    <ClCompile Include="port\YearEnd.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />
     <ClCompile Include="port\stubs\ReportingStubs.cpp" />

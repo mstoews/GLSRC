@@ -318,6 +318,20 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** spec §8 #11–#12, plus D6.
 
+> **As built (2026-11-09).**
+> - **Read findings:**
+>   - **Backup and Restore** (`gl.cpp`) asked strings 1073 and 1074 and ran `savegl.pif` / `restore.pif`. String 1074 is the menu's help line, not a question, so Restore asks its own question (spec D5).
+>   - **Reindex** opened dialog 1065 (`gl_index.cpp`), which rebuilt each `.mdx`.
+>   - **Year end** is as spec §2.7 says. The Retained Earnings account's own balance goes through the total. `openbal` is untouched, which leaves an open question (spec §12 Q6).
+> - **`Vouchers.cpp` `YearEnd`:** D2, in one transaction. It refuses, changing nothing, unless exactly one account has type `R`, and returns the type-R accounts it found.
+> - **`cb4sqlite`:** `Code4::checkDatabase`, a read-only check (spec §5.3). `Code4::open` would have written the meta tables into the file being checked.
+> - **`gl/port/CompanyFiles.h/.cpp`** (portable): `BackupFileName`, `CheckRestoreFile` and `RestoreDatabase`. The restore checks the file, closes, renames the current file to `.bak`, copies the chosen file and reopens; any failure after the close puts the `.bak` back and reopens.
+> - **`gl/port/Backup.h/.cpp`:** the Save As and Open dialogs, the messages, and Reindex's message (D6).
+> - **`gl/port/YearEnd.h/.cpp`:** asks string 8111. On refusal it names the type-R accounts and points to the Chart of Accounts.
+> - **Wiring:** 1068, 1072, 1074 (which refreshes the module bar afterwards) and 3047.
+> - **Tests:** `gl_tests/test_yearend.cpp` has 5 cases: two, zero and one `R` accounts; the books still balancing; the periods rolling over; a backup then restore; and refusing a text file, an SQLite file without the company tables, a damaged copy and the open file itself, with the company left open. `gl_tests` has 41 cases and 630 assertions, and `cb4sqlite_tests` 69 cases and 1,374 assertions, all passing on Linux under ASan/UBSan.
+> - **Tooling:** `build_tests.sh --run` puts the tests' temporary databases in `x64/linux-asan/tmp`, not `/tmp`. On this machine the root disk stalled an `fsync` in `/tmp` for over ten minutes.
+
 ### Tasks
 
 1. **`Vouchers.cpp` `YearEnd`**, in one transaction:
