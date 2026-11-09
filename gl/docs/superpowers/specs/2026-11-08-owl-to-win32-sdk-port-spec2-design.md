@@ -111,6 +111,11 @@ The port keeps the original's period control. Periods are opened and closed in *
 - **Transaction Inquiry** lists the lines of one account and dept, using the query `ACCOUNT = '<account>' .AND. DEPT = '<dept>' .AND. MODE = '0'` (`gl_trans.cpp:193`).
 - **Budget Data** shows `budget1`–`budget12` of one account in a 12-row grid whose amount column is editable. On save it reads the column back with `SSGetData` (`gl_budgt.cpp:39`).
 
+*Corrected in S2-M5:*
+- **Budget Data** is `TGLBudget` in **`gl_accts.cpp`**, a subclass of the Chart of Accounts (`TGLAcctsAdd`) on dialog 1017. `gl_budgt.cpp` (`TGLAcctBudget`, dialog `GL_ACCTBUDGET`) and `gl_budgi.cpp` aren't in `gl.ide`; the budget inquiry report, 10073, is `PrintReport("budgt")`, Spec #3. The grid has four columns: period, budget (editable), current year (`period<N>`) and previous year (`previous<N>`). OK asks 8098 and assigns `budget1`–`budget12` (read back from column 2, `gl_accts.cpp:529`) without writing the record. Every other button is the Chart of Accounts'.
+- **Transaction Inquiry** shows the opening balance (`openbal`) on row 1 and the lines from row 4, then a blank row and "Account Balance" (opening balance plus debits minus credits). Each balance goes in Debit when positive, else in Credit without its sign. Set Data (4076) or a pick in the account list fills it; Search (2000) shows and hides the list.
+- The port's corrections are D13.
+
 ### 2.7 Year end (1068)
 
 After confirming with string 8111, `GLYearEnd` (`gl_postb.cpp`) does three things:
@@ -133,7 +138,7 @@ New code goes in `gl/port/`, following Spec #1's split: portable logic separate 
 | Recover General Ledger Voucher (10122) | 1015 | `VoucherPosting.cpp` | `gl_postr.cpp` |
 | Cancel Voucher > General Ledger (3054) | 1043 | `VoucherPosting.cpp` | `gl_btcan.cpp` (`gl_delrq.cpp` isn't built) |
 | General Ledger Voucher Inquiry (10072) | 1029 | `TransactionInquiry.h/.cpp` | `gl_trans.cpp` |
-| Budget Data (10074) | 1017 | `BudgetData.h/.cpp` | `gl_budgt.cpp` |
+| Budget Data (10074) | 1017 | `ChartOfAccounts.cpp` (a mode, as `TGLBudget` subclasses `TGLAcctsAdd`) | `gl_accts.cpp` (`gl_budgt.cpp` isn't built) |
 | Department Codes (10061) | 1023 | `MasterData.h/.cpp` | `gl_deptc.cpp` |
 | Medical Reps (6042) | 1006 | `MasterData.cpp` | `gl_medrp.cpp` |
 | Product Codes (6005) | 1007 | `MasterData.cpp` | `gl_prods.cpp` |
@@ -149,7 +154,7 @@ The portable core is **`Vouchers.h/.cpp`**, built like `Accounts.cpp`: no Win32.
 
 - 1061 "Post Accounts Receivable Voucher" becomes "Post General Ledger Voucher";
 - 1043 "Cancel Accounts Payable Journal" becomes "Cancel General Ledger Voucher" (*S2-M4:* the original already did this at run time, with string 6143);
-- 1017 "General Ledger Account Maintenance - Add" becomes "General Ledger Budget Data".
+- 1017 "General Ledger Account Maintenance - Add" becomes "General Ledger Budget Data" (*S2-M5:* the original already replaced it at run time with string 8097, "General Ledger - Budget Update", which the port uses).
 
 *Added in S2-M2:* list headers and prompts copied from other screens, corrected the same way:
 
@@ -310,6 +315,7 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 | D10 | The master-data screens (S2-M2) stop losing data. Department Codes' Delete removes the department typed, not whatever record was current. Medical Reps and Doctor Codes no longer write `balance` from control 6039, which neither template has. Medical Reps reads territory from its own control, 1076, not 6038. Product Codes no longer writes `flotsize` from the missing control 6007, and refuses a blank code on Add/Mod (string 4072), as its Delete did. | Each one silently changed or lost saved data on every save: balances and lot sizes reset to 0, territories saved blank, and the wrong department deleted. |
 | D11 | **Voucher Entry (S2-M3)** saves what it shows. The voucher description goes to `gl_btch.reference`, not the missing `descript`. A new voucher gets the number displayed, not 1 when `gl_btch` is empty. Totals come from the voucher's own lines. Add/Mod replaces the line with the typed number, or appends one. Editing keeps the voucher's mode. Picking a line selects its medical rep, product and doctor. The account check requires that account and dept, not a prefix. IDOK is Add/Mod instead of closing the dialog without the save question. | Each of these silently saved something other than what was on the screen: a lost description, a voucher renumbered to 1, totals copied from another voucher, an edit dropped, an adjustment turned into a normal voucher, codes taken from the previous line, or a line posted to the wrong account. |
 | D12 | **Post, Recover and Cancel (S2-M4)** stop corrupting the books. A voucher balances when its **lines** do, to the cent, not when the header's totals compare equal as `double`s (R3). A voucher with a line whose account and dept aren't in `glaccts` is **refused whole**, with 3081 naming the account, by Post and by Recover. An out-of-balance adjustment is refused with 8116 instead of being skipped silently. Recover **asks first**, blanks the lines' mode again, and deletes only the voucher's **GL** rows from `gl_dist`, not AR or AP rows with the same number. Post and Cancel list adjustment vouchers as well as open ones, and picking an adjustment in Post posts it as one. | The original sent a missing account's `curr_bal` change to whichever account was current, while still marking the line posted. Recover deleted other modules' postings, and left recovered lines marked posted, which Transaction Inquiry would still show. A stale header total could post an unbalanced voucher. A double-click reversed a posting with no way back. |
+| D13 | **Transaction Inquiry and Budget Data (S2-M5)** show and save the account asked for. Transaction Inquiry looks up exactly the account and dept typed, and lists exactly their posted lines; 3081 if there is no such account. Budget Data writes the budgets as soon as OK is confirmed, into the account the grid shows. | Transaction Inquiry read only 3 characters of the account and dept (`sizeof(char*)`), so the opening balance and description came from another account, and its dBase left-match query listed every dept's lines for a blank dept. Budget Data's OK only assigned the fields: they reached the table when the record moved or the tables closed, and went to whatever record was current by then. |
 
 ---
 

@@ -594,3 +594,43 @@ CancelResult CancelVoucher(Code4& code, long number)
     tx.commit();
     return CancelResult::Cancelled;
 }
+
+// ---- Transaction Inquiry --------------------------------------------------
+
+AccountActivity AccountTransactions(Code4& code, const std::string& account, const std::string& dept)
+{
+    AccountActivity out;
+    const std::string a = TrimText(account), d = TrimText(dept);
+    {
+        AccountsTable gl(code);
+        if (!gl.isValid() || !SeekAccount(gl, a, d)) return out;
+        out.found = true;
+        out.descript = TrimText(gl.descript->str());
+        out.openBal = gl.openbal->num();
+    }
+    VoucherLines l(code);
+    if (!l.isValid()) return out;
+    // glbtchd->SetIndex("account"); without that tag, every line in batchno order.
+    const bool tagged = l.SetIndex("account") == r4success;
+    if (!tagged) l.SetIndex("batchno");
+    long long debit = 0, credit = 0;
+    for (tagged ? l.seek(a.c_str()) : l.top(); !l.eof(); l.skip()) {
+        const std::string la = TrimText(l.account.str());
+        if (tagged && la != a) break;
+        if (l.deleted() || la != a || TrimText(l.dept.str()) != d || TrimText(l.mode.str()) != voucher_mode::kPosted)
+            continue;
+        PostedLine p;
+        p.period = std::atoi(TrimText(l.period.str()).c_str());
+        p.number = toLong(l.batchno);
+        p.descript = TrimText(l.descript.str());
+        p.debit = l.debit.num();
+        p.credit = l.credit.num();
+        debit += toCents(p.debit);
+        credit += toCents(p.credit);
+        out.lines.push_back(p);
+    }
+    out.debit = fromCents(debit);
+    out.credit = fromCents(credit);
+    out.balance = fromCents(toCents(out.openBal) + debit - credit);
+    return out;
+}

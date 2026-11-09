@@ -223,3 +223,29 @@ enum class CancelResult { Cancelled, NotFound, Posted };
 // TGLCancelBatch::SelectSlip, in one transaction: removes an unposted
 // voucher's header and lines.
 CancelResult CancelVoucher(Code4& code, long number);
+
+// ---- Transaction Inquiry (plan S2-M5) -------------------------------------
+
+// A posted voucher line (gl_btchd, mode "0").
+struct PostedLine {
+    int period = 0;
+    long number = 0;          // batchno
+    std::string descript;
+    double debit = 0, credit = 0;
+};
+
+struct AccountActivity {
+    bool found = false;       // the account and dept are in glaccts
+    std::string descript;     // its description
+    double openBal = 0;       // glaccts.openbal
+    std::vector<PostedLine> lines;
+    double debit = 0, credit = 0;   // the lines' totals
+    double balance = 0;             // openBal + debit - credit
+};
+
+// TGLTransInq::SetBatchList: the posted lines of exactly that account and
+// dept, in the "account" tag's order, with the opening balance. The
+// original's query, ACCOUNT = '<a>' .AND. DEPT = '<d>' .AND. MODE = '0',
+// was a dBase left match, so a blank dept listed every dept's lines and a
+// short account its neighbours' (spec D13).
+AccountActivity AccountTransactions(Code4& code, const std::string& account, const std::string& dept);

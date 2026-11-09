@@ -19,13 +19,13 @@ CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 
 # Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc,
 # then Spec #2's as each milestone adds them (S2-M2: 1006, 1007, 1023, 1040;
-# S2-M3: 1013; S2-M4: 1061, 1015, 1043). gl_new.rc's only complete copy of
+# S2-M3: 1013; S2-M4: 1061, 1015, 1043; S2-M5: 1029, 1017). gl_new.rc's only complete copy of
 # 1061 is missing (its second copy has no closing brace and no Close button),
 # so a dialog gl_new.rc lacks is taken from gl.rc, and the note says so.
 DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035',
            '2057', '1158', '1159', '1160',
            '1006', '1007', '1023', '1040', '1013',
-           '1061', '1015', '1043']
+           '1061', '1015', '1043', '1029', '1017']
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
 HEAD = re.compile(r'^(\S+)\s+(BITMAP|ICON|CURSOR|MENU|DIALOG|ACCELERATORS)\b(.*)$', re.I)

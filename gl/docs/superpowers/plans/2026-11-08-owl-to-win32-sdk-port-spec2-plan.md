@@ -287,6 +287,18 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** spec §8 #9–#10.
 
+> **As built (2026-11-09).**
+> - **Read findings (task 1),** recorded in spec §2.6:
+>   - Budget Data is `TGLBudget` in `gl_accts.cpp`, the Chart of Accounts on 1017 with a grid. `gl_budgt.cpp` and `gl_budgi.cpp` aren't built; 10073 is a Spec #3 report.
+>   - Its field-number reads (33–44, 8–19, 21–32) are `budget`, `period` and `previous` 1–12 in the real layout.
+>   - Transaction Inquiry's Search is 2000 (`gl_accts.h`'s `ID_SEARCH`).
+> - **Portable code:** `AccountTransactions` (`Vouchers.h`); `ReadBudget`, `SaveBudget` and `ParseAmount` (`Accounts.h`). `gl_tests/test_inquiry.cpp` has 4 cases.
+> - **`gl/port/TransactionInquiry.h/.cpp`:** dialog 1029 with the account list.
+> - **Budget Data** is a third mode of `ChartOfAccounts.cpp` (`RunBudgetData`), not a `BudgetData.cpp`: it inherits every button but OK. The budget column is edited in the grid (D8). The caption is string 8097, as the original set it.
+> - **Corrections:** spec D13.
+> - **Wiring:** 10072 (`ID_GLTRANSINQ`), 10074 (`ID_ACCTBUDGET`). `prune_rc.py` adds 1029 and 1017. `/checkres` creates both and checks their grids. `/stress` opens Transaction Inquiry 25 times, and the Chart of Accounts' 100 now include Budget Data.
+> - **Tests:** `gl_tests` has 36 cases and 565 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** `gl_trans.cpp` and `gl_budgt.cpp`, plus `gl_budgi.cpp` to rule it in or out: it may be the budget inquiry report, 10073, which belongs to Spec #3.

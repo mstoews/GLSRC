@@ -58,6 +58,7 @@
     <ClInclude Include="port\ResourceCheck.h" />
     <ClInclude Include="port\TableList.h" />
     <ClInclude Include="port\Tables.h" />
+    <ClInclude Include="port\TransactionInquiry.h" />
     <ClInclude Include="port\VoucherEntry.h" />
     <ClInclude Include="port\VoucherLists.h" />
     <ClInclude Include="port\VoucherPosting.h" />
@@ -82,6 +83,7 @@
     <ClCompile Include="port\MasterTables.cpp" />
     <ClCompile Include="port\ResourceCheck.cpp" />
     <ClCompile Include="port\TableList.cpp" />
+    <ClCompile Include="port\TransactionInquiry.cpp" />
     <ClCompile Include="port\VoucherEntry.cpp" />
     <ClCompile Include="port\VoucherLists.cpp" />
     <ClCompile Include="port\VoucherPosting.cpp" />
