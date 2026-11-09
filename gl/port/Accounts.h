@@ -11,6 +11,7 @@
 #include "cb4sqlite.h"
 
 #include <string>
+#include <vector>
 
 #include "legacy_headers_begin.h"
 #include "db_accts.h"
@@ -76,3 +77,20 @@ void DeleteAccount(Tglaccts& gl);
 
 // "  abc  " -> "abc".
 std::string TrimText(const std::string& s);
+
+// tbFloat or grid text ("1,234.50", "-12.00", "") -> its value; blank is 0.
+double ParseAmount(const std::string& text);
+
+// One period's row of Budget Data (TGLBudget::Update, dialog 1017).
+struct BudgetRow {
+    double budget = 0;     // budget<N>
+    double current = 0;    // period<N>
+    double previous = 0;   // previous<N>
+};
+
+// The current record's 12 rows, period 1 first.
+std::vector<BudgetRow> ReadBudget(Tglaccts& gl);
+
+// TGLBudget::Ok on the current record: budget1..budget12 from `budget`
+// (12 values), then the record is written.
+void SaveBudget(Tglaccts& gl, const std::vector<double>& budget);

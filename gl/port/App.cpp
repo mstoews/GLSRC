@@ -15,9 +15,10 @@
 //
 //   gl.exe /checkres [/quiet]   loads every Spec #1 resource and reports
 //   gl.exe /stress [/quiet]     opens and closes the Chart of Accounts 100
-//                               times, each master-data screen 25 times,
-//                               Voucher Entry 25 times and Post, Recover and
-//                               Cancel 25 times each, on the company
+//                               times (Add, Delete and Budget Data in turn),
+//                               each master-data screen 25 times, and Voucher
+//                               Entry, Post, Recover, Cancel and Transaction
+//                               Inquiry 25 times each, on the company
 //                               database (plan risk P6); the exit code is the
 //                               GDI + USER object growth
 //   gl.exe /failpost <n>        fault injection (spec #2 8 #6): posting throws
@@ -38,6 +39,7 @@
 #include "MasterData.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
+#include "TransactionInquiry.h"
 #include "Vouchers.h"   // SetPostFault
 #include "Globals.h"
 #include "Ini.h"
@@ -112,14 +114,16 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
         const int master = StressMasterData(25);
         const int vouchers = StressVoucherEntry(25);
         const int posting = StressVoucherPosting(25);
-        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0)
+        const int inquiry = StressTransactionInquiry(25);
+        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0)
                                ? -1
-                               : accounts + master + vouchers + posting;
+                               : accounts + master + vouchers + posting + inquiry;
         cb.close();
         if (args.find(L"/quiet") == std::wstring::npos)
             MessageBoxW(nullptr,
                         fx::Format(L"Chart of Accounts opened and closed 100 times, and Department, Medical Rep, "
-                                   L"Doctor and Product Codes, Voucher Entry, Post, Recover and Cancel 25 times each.\n"
+                                   L"Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction "
+                                   L"Inquiry 25 times each.\n"
                                    L"GDI + USER objects: %+d.",
                                    growth).c_str(),
                         szApp, MB_OK | (growth == 0 ? MB_ICONINFORMATION : MB_ICONEXCLAMATION));

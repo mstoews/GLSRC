@@ -117,6 +117,8 @@ DIR=D:\GL\company.db
 - **Transactions > Post Voucher > General Ledger Voucher** (1061, also GLSUB and the toolbar's post button) lists the open and adjustment vouchers. **Post** posts them all; double-clicking one posts just that one. A voucher whose lines don't balance, or that uses an account not in the chart, is refused with a message and stays listed. Posting is all or nothing: if anything fails, nothing is posted.
 - **Transactions > Recover General Ledger Voucher** (1015) lists the posted vouchers. Double-click one and confirm: its postings are reversed and it is reopened for editing.
 - **Transactions > Cancel Voucher > General Ledger Voucher** (1043) lists the vouchers not yet posted. Double-click one and confirm to delete it.
+- **Transactions > Voucher Reports > General Ledger Voucher Inquiry** (1029): type an account and dept, or pick one in the account list (Search shows and hides it), then Set Data. It lists the account's posted lines between its opening balance and its balance.
+- **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
@@ -125,6 +127,6 @@ DIR=D:\GL\company.db
 ## Checks
 
 - **`gl.exe /checkres`** loads every Spec #1 resource. Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover and Cancel 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
 - **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.

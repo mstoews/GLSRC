@@ -5,6 +5,10 @@
 
 #include "Company.h"   // UpdateUserTime
 
+#include <array>
+#include <cmath>
+#include <cstdlib>
+
 extern char szUser[11];   // Globals.h, which needs <Windows.h>; this file stays portable
 
 AccountsTable::AccountsTable(Code4& code) : Tglaccts(&code)
@@ -113,4 +117,52 @@ void DeleteAccount(Tglaccts& gl)
 {
     gl.deleteRec();
     gl.pack();
+}
+
+double ParseAmount(const std::string& text)
+{
+    return std::strtod(number(text).c_str(), nullptr);
+}
+
+namespace {
+
+enum class Column { Budget, Period, Previous };
+
+std::array<Field4*, 12> monthFields(Tglaccts& gl, Column c)
+{
+    switch (c) {
+    case Column::Budget:
+        return {gl.budget1, gl.budget2, gl.budget3, gl.budget4,  gl.budget5,  gl.budget6,
+                gl.budget7, gl.budget8, gl.budget9, gl.budget10, gl.budget11, gl.budget12};
+    case Column::Period:
+        return {gl.period1, gl.period2, gl.period3, gl.period4,  gl.period5,  gl.period6,
+                gl.period7, gl.period8, gl.period9, gl.period10, gl.period11, gl.period12};
+    default:
+        return {gl.previous1, gl.previous2, gl.previous3, gl.previous4,  gl.previous5,  gl.previous6,
+                gl.previous7, gl.previous8, gl.previous9, gl.previous10, gl.previous11, gl.previous12};
+    }
+}
+
+double value(const Field4* f) { return f ? f->num() : 0.0; }
+
+} // namespace
+
+std::vector<BudgetRow> ReadBudget(Tglaccts& gl)
+{
+    // TGLBudget::Update opened fields 33-44, 8-19 and 21-32 by number; in
+    // the real layout those are budget1-12, period1-12 and previous1-12.
+    const auto budget = monthFields(gl, Column::Budget), period = monthFields(gl, Column::Period),
+               previous = monthFields(gl, Column::Previous);
+    std::vector<BudgetRow> rows(12);
+    for (size_t i = 0; i < 12; ++i) rows[i] = {value(budget[i]), value(period[i]), value(previous[i])};
+    return rows;
+}
+
+void SaveBudget(Tglaccts& gl, const std::vector<double>& budget)
+{
+    const auto f = monthFields(gl, Column::Budget);
+    for (size_t i = 0; i < 12 && i < budget.size(); ++i)
+        if (f[i]) f[i]->assignDouble(std::round(budget[i] * 100.0) / 100.0);
+    UpdateUserTime(gl, szUser);
+    gl.flush();
 }

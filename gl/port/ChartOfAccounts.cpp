@@ -28,7 +28,21 @@
 //     tbFloat it would replace the number mask.
 //   - SetData's strcpy into a buffer one byte shorter than the account (and
 //     without the dept) is a std::string.
-//   - TGLBudget (dialog 1017, Accounts > Budget) is not in Spec #1.
+//   - TGLBudget (dialog 1017, Accounts > Budget Data; Spec #2 S2-M5) is
+//     TGLAcctsAdd with a budget grid and its own Ok: the Budget mode here.
+//     Corrections (spec D8, D13):
+//       - its Ok assigned budget1-12 to the current record without writing
+//         it; they were saved only when the record moved or the tables
+//         closed. The port writes them at once, then shows what was saved;
+//       - it saved into whatever record was current, which a later Set Data
+//         on an unknown account could leave on another one; the port saves
+//         into the account the grid shows;
+//       - the 12 amounts are edited in the grid (D8), as in the original,
+//         whose grid was the tbSpread with editable float cells.
+//     Update read fields 33-44, 8-19 and 21-32 by number; in the real
+//     layout they are budget1-12, period1-12 and previous1-12, which
+//     ReadBudget (Accounts.h) opens by name. Its caption was already set at
+//     run time from string 8097, as here (D3).
 //
 #include "ChartOfAccounts.h"
 
@@ -36,11 +50,14 @@
 #include "Accounts.h"
 #include "Globals.h"
 #include "MainDialog.h"
+#include "VoucherLists.h"   // FormatAmount
 
 #include "cb4sqlite.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "LegacyIds.h"   // last: see LegacyIds.h
 
@@ -51,10 +68,12 @@
 
 namespace {
 
+enum class Mode { Add, Delete, Budget };
+
 class ChartOfAccounts : public MainDialog {
 public:
-    explicit ChartOfAccounts(bool deleteMode, bool closeAtOnce = false)
-        : deleteMode_(deleteMode), closeAtOnce_(closeAtOnce)
+    explicit ChartOfAccounts(Mode mode, bool closeAtOnce = false)
+        : deleteMode_(mode == Mode::Delete), budget_(mode == Mode::Budget), closeAtOnce_(closeAtOnce)
     {
     }
 
@@ -76,9 +95,15 @@ private:
     std::string Type() const;
     AccountInput ReadInput() const;
     bool EnterError(int id, UINT nameString);
+    void SetupBudget();
+    void ShowBudget();
+    void SaveBudgetData();
 
     bool deleteMode_;
+    bool budget_;
     bool closeAtOnce_;
+    fx::Grid grid_;            // Budget: 1017's tbSpread
+    std::string shownAccount_, shownDept_;   // Budget: the account the grid shows
     std::unique_ptr<AccountsTable> glaccts;
     std::unique_ptr<DeptTable> gldept;
     AccountList list;
@@ -101,6 +126,7 @@ bool ChartOfAccounts::OnInitDialog()
         SetFieldW(IDOK, GetString(8095));
         SetWindowTextW(hwnd(), GetString(8096).c_str());
     }
+    if (budget_) SetupBudget();
     list.Create(hwnd(), *glaccts);
     SetCheck(ID_FOREIGN, false);
     SetBitmap(ID_GLINQ);
@@ -131,7 +157,9 @@ bool ChartOfAccounts::OnCommand(WORD id, WORD code, HWND ctl)
         SetData();
         return true;
     case IDOK:
-        if (deleteMode_)
+        if (budget_)
+            SaveBudgetData();   // TGLBudget::Ok
+        else if (deleteMode_)
             Delete();   // TGLAcctsDelete::Ok: the same steps as Delete
         else
             Ok();
@@ -287,7 +315,62 @@ void ChartOfAccounts::Update()   // show the current record
     if (type == "B") SetType(ID_BS);
     else if (type == "R") SetType(ID_RE);
     else if (type == "I") SetType(ID_IS);
+    if (budget_) ShowBudget();   // TGLBudget::Update
     SetFocus(GetDlgItem(hwnd(), IDOK));
+}
+
+// ---- TGLBudget (dialog 1017) ----------------------------------------------
+
+void ChartOfAccounts::SetupBudget()   // TGLBudget::SetupWindow
+{
+    SetWindowTextW(hwnd(), GetString(8097).c_str());   // "General Ledger - Budget Update"
+    grid_ = fx::Grid(GetDlgItem(hwnd(), ID_DISTLIST));
+    if (!grid_.IsGrid()) return;
+    // Column 1 six characters wide, the other three sharing the rest.
+    RECT rc{};
+    GetClientRect(grid_.hwnd(), &rc);
+    const int first = 7 * grid_.CharWidth();
+    const int rest = (std::max)(10 * grid_.CharWidth(), (rc.right - first - GetSystemMetrics(SM_CXVSCROLL)) / 3);
+    grid_.SetColumns({{L"Period", first, fx::GridAlign::Right},
+                      {L"Budget", rest, fx::GridAlign::Right},
+                      {L"Current Year", rest, fx::GridAlign::Right},
+                      {L"Previous Year", rest, fx::GridAlign::Right}});
+    // SSSetTypeFloat(FS_SEPARATOR, 15, 2): the tbFloat mask and style of 1017's own amounts.
+    grid_.SetColumnEditable(2, L"9999999999999.99", 9216);
+    grid_.SetMaxRows(12);
+}
+
+void ChartOfAccounts::ShowBudget()   // the current record
+{
+    shownAccount_ = TrimText(glaccts->accounts->str());
+    shownDept_ = TrimText(glaccts->dept->str());
+    if (!grid_.IsGrid()) return;
+    if (grid_.IsEditing()) grid_.EndEdit(false);
+    grid_.SetRedraw(false);
+    const std::vector<BudgetRow> rows = ReadBudget(*glaccts);
+    for (int i = 1; i <= 12; ++i) {
+        const BudgetRow& r = rows[static_cast<size_t>(i - 1)];
+        grid_.SetData(1, i, std::to_wstring(i));
+        grid_.SetData(2, i, FormatAmount(r.budget, false));
+        grid_.SetData(3, i, FormatAmount(r.current, false));
+        grid_.SetData(4, i, FormatAmount(r.previous, false));
+    }
+    grid_.SetRedraw(true);
+}
+
+void ChartOfAccounts::SaveBudgetData()   // TGLBudget::Ok
+{
+    if (grid_.IsGrid() && grid_.IsEditing()) grid_.EndEdit(true);
+    if (shownAccount_.empty() || !SeekAccount(*glaccts, shownAccount_, shownDept_)) {
+        Message(GetString(3081), MB_ICONINFORMATION);   // "Unable to find GL Account": nothing shown yet
+        return;
+    }
+    // "Update the current budget information?"
+    if (Message(GetString(8098), MB_ICONQUESTION | MB_YESNO) != IDYES) return;
+    std::vector<double> budget;
+    for (int i = 1; i <= 12; ++i) budget.push_back(ParseAmount(fx::WideToUtf8(grid_.GetData(2, i))));
+    SaveBudget(*glaccts, budget);
+    Update();   // shows what was saved
 }
 
 void ChartOfAccounts::Search()   // Search / Seek / GetSeek
@@ -306,14 +389,20 @@ void ChartOfAccounts::ShowForeign()
 
 INT_PTR RunChartOfAccounts(HWND frame)
 {
-    ChartOfAccounts dlg(false);
+    ChartOfAccounts dlg(Mode::Add);
     return dlg.DoModal(1010, frame);
 }
 
 INT_PTR RunDeleteAccounts(HWND frame)
 {
-    ChartOfAccounts dlg(true);
+    ChartOfAccounts dlg(Mode::Delete);
     return dlg.DoModal(1010, frame);
+}
+
+INT_PTR RunBudgetData(HWND frame)
+{
+    ChartOfAccounts dlg(Mode::Budget);
+    return dlg.DoModal(1017, frame);
 }
 
 int StressChartOfAccounts(int times)
@@ -323,13 +412,17 @@ int StressChartOfAccounts(int times)
         return static_cast<int>(GetGuiResources(self, GR_GDIOBJECTS) + GetGuiResources(self, GR_USEROBJECTS));
     };
     {
-        ChartOfAccounts warmUp(false, true);   // first open: class registration, cached bitmaps
+        ChartOfAccounts warmUp(Mode::Add, true);   // first open: class registration, cached bitmaps
         warmUp.DoModal(1010, nullptr);
+        ChartOfAccounts budget(Mode::Budget, true);
+        if (budget.DoModal(1017, nullptr) == -1) return -1;
     }
     const int before = objects();
     for (int i = 0; i < times; ++i) {
-        ChartOfAccounts dlg(i % 2 != 0, true);
-        if (dlg.DoModal(1010, nullptr) == -1) return -1;
+        // Add, Delete and Budget Data (1017) in turn.
+        const Mode mode = i % 3 == 0 ? Mode::Add : i % 3 == 1 ? Mode::Delete : Mode::Budget;
+        ChartOfAccounts dlg(mode, true);
+        if (dlg.DoModal(mode == Mode::Budget ? 1017 : 1010, nullptr) == -1) return -1;
     }
     return objects() - before;
 }
