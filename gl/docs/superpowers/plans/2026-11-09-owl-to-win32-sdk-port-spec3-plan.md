@@ -1,0 +1,170 @@
+# Spec #3 — Implementation Plan: General Ledger Reports
+
+**Spec reference:** `gl/docs/superpowers/specs/2026-11-09-owl-to-win32-sdk-port-spec3-design.md`
+**Date:** 2026-11-09
+**Plan status:** Draft
+
+**Paths:** relative to the repository root. Legacy sources are in `gl/src/` and `gl/header/`, the Crystal report files in `dbf/*.RPT`, new GL code in `gl/port/` and `gl/port/reports/`, and the new library in `report/` beside `win32fx/` and `cb4sqlite/`.
+
+This plan carries out the Spec #3 design. If a milestone finds that the spec is wrong, **stop, fix the spec, then resume**.
+
+**Read first, as in Spec #2.** Each milestone that ports an original report starts by re-reading its `.RPT` records (`python3 -I tools/rptdump.py dbf/GLTB.RPT`) and its handler, and checking the spec's §2.2 row. The finance set (M2–M4) is new function: its read task is the data — the real company's chart and balances (spec §2.5), migrated into a scratch database with `dbf2sqlite`.
+
+---
+
+## Milestone summary
+
+| # | Milestone | Size | Depends on | Critical path? |
+|---|---|---|---|---|
+| 0 | `report` core and `report_tests`; `cb4sqlite::Query` | M | none | yes |
+| 1 | Win32: measure, preview, print, Printer Setup; `RunReport`; `port.rc` | M | M0 | yes |
+| 2 | `Balances`; fixture; F1 Trial Balance, F2 Distribution Trial Balance; year end D16; sample pages | M | M1 | yes |
+| 3 | Statement layout tables, default, evaluation; F3, F4, F5; menu; review with the finance team | M | M2 | yes |
+| 4 | Statement Layout screen and checks | M | M3 | yes |
+| 5 | Original account reports 6080, 10071, 10073 | S | M1 | no |
+| 6 | Original voucher reports 6074, 8082, 6075, 6078, 8136, Voucher Entry Print | M | M1 | no |
+| 7 | Master listings; report list (1022), File > Print; stub cleanup; `/stress`, `/checkres`, README | S | M3–M6 | yes |
+| 8 | Acceptance sheet, walkthrough, sign-off | S | all | yes |
+
+S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1 and can run beside M2–M4.
+
+---
+
+## Milestone 0 — The portable core
+
+**Goal:** a report can be built, laid out into pages and rendered as text on Linux, under test.
+
+### Tasks
+
+1. **`tools/rptdump.py`** (written with the spec): add a README entry in `tools/linux/README.md`.
+2. **`report/` project** (spec §4): `report.vcxproj` (static library, `win32fx`'s property sheets), in `gl.sln`; `genproj.py` taught it if needed.
+3. **Model** (`Report.h`, spec §4.1), including `Heading`, `Subtotal`, `Total` (single/double rule), `Note`, indents and slip mode.
+4. **Formatting** (`Format.h`, spec §4.3): minus and parentheses styles. Check how the port's screens show dates and how `gl_btch.DATE`, `gl_btchd.DATE` and `gl_dist.DATE` are stored in the fixture and the real data; record the rule in spec §4.3.
+5. **Layout** (`Layout.h`, spec §4.2).
+6. **`TextRender`**, for golden tests and debugging.
+7. **`report_tests`** (Catch2, top-level like `gl_tests`), the spec §11 cases; the Linux build alongside `build_tests.sh`, under ASan/UBSan.
+8. **`cb4sqlite::Query`** (spec §7) and its `cb4sqlite_tests` cases.
+
+### Exit criteria
+
+- `report_tests` and `cb4sqlite_tests` pass on Linux; `wincheck_all.sh` covers `report/`.
+- A golden rendering of a three-page test report, with a statement-style section, is committed and matches.
+
+---
+
+## Milestone 1 — Preview, Print and Printer Setup
+
+**Goal:** any `rpt::Report` can be previewed and printed; new dialogs can be added.
+
+### Tasks
+
+1. **`GdiMeasure`** over the printer's information context (else the screen), four font roles (spec §14 Q2's proposal for now).
+2. **`PrinterSetup`**: session `DEVMODE` / `DEVNAMES`, `PageSetupDlgW`, a `PageSetup` from them; A4 without a printer.
+3. **`Preview`** (spec §4.5): `MdiChild` with the button strip, paging, zoom, keys, wheel, **Options…** callback; draws in twips through `MM_ANISOTROPIC`; re-lays out on a printer-setup broadcast.
+4. **`Print`**: `PrintDlgW`, re-layout for the printer DC, `StartDoc` … `EndDoc`, abort dialog.
+5. **`gl/port/reports/RunReport.{h,cpp}`**: `ReportContext` (company, current period by D2, periods with descriptions and end dates), `RunReport(frame, options-callback, builder)`: options dialog, wait cursor, `std::exception` caught as elsewhere, preview.
+6. **`gl/res/port.rc` and `gl/port/PortIds.h`** (spec §3): pick an ID range no original resource uses (check `gl_new.rc`, `gl.rc` and every header in `gl/header`, `include`); teach `prune_rc.py` to `#include` `port.rc` and to apply menu edits; `/checkres` learns the new dialogs.
+7. **Frame wiring**: 2001 → Printer Setup; 3068 and the toolbar Print → the active preview if any (the list comes in M7).
+8. **`trivial_dialog /selftest`**: lay out a small report with `GdiMeasure` on the screen DC and draw a page into a memory DC.
+
+### Exit criteria
+
+- Linux: `wincheck_all.sh` clean. Windows: `/W4 /WX` Debug and Release; a test report previews, pages, and prints to *Microsoft Print to PDF*.
+
+---
+
+## Milestone 2 — Balances, F1, F2, year end
+
+### Tasks
+
+1. **Read the data**: migrate the real company (`dbf2sqlite --src dbf --out <scratch>/real.db`) and re-check spec §2.5: the `CURR_BAL` identity, `gl_dist` against the period columns, `gl_dist.PERIOD`'s stored form, `TYPE` values. Record surprises in the spec.
+2. **Fixture** (spec §9): extend `make_dev_fixture.py`; work out the expected figures of F1–F5 by hand and keep them in a comment block or a small table in the test file.
+3. **`Balances.{h,cpp}`** (spec §5.1), with the consistency check.
+4. **`TrialBalances.{h,cpp}`**: F1 (spec §5.2) and F2 (spec §5.3), with the `*` reconciliation and the voucher-line option.
+5. **Options dialog** for the trial balances (spec §5.6) in `port.rc`; session memory of the choices.
+6. **Year end D16** in `Vouchers.cpp` `YearEnd`: `OPENBAL = CURR_BAL` after the closing entries, `gl_dist` → `gl_distb`, inside the existing transaction. Update Spec #2 §12 Q6 to point at D16, and the Spec #2 tests that assert `OPENBAL` is untouched.
+7. **Tests** (`gl_tests/test_reports_tb.cpp`, `test_yearend.cpp`): balances, F1 at two periods, F2 for one period and a range, the `*` mark, the deleted line, year end before/after.
+8. **Wire** 6076 and 1075; remove them from `kReportingCommands`.
+9. **Timing** (spec R6): F2 with voucher lines on the real database; record it.
+10. **Sample pages** (spec R3, Q2): F1 and F2 to PDF on Windows for the user to settle the house style.
+
+---
+
+## Milestone 3 — The statements
+
+### Tasks
+
+1. **`StatementLayout.{h,cpp}`**: create `gl_fsline` / `gl_fsrange` (spec §6.1) with `createTable` and tags on (`STATEMENT`, `LINENO`); seed the default (spec §6.3) when the tables are first created; load, save (one transaction), reset; the checks of spec §6.5.
+2. **`Statements.{h,cpp}`**: evaluation (spec §6.2), net income, the per-statement columns and checks (spec §5.4), "Unclassified accounts", presentation (spec §5.5), show-accounts and zero-line options.
+3. **Options dialog** for the statements (spec §5.6).
+4. **Menu** (D13): 1015, 1016 run F3, F4; 1018 renamed "Cash flow statement" and runs F5; 1025 removed — through `prune_rc.py`.
+5. **Tests** (`gl_tests/test_statements.cpp`): F3 month, YTD, prior year, budget, department; F4 balances and its net income equals F3's YTD; F5 reconciles for month and YTD and its closing cash equals F4's cash; an unmapped account makes "Unclassified" and keeps F4 balanced; every layout check; default seeding is idempotent.
+6. **Finance review** (spec R1, Q3, Q7): run the three statements on the real database, print to PDF, and ask the finance team to confirm the default groupings and decide Q7. Record the answers in the spec; change the default if asked.
+
+---
+
+## Milestone 4 — The Statement Layout screen
+
+### Tasks
+
+1. **Dialog** in `port.rc` (spec §6.4): statement picker, grid, the line's fields, Add / Insert before / Delete / Apply, Check, Preview, Reset to default, Save, Close.
+2. **`StatementLayoutDialog.{h,cpp}`** on `MainDialog`, editing a copy of the layout in memory; Preview runs the statement from the copy; Save refuses errors and warns on warnings (spec §6.5); Close asks about unsaved changes.
+3. **Menu**: Accounts > Statement Layout… (new command in `PortIds.h`), with a menu-access code like the Chart of Accounts.
+4. **`/stress`** opens and closes the screen; **`/checkres`** covers it.
+
+---
+
+## Milestone 5 — Original account reports
+
+1. **Read** `GLDEPT.RPT`, `GL_CHART.RPT`, `GL_BUDGT.RPT`, `ap_repts.cpp:54-63`.
+2. **`AccountReports.{h,cpp}`**: 6080 (D3), 10071, 10073 (D6), each at the current period (D2).
+3. **Tests** (`test_reports_accounts.cpp`): order and totals against `sum()` over `glaccts`.
+4. **Wire** 6080, 10071, 10073.
+
+## Milestone 6 — Original voucher reports
+
+1. **Read** `GLSLIP.RPT`, `GL_SLIPS.RPT`, `GLBTCHD.RPT`, `GL_BTCHS.RPT`, `GLPRE.RPT`, `ap_repts.cpp:55-65`, `ap_btche.cpp:1082-1126`, `gl_btche.cpp:239-243`.
+2. **`VoucherReports.{h,cpp}`**: slips (slip mode), detail (D8), summary, 6078 (D4), 8136 (D5), the single-voucher slip (D7).
+3. **Voucher Entry Print** in `VoucherEntry.cpp`.
+4. **Tests** (`test_reports_vouchers.cpp`): slip count, 102's difference, 6078 and 8136 without posted voucher 100, the deleted line, the single slip.
+5. **Wire** 6074, 8082, 6075, 6078, 8136.
+
+## Milestone 7 — Listings, report list, clean-up
+
+1. **Read** `GL_MEDRP.RPT`, `GL_PRODL.RPT`, `GL_DRCDS.RPT`, `gl_rept.cpp`, dialog 1022.
+2. **`MasterReports.{h,cpp}`**: 6039, 6038, 6041 (D12); tests of the row counts; wire them.
+3. **`ReportList.{h,cpp}`** (D9) on dialog 1022 (pruned into `gl.rc`); 3068 routing: active preview, else the list; Reporting > Custom Report and GLSUB open the list.
+4. **Stubs**: 6077 out of `kReportingCommands` (D11); the fixed-asset reports' message names Spec #4.
+5. **`/stress`** opens and closes every report's preview; **`/checkres`** covers 1022.
+6. **README**: a Reports section (menus, options, Statement Layout, Printer Setup, printing to PDF).
+
+## Milestone 8 — Acceptance
+
+1. **`gl/docs/superpowers/specs/2026-11-09-spec3-acceptance.md`**, as the Spec #2 sheet, with the fixture's expected figures and the queries that produce them.
+2. Release build check, walkthrough with a witness, triage, sign-off — on Windows.
+
+---
+
+## Cross-cutting
+
+- **Per-port checklist** from the Spec #1 plan for every ported file.
+- **Per-milestone gates:** `/W4 /WX` clean on Debug and Release x64; the milestone's tests pass on Linux (and Windows when built there); spec drift check; an entry under a "Spec #3" heading in `gl/docs/superpowers/plans/2026-05-10-progress.md`; the milestone's "As built" note here.
+- **What not to do:**
+  - Don't port AP, AR or fixed-asset reports.
+  - Don't add parameters to the original reports (spec D17); the finance set has its options.
+  - Don't write to the database from a report: `Query` is read-only. Only the layout screen and year end write.
+  - Don't edit `gl/res/gl.rc` by hand: change `prune_rc.py` or `port.rc`.
+  - Don't put account numbers in the statement code: they belong in the default layout only.
+
+## Risks specific to the plan
+
+| # | Severity | Risk | Mitigation |
+|---|---|---|---|
+| Q1 | Medium | M1 can't be checked on Linux beyond compiling. | Thin GDI code over the tested layout; the `/selftest` draw check; check M1 on Windows before M2's reports pile on it. |
+| Q2 | Medium | The finance team rejects the default groupings or the style after the screens are built. | Sample pages after M2; the statements on real data at the end of M3, before M4. |
+| Q3 | Medium | Hand-worked expected figures in the tests are themselves wrong. | Each statement has an independent cross-check in the tests: F4 balances, F4's net income = F3's YTD, F5's closing cash = F4's cash, F1's totals agree, F2's rows foot. |
+| Q4 | Low | A fourth library in the solution and the Linux scripts. | Model it on `win32fx`; M0 task 2 sets up both builds first. |
+
+## How to use this plan
+
+M0 → M1, then M2 → M3 → M4 with M5 and M6 alongside, then M7 and M8. If the plan and the spec conflict, stop, edit the spec, recheck the plan, then continue.
