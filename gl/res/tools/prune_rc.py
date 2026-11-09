@@ -19,10 +19,13 @@ CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 
 # Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc,
 # then Spec #2's as each milestone adds them (S2-M2: 1006, 1007, 1023, 1040;
-# S2-M3: 1013).
+# S2-M3: 1013; S2-M4: 1061, 1015, 1043). gl_new.rc's only complete copy of
+# 1061 is missing (its second copy has no closing brace and no Close button),
+# so a dialog gl_new.rc lacks is taken from gl.rc, and the note says so.
 DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035',
            '2057', '1158', '1159', '1160',
-           '1006', '1007', '1023', '1040', '1013']
+           '1006', '1007', '1023', '1040', '1013',
+           '1061', '1015', '1043']
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
 HEAD = re.compile(r'^(\S+)\s+(BITMAP|ICON|CURSOR|MENU|DIALOG|ACCELERATORS)\b(.*)$', re.I)
@@ -112,11 +115,17 @@ def first(items, typ, name):
 dialogs, notes = [], []
 for d in DIALOGS:
     hits = first(new, 'DIALOG', d)
+    src = 'gl_new.rc'
     if not hits:
-        sys.exit(f'dialog {d} missing from gl_new.rc')
+        hits, src = first(old, 'DIALOG', d), 'gl.rc'
+        if not hits:
+            sys.exit(f'dialog {d} missing from gl_new.rc and gl.rc')
+        notes.append(f'dialog {d}: not complete in gl_new.rc; taken from gl.rc line {hits[0]["src_line"]}')
+    for h in hits:
+        h['src'] = src
     if len(hits) > 1:
         same = all(h['lines'][1:] == hits[0]['lines'][1:] for h in hits)
-        notes.append(f'dialog {d}: {len(hits)} copies in gl_new.rc (lines '
+        notes.append(f'dialog {d}: {len(hits)} copies in {src} (lines '
                      + ', '.join(str(h['src_line']) for h in hits) + f'); identical={same}; first used')
     dialogs.append(hits[0])
 menus = []
@@ -231,7 +240,7 @@ for r in accels:
 for r in menus:
     body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
 for r in dialogs:
-    body += [f'// ---- dialog {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
+    body += [f'// ---- dialog {r["name"]} ({r["src"]} line {r["src_line"]})'] + clean(r['lines']) + ['']
 body += ['// ---- strings (gl_new.rc)', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in final_new] + ['}', '']
 if extra:
     body += ['// ---- strings only in gl.rc', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in extra] + ['}', '']

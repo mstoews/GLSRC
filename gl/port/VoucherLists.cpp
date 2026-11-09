@@ -47,8 +47,12 @@ int iniInt(const wchar_t* key)
     return static_cast<int>(GetPrivateProfileIntW(kLineClass, key, 0, IniPath(kIni).c_str()));
 }
 
-// 1234.5 -> "1,234.50"; 0 -> "" (a blank cell, as an empty float cell).
-std::wstring amount(double v, bool blankZero = true)
+constexpr COLORREF kWhite = RGB(255, 255, 255), kBlack = RGB(0, 0, 0), kRed = RGB(255, 0, 0);
+constexpr COLORREF kPickBack = RGB(192, 220, 192), kBlue = RGB(0, 0, 255);
+
+} // namespace
+
+std::wstring FormatAmount(double v, bool blankZero)
 {
     const long long c = std::llround(v * 100.0);
     if (c == 0 && blankZero) return {};
@@ -59,11 +63,6 @@ std::wstring amount(double v, bool blankZero = true)
     std::swprintf(frac, 4, L"%02llu", a % 100);
     return (c < 0 ? L"-" : L"") + whole + L"." + frac;
 }
-
-constexpr COLORREF kWhite = RGB(255, 255, 255), kBlack = RGB(0, 0, 0), kRed = RGB(255, 0, 0);
-constexpr COLORREF kPickBack = RGB(192, 220, 192), kBlue = RGB(0, 0, 255);
-
-} // namespace
 
 // ---- LineList -------------------------------------------------------------
 
@@ -174,8 +173,8 @@ void LineList::Show(const std::vector<VoucherLine>& lines, double debit, double 
         grid_.SetData(2, row, fx::Utf8ToWide(l.descript));
         grid_.SetData(3, row, fx::Utf8ToWide(l.account));
         grid_.SetData(4, row, fx::Utf8ToWide(l.dept));
-        grid_.SetData(5, row, amount(l.debit));
-        grid_.SetData(6, row, amount(l.credit));
+        grid_.SetData(5, row, FormatAmount(l.debit));
+        grid_.SetData(6, row, FormatAmount(l.credit));
         lineOfRow_.push_back(l.line);
     }
     ++row;
@@ -185,8 +184,8 @@ void LineList::Show(const std::vector<VoucherLine>& lines, double debit, double 
         grid_.SetData(2, row, L"Voucher Out Of Balance");
         grid_.SetColor(2, row, kWhite, kRed);   // RGBCOLOR_WHITE on RGBCOLOR_RED
     }
-    grid_.SetData(5, row, amount(debit, false));
-    grid_.SetData(6, row, amount(credit, false));
+    grid_.SetData(5, row, FormatAmount(debit, false));
+    grid_.SetData(6, row, FormatAmount(credit, false));
     grid_.SetColor(5, row, kPickBack, kBlue);
     grid_.SetColor(6, row, kPickBack, kBlue);
     grid_.SetRedraw(true);

@@ -15,10 +15,14 @@
 //
 //   gl.exe /checkres [/quiet]   loads every Spec #1 resource and reports
 //   gl.exe /stress [/quiet]     opens and closes the Chart of Accounts 100
-//                               times, each master-data screen 25 times and
-//                               Voucher Entry 25 times, on the company
+//                               times, each master-data screen 25 times,
+//                               Voucher Entry 25 times and Post, Recover and
+//                               Cancel 25 times each, on the company
 //                               database (plan risk P6); the exit code is the
 //                               GDI + USER object growth
+//   gl.exe /failpost <n>        fault injection (spec #2 8 #6): posting throws
+//                               after writing its nth line, so the check can
+//                               see that nothing was written (Vouchers.h)
 //
 // Debug builds report CRT heap leaks at exit (_CrtDumpMemoryLeaks, to the
 // debugger's output window).
@@ -33,6 +37,8 @@
 #include "ChartOfAccounts.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
+#include "VoucherPosting.h"
+#include "Vouchers.h"   // SetPostFault
 #include "Globals.h"
 #include "Ini.h"
 #include "ManilaGL.h"
@@ -40,6 +46,7 @@
 
 #include "cb4sqlite.h"
 
+#include <cwchar>
 #include <string>
 
 #ifdef _DEBUG
@@ -97,16 +104,23 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     if (cb.open(std::wstring_view(db.path)) != r4success)
         return fail(L"The company database could not be opened:\n" + db.path);
 
+    if (const size_t at = args.find(L"/failpost"); at != std::wstring::npos)
+        SetPostFault(static_cast<int>(std::wcstol(args.c_str() + at + 9, nullptr, 10)));   // "/failpost <n>"; 0: off
+
     if (args.find(L"/stress") != std::wstring::npos) {
         const int accounts = StressChartOfAccounts(100);
         const int master = StressMasterData(25);
         const int vouchers = StressVoucherEntry(25);
-        const int growth = (accounts < 0 || master < 0 || vouchers < 0) ? -1 : accounts + master + vouchers;
+        const int posting = StressVoucherPosting(25);
+        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0)
+                               ? -1
+                               : accounts + master + vouchers + posting;
         cb.close();
         if (args.find(L"/quiet") == std::wstring::npos)
             MessageBoxW(nullptr,
                         fx::Format(L"Chart of Accounts opened and closed 100 times, and Department, Medical Rep, "
-                                   L"Doctor and Product Codes and Voucher Entry 25 times each.\nGDI + USER objects: %+d.",
+                                   L"Doctor and Product Codes, Voucher Entry, Post, Recover and Cancel 25 times each.\n"
+                                   L"GDI + USER objects: %+d.",
                                    growth).c_str(),
                         szApp, MB_OK | (growth == 0 ? MB_ICONINFORMATION : MB_ICONEXCLAMATION));
         return growth;

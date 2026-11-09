@@ -19,13 +19,21 @@
 //             dept, medrep, drcode, prod, debit, credit
 //
 // gl_btch.mode: "1" open, "0" posted, "3" a prior-period adjustment
-// (Tglbtch::Open / Closed / Adjustment). Voucher Entry writes "1", Prior
-// Period Entry "3"; posting (S2-M4) sets "0". Lines get no mode until posted.
+// (Tglbtch::Open / Closed / Adjustment), "2" a posted adjustment. Voucher
+// Entry writes "1", Prior Period Entry "3"; posting (S2-M4) sets "0" or
+// "2", and Recover sets "0" back to "1". Lines get no mode until posted
+// ("0"); Recover blanks it again.
+//
+// Posting, Recover and Cancel (gl_postb.cpp, gl_postr.cpp, gl_btcan.cpp;
+// plan S2-M4) are at the end. Each runs in one transaction (spec D1) on
+// tables of its own; after a failure nothing is written, and tables the
+// caller has open must be re-read.
 //
 #pragma once
 
 #include "cb4sqlite.h"
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,7 +41,11 @@ namespace voucher_mode {
 inline constexpr char kOpen[] = "1";
 inline constexpr char kPosted[] = "0";
 inline constexpr char kAdjustment[] = "3";
+inline constexpr char kPostedAdjustment[] = "2";   // PostAdjustment
 } // namespace voucher_mode
+
+// "0" or "2": posted, so Voucher Entry shows nothing and Cancel refuses it.
+bool IsPostedMode(const std::string& mode);
 
 // gl_btch, on its "batchno" tag.
 class VoucherHeaders : public Data4 {
@@ -90,7 +102,7 @@ VoucherHeader ReadHeader(const VoucherHeaders& h);
 enum class LoadResult {
     Loaded,
     NotFound,   // no such voucher
-    Posted,     // mode "0": the original showed nothing
+    Posted,     // mode "0" or "2": the original showed nothing
     NoLines,    // a header without lines (string 6087)
 };
 
@@ -137,3 +149,77 @@ struct OpenPeriod {
 // original filled the combo box. The original selected the last one added,
 // the lowest open period.
 std::vector<OpenPeriod> OpenPeriods(Code4& code);
+
+// ---- Post, Recover, Cancel (plan S2-M4) -----------------------------------
+
+// The headers whose mode is one of `modes`, in voucher-number order: the rows
+// of Post (open and adjustment vouchers), Recover (posted) and Cancel (open
+// and adjustment).
+std::vector<VoucherHeader> ListVouchers(VoucherHeaders& h, const std::vector<std::string>& modes);
+
+enum class PostRefusal {
+    OutOfBalance,     // string 8116
+    UnknownAccount,   // string 3081; the account and dept are in the refusal
+};
+
+struct VoucherRefusal {
+    long number = 0;
+    PostRefusal reason = PostRefusal::OutOfBalance;
+    std::string account, dept;   // UnknownAccount: the first line's account that isn't in glaccts
+};
+
+struct PostResult {
+    std::vector<long> posted;
+    std::vector<VoucherRefusal> refused;
+};
+
+// TGLPostBatch::Ok: posts every open and adjustment voucher, in one
+// transaction. A voucher whose lines don't balance to the cent, or with a
+// line whose account and dept aren't in glaccts, is refused and the rest
+// still post. A voucher without lines is skipped, as before.
+//
+//   open ("1")        PostGLSlip: each line's debit - credit is added to
+//                     glaccts.period<N> (N the line's period) and curr_bal;
+//                     the line's mode becomes "0", and a gl_dist row copies
+//                     it; the header's mode becomes "0".
+//   adjustment ("3")  PostAdjustment: each line's debit - credit is added to
+//                     glaccts.openbal and curr_bal is recomputed as openbal
+//                     + period1..period12; the header's mode becomes "2". No
+//                     gl_dist rows, and the lines' mode is left alone.
+//
+// Throws (and writes nothing) if the database fails, or on the /failpost
+// fault.
+PostResult PostAll(Code4& code);
+
+// TGLPostBatch::HandleListBox: posts voucher `number` alone, the same way.
+// A voucher that isn't open or an adjustment is neither posted nor refused.
+PostResult PostVoucher(Code4& code, long number);
+
+// gl.exe /failpost <n> (spec 8 #6): PostAll and PostVoucher throw PostFault
+// after writing the nth line of the call. 0 (the default) turns it off.
+void SetPostFault(int nthLine);
+
+class PostFault : public std::runtime_error {
+public:
+    explicit PostFault(int line);
+};
+
+enum class RecoverResult {
+    Recovered,
+    NotPosted,        // no such voucher, or its mode isn't "0"
+    UnknownAccount,   // a line's account and dept aren't in glaccts (string 3081)
+};
+
+// TGLRecoverBatch::HandleDoubleClick, in one transaction: for each line of
+// posted voucher `number`, debit - credit is subtracted from
+// glaccts.period<N> and curr_bal and the line's mode is blanked; the
+// header's mode becomes "1"; the voucher's GL rows in gl_dist are deleted
+// (not AR or AP rows that share its number). `account` / `dept` name the
+// missing account for UnknownAccount.
+RecoverResult RecoverVoucher(Code4& code, long number, std::string* account = nullptr, std::string* dept = nullptr);
+
+enum class CancelResult { Cancelled, NotFound, Posted };
+
+// TGLCancelBatch::SelectSlip, in one transaction: removes an unposted
+// voucher's header and lines.
+CancelResult CancelVoucher(Code4& code, long number);

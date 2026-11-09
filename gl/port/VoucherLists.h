@@ -16,7 +16,12 @@
 #include "Vouchers.h"
 
 #include <functional>
+#include <string>
 #include <vector>
+
+// An amount as the grids show it (SSSetTypeFloat FS_SEPARATOR, 2 decimals):
+// 1234.5 -> "1,234.50"; 0 -> "" (a blank cell) unless `blankZero` is false.
+std::wstring FormatAmount(double v, bool blankZero = true);
 
 class LineList : public fx::Window {
 public:

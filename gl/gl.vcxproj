@@ -60,6 +60,7 @@
     <ClInclude Include="port\Tables.h" />
     <ClInclude Include="port\VoucherEntry.h" />
     <ClInclude Include="port\VoucherLists.h" />
+    <ClInclude Include="port\VoucherPosting.h" />
     <ClInclude Include="port\Vouchers.h" />
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
@@ -83,6 +84,7 @@
     <ClCompile Include="port\TableList.cpp" />
     <ClCompile Include="port\VoucherEntry.cpp" />
     <ClCompile Include="port\VoucherLists.cpp" />
+    <ClCompile Include="port\VoucherPosting.cpp" />
     <ClCompile Include="port\Vouchers.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />

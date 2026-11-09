@@ -63,6 +63,7 @@
     <ClCompile Include="test_tables.cpp" />
     <ClCompile Include="test_master.cpp" />
     <ClCompile Include="test_vouchers.cpp" />
+    <ClCompile Include="test_posting.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
     <ClCompile Include="..\gl\port\MasterTables.cpp" />

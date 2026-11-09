@@ -58,6 +58,10 @@ const DialogCase kDialogs[] = {
     {1007, L"Product Codes (TGLProd)", false},
     // Spec #2 S2-M3.
     {1013, L"Voucher Entry (TGLBatchEntry, TGLPrior)", false},
+    // Spec #2 S2-M4.
+    {1061, L"Post General Ledger Voucher (TGLPostBatch)", true},
+    {1015, L"Recover General Ledger Voucher (TGLRecoverBatch)", true},
+    {1043, L"Cancel General Ledger Voucher (TGLCancelBatch)", true},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

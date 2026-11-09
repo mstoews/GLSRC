@@ -498,7 +498,7 @@ void VoucherEntry::Clear()
 void VoucherEntry::Navigate(WORD id)
 {
     VoucherHeaders& h = *headers_;
-    auto posted = [&] { return TrimText(h.mode.str()) == voucher_mode::kPosted; };
+    auto posted = [&] { return IsPostedMode(TrimText(h.mode.str())); };
     switch (id) {
     case ID_NEXT:
         if (!SeekVoucher(h, Number())) return;
