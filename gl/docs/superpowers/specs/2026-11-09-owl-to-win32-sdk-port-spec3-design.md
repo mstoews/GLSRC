@@ -540,7 +540,7 @@ Corrections found while porting are recorded under each milestone, as Specs #1 a
 ## 14. Still open
 
 1. ~~**Financial statements.**~~ *Settled 2026-11-09:* the finance team wants an Income Statement, Balance Sheet, Cash Flow, a distribution trial balance and a plain trial balance (§5), with a layout kept in a table and maintained in a screen (§6). The original reports follow the finance set.
-2. **House style.** Fonts (proposed: Arial 9 pt body, bold headings, 12 pt title), margins, rules. Settled from the S3-M2 sample pages.
+2. ~~**House style.**~~ *Settled 2026-11-11 from the S3-M2 sample pages (F1, F2 with voucher lines):* as built. Arial, a 12 pt bold title, 9 pt body, 9 pt bold headings and bold cells; 0.75 inch margins (Printer Setup changes them); half-point rules, a single rule above subtotals and totals and a double rule below a final total; "Printed on" and "Page n of m" beside the company line; the report's name as the footer.
 3. **The default layout's groupings** (§6.3), in particular the 14x accounts as current assets, 18x as other assets, 20x borrowings as financing, and accumulated depreciation as an add-back. Confirmed or changed by the finance team at the end of S3-M3.
 4. **6080 "by Dept."** keeps the original's lack of department subtotals and its "YTD" (D3). Keep, or add department subtotals?
 5. **Department statements beyond F3.** F3 can be run for one department; should F1 or F2 take a department too?
