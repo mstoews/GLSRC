@@ -219,6 +219,34 @@ def clean(block):
     out = [STRIP.sub('', block[0]).rstrip()] + [l.rstrip() for l in block[1:]]
     return out
 
+# A control line's ID: the first field, or the second when the first is its text.
+CTL_ID = re.compile(r'^\s*[A-Z]+\s+(?:"(?:[^"]|"")*"\s*,\s*)?([\w]+|-1)\s*,')
+
+def dedupe_controls(r):
+    """Drop a dialog's controls whose ID repeats an earlier one's (rc.exe RC2182).
+    GetDlgItem finds only one control per ID, so the rest are unreachable. A
+    control written with a symbolic ID is kept over one with the same number
+    written as a literal, so the symbol stays in resource.h."""
+    lines = r['lines']
+    # Controls only: skip the header (STYLE, CAPTION, FONT 8, "..." would match CTL_ID).
+    body_start = next(i for i, l in enumerate(lines) if re.match(r'^\s*(\{|BEGIN\b)', l, re.I)) + 1
+    by_id = {}
+    for i, l in enumerate(lines[body_start:], body_start):
+        m = CTL_ID.match(l)
+        if m and m.group(1) not in ('-1', 'IDC_STATIC'):
+            by_id.setdefault(key(m.group(1)), []).append((i, m.group(1)))
+    drop = set()
+    for k, hits in by_id.items():
+        if len(hits) < 2:
+            continue
+        keep = next((h for h in hits if num(h[1]) is None), hits[0])
+        for h in hits:
+            if h is not keep:
+                drop.add(h[0])
+                notes.append(f"dialog {r['name']}: control ID {h[1]} (= {k}) also on gl_new.rc line "
+                             f"{r['src_line'] + keep[0]} as {keep[1]}; the copy on line {r['src_line'] + h[0]} dropped")
+    return [l for i, l in enumerate(lines) if i not in drop]
+
 used = set()
 body = []
 body += ['// ---- bitmaps (extracted from the hex blocks; see the M4 progress-log entry)'] + bitmap_lines + ['']
@@ -228,7 +256,7 @@ for r in accels:
 for r in menus:
     body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
 for r in dialogs:
-    body += [f'// ---- dialog {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
+    body += [f'// ---- dialog {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(dedupe_controls(r)) + ['']
 body += ['// ---- strings (gl_new.rc)', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in final_new] + ['}', '']
 if extra:
     body += ['// ---- strings only in gl.rc', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in extra] + ['}', '']
