@@ -70,6 +70,102 @@ def manila_items():
     return items
 
 
+# ---- the finance set's activity (spec #3 9, plan S3-M2) ----------------------
+#
+# A year of a small company, so the trial balances and statements have
+# figures in every section. Fiscal period p is the month April 2026 + (p - 1).
+# New accounts only: the Spec #1/#2 accounts keep their rows, so the earlier
+# checks don't move. Opening balances (OPENBAL, the start of the year) of the
+# new balance-sheet accounts sum to zero; each journal balances, so every
+# period does too. CURR_BAL = OPENBAL + sum of PERIOD1-12 for every account.
+#
+#   account  dept  type  opening    description
+FINANCE_ACCOUNTS = [
+    ("102201", None, "B", 20000.0, "BANK - OPERATING ACCOUNT"),
+    ("151000", None, "B", 30000.0, "OFFICE EQUIPMENT"),
+    ("161000", None, "B", -6000.0, "ACCUM. DEPRECIATION - OFFICE EQUIPMENT"),
+    ("201000", None, "B", 0.0, "SHORT-TERM BANK LOAN"),
+    ("301000", None, "B", -44000.0, "SHARE CAPITAL"),
+    ("411000", None, "I", 0.0, "SALES - CASH"),
+    ("501000", None, "I", 0.0, "COST OF SALES"),
+    ("731000", "10", "I", 0.0, "SALARIES - R&D"),
+    ("731000", "20", "I", 0.0, "SALARIES - GENERAL"),
+    ("751000", None, "I", 0.0, "OFFICE RENT"),
+    ("761000", None, "I", 0.0, "DEPRECIATION EXPENSE"),
+    ("801000", None, "I", 0.0, "INTEREST INCOME"),
+    ("911000", None, "I", 0.0, "INCOME TAX EXPENSE"),
+    ("999000", None, "B", 0.0, "SUSPENSE"),   # outside every default layout range: "Unclassified"
+]
+
+# Prior-year and budget amounts per period (the same in each of the 12) on
+# the income-statement accounts, for F3's comparisons.
+#   (account, dept): (previous, budget)
+FINANCE_COMPARE = {
+    ("411000", None): (-9000.0, -10000.0),
+    ("501000", None): (3600.0, 4000.0),
+    ("731000", "10"): (1800.0, 2000.0),
+    ("731000", "20"): (1400.0, 1500.0),
+    ("751000", None): (1200.0, 1200.0),
+    ("761000", None): (500.0, 600.0),
+    ("801000", None): (-40.0, -50.0),
+    ("911000", None): (700.0, 800.0),
+}
+
+# Posted journals: (voucher no., period, date, reference, [(account, dept, description, debit, credit)]).
+# Each has gl_dist rows. Their voucher numbers have no gl_btch header (as
+# for vouchers posted and archived long ago); Recover lists only gl_btch.
+FINANCE_JOURNALS = [
+    (1, 1, "20260415", "April cash sales",
+     [("102201", None, "Cash sales", 10000.0, 0.0), ("411000", None, "Cash sales", 0.0, 10000.0)]),
+    (2, 1, "20260420", "April purchases",
+     [("501000", None, "Goods sold", 4000.0, 0.0), ("102201", None, "Supplier payment", 0.0, 4000.0)]),
+    (3, 2, "20260531", "May salaries",
+     [("731000", "10", "Salaries R&D", 2000.0, 0.0), ("731000", "20", "Salaries general", 1500.0, 0.0),
+      ("102201", None, "Payroll", 0.0, 3500.0)]),
+    (4, 3, "20260610", "Office equipment",
+     [("151000", None, "Laptops", 5000.0, 0.0), ("102201", None, "Laptops", 0.0, 5000.0)]),
+    (5, 3, "20260620", "Unexplained payment",
+     [("999000", None, "To be classified", 100.0, 0.0), ("102201", None, "Unexplained", 0.0, 100.0)]),
+    (6, 4, "20260701", "Bank loan drawdown",
+     [("102201", None, "Loan proceeds", 8000.0, 0.0), ("201000", None, "Loan proceeds", 0.0, 8000.0)]),
+    (7, 5, "20260805", "August rent",
+     [("751000", None, "Rent", 1200.0, 0.0), ("102201", None, "Rent", 0.0, 1200.0)]),
+    (8, 5, "20260830", "Interest received",
+     [("102201", None, "Interest", 50.0, 0.0), ("801000", None, "Interest", 0.0, 50.0)]),
+    (9, 7, "20261005", "October cash sales",
+     [("102201", None, "Cash sales", 6000.0, 0.0), ("411000", None, "Cash sales", 0.0, 6000.0)]),
+    (10, 7, "20261010", "October purchases",
+     [("501000", None, "Goods sold", 2400.0, 0.0), ("102201", None, "Supplier payment", 0.0, 2400.0)]),
+    (11, 7, "20261020", "Income tax instalment",
+     [("911000", None, "Instalment", 900.0, 0.0), ("102201", None, "Instalment", 0.0, 900.0)]),
+    (12, 7, "20261031", "October salaries",
+     [("731000", "10", "Salaries R&D", 2000.0, 0.0), ("102201", None, "Payroll", 0.0, 2000.0)]),
+]
+
+# Movements with no gl_dist rows (F2 marks these accounts "*"): period 6's
+# depreciation, as if entered by a route that wrote no distribution lines.
+FINANCE_UNDISTRIBUTED = [
+    (6, [("761000", None, 600.0, 0.0), ("161000", None, 0.0, 600.0)]),
+]
+
+# A gl_dist row that is deleted (dBase '*'), which every report must ignore.
+FINANCE_DELETED_DIST = (7, 5, "20260805", "August rent", ("751000", None, "Rent - entered twice", 1200.0, 0.0))
+
+
+def finance_periods():
+    """{(account, dept): [12 period amounts]} from the journals and the undistributed movements."""
+    out = {}
+    def add(acc, dept, period, dr, cr):
+        out.setdefault((acc, dept), [0.0] * 12)[period - 1] += dr - cr
+    for _, period, _, _, lines in FINANCE_JOURNALS:
+        for acc, dept, _, dr, cr in lines:
+            add(acc, dept, period, dr, cr)
+    for period, lines in FINANCE_UNDISTRIBUTED:
+        for acc, dept, dr, cr in lines:
+            add(acc, dept, period, dr, cr)
+    return out
+
+
 def vouchers(d):
     """Spec #2 7: the voucher tables and the master data voucher entry reads.
 
@@ -181,13 +277,21 @@ def vouchers(d):
         ("BATCHNO", "batchno", "N", False, False, ""),
         ("ACCOUNT", "account+dept", "C", False, False, ""),
     ]
+    # Voucher 100's two lines, then the finance journals' (S3-M2), then one
+    # deleted row. PERIOD is " 7" style, as the real rows; TYPE blank for GL.
+    dist_rows = [(acc, dp, mr, dr, pr, " 7", date, None, b, "Cash to checking", "000123", desc, dr_, cr)
+                 for (b, m, ln, acc, dp, mr, dr, pr, desc, dr_, cr) in lines if b == 100]
+    for b, period, jdate, ref, jlines in FINANCE_JOURNALS:
+        for acc, dp, desc, dr_, cr in jlines:
+            dist_rows.append((acc, dp, None, None, None, f"{period:2d}", jdate, None, b, ref, None, desc, dr_, cr))
+    b, period, jdate, ref, (acc, dp, desc, dr_, cr) = FINANCE_DELETED_DIST
+    dist_rows.append((acc, dp, None, None, None, f"{period:2d}", jdate, None, b, ref, None, desc, dr_, cr))
     dbf(os.path.join(d, "GL_DIST.DBF"),
         [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("MEDREP", "C", 5, 0), ("DRCODE", "C", 5, 0),
          ("PROD", "C", 7, 0), ("PERIOD", "C", 4, 0), ("DATE", "C", 10, 0), ("TYPE", "C", 3, 0),
          ("BATCHNO", "N", 6, 0), ("REFERENCE", "C", 30, 0), ("CHEQUE", "C", 7, 0), ("DESCRIPT", "C", 50, 0),
          ("DEBIT", "N", 16, 2), ("CREDIT", "N", 16, 2)],
-        [(acc, dp, mr, dr, pr, " 7", date, None, b, "Cash to checking", "000123", desc, dr_, cr)
-         for (b, m, ln, acc, dp, mr, dr, pr, desc, dr_, cr) in lines if b == 100], mdx=True)
+        dist_rows, deleted=(len(dist_rows) - 1,), mdx=True)
     mdx(os.path.join(d, "GL_DIST.MDX"), "GL_DIST", dist_tags)
     # The archive the retired month close wrote; empty, as in the real company.
     dbf(os.path.join(d, "GL_DISTB.DBF"),
@@ -273,11 +377,27 @@ def main():
 
     # The opening balance is OPENBAL and PREVIOUS12 (the Chart of Accounts shows PREVIOUS12);
     # `period` puts activity in one period, which the Chart of Accounts won't delete.
+    # CURR_BAL = OPENBAL + the periods (spec #3 2.5; until S3-M2 the period-7
+    # activity of 101000 and 102101 was left out of their CURR_BAL).
     def acct(no, dept, desc, typ, bal, period=None):
         periods = [None] * 12
         if period:
             periods[period[0] - 1] = period[1]
-        return (no, dept, desc, desc, typ, None, bal) + tuple(periods) + (bal,) + (None,) * 11 + (bal,) + (None,) * 12
+        curr = bal + (period[1] if period else 0.0)
+        return (no, dept, desc, desc, typ, None, curr) + tuple(periods) + (bal,) + (None,) * 11 + (bal,) + (None,) * 12
+
+    # The finance set's accounts (FINANCE_ACCOUNTS): balance-sheet ones show
+    # their opening balance as PREVIOUS12, like the rows above; income ones
+    # carry FINANCE_COMPARE's prior-year and budget amounts.
+    movements = finance_periods()
+    def finance(no, dept, typ, opening, desc):
+        periods = movements.get((no, dept), [0.0] * 12)
+        curr = round(opening + sum(periods), 2)
+        prev, budget = FINANCE_COMPARE.get((no, dept), (None, None))
+        previous = (prev,) * 12 if prev is not None else (None,) * 11 + (opening,)
+        budgets = (budget,) * 12 if budget is not None else (None,) * 12
+        return ((no, dept, desc, desc, typ, None, curr) + tuple(p or None for p in periods) + (opening,)
+                + previous + budgets)
 
     dbf(os.path.join(d, "GLACCTS.DBF"), glaccts, [
         acct("101000", None, "PETTY CASH AND CASH IN HAND", "B", 500.0, period=(7, -250.0)),
@@ -291,7 +411,7 @@ def main():
         acct("340000", None, "RETAINED EARNINGS", "R", -16840.0),
         acct("410001", "10", "SALES REVENUE - R&D", "I", 0.0),
         acct("410001", "20", "SALES REVENUE - GENERAL", "I", 0.0),
-    ], mdx=True)
+    ] + [finance(*a) for a in FINANCE_ACCOUNTS], mdx=True)
     mdx(os.path.join(d, "GLACCTS.MDX"), "GLACCTS", [
         ("TYPE", "type", "C", False, False, ""),
         ("DEPT", "dept", "C", False, False, ""),

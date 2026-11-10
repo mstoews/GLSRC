@@ -5,6 +5,7 @@
 
 #include "ReportOptions.h"
 #include "SampleReport.h"
+#include "TrialBalances.h"
 
 #include "../Globals.h"
 
@@ -68,6 +69,19 @@ std::pair<ReportOptionsFn, ReportBuilder> sampleReport(SampleOptions start = {},
     return {options, builder};
 }
 
+// The options each report keeps for the session (spec #3 5.6).
+TrialBalanceOptions& trialBalanceOptions()
+{
+    static TrialBalanceOptions opt;
+    return opt;
+}
+
+DistTrialBalanceOptions& distTrialBalanceOptions()
+{
+    static DistTrialBalanceOptions opt;
+    return opt;
+}
+
 // A frame for /stress that isn't the main window (no WM_QUIT when destroyed).
 class StressFrame : public fx::MdiFrame {
 protected:
@@ -125,6 +139,21 @@ void RunSampleReport(fx::MdiFrame& frame)
     RunReport(frame, std::move(options), std::move(builder));
 }
 
+void RunTrialBalance(fx::MdiFrame& frame)
+{
+    RunReport(
+        frame, [](HWND owner) { return ShowTrialBalanceOptions(owner, CurrentReportContext(), trialBalanceOptions()); },
+        [](const ReportContext& ctx) { return TrialBalance(cb, ctx, trialBalanceOptions()); });
+}
+
+void RunDistributionTrialBalance(fx::MdiFrame& frame)
+{
+    RunReport(
+        frame,
+        [](HWND owner) { return ShowDistTrialBalanceOptions(owner, CurrentReportContext(), distTrialBalanceOptions()); },
+        [](const ReportContext& ctx) { return DistributionTrialBalance(cb, ctx, distTrialBalanceOptions()); });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -133,15 +162,29 @@ int StressReports(int times)
     ShowWindow(frame.hwnd(), SW_SHOWNOACTIVATE);   // hidden windows don't paint
     SampleOptions three;
     three.repeat = 3;
-    const ReportBuilder builder = sampleReport(three, false).second;
+    DistTrialBalanceOptions lines;
+    lines.from = 1;
+    lines.voucherLines = true;
+    // The sample report (several pages), F1, and F2 for periods 1 to the
+    // current one with voucher lines (landscape).
+    const ReportBuilder builders[] = {
+        sampleReport(three, false).second,
+        [](const ReportContext& ctx) { return TrialBalance(cb, ctx, {}); },
+        [lines](const ReportContext& ctx) { return DistributionTrialBalance(cb, ctx, lines); },
+    };
+    auto round = [&] {
+        for (const ReportBuilder& b : builders)
+            if (!stressOnce(frame, b)) return false;
+        return true;
+    };
     int growth = -1;
     // Two warm-ups: the first registers the classes and creates cached GDI
     // objects, and one of those is released during the second, so measuring
     // after a single warm-up reads -1.
-    if (stressOnce(frame, builder) && stressOnce(frame, builder)) {
+    if (round() && round()) {
         const int before = guiObjects();
         bool ok = true;
-        for (int i = 0; i < times && ok; ++i) ok = stressOnce(frame, builder);
+        for (int i = 0; i < times && ok; ++i) ok = round();
         if (ok) growth = guiObjects() - before;
     }
     DestroyWindow(frame.hwnd());

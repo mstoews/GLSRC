@@ -143,6 +143,23 @@ TEST_CASE("text is cut to its column; numbers that don't fit print ###", "[layou
         }
 }
 
+TEST_CASE("dates that don't fit print ###, never a shorter date", "[layout]")
+{
+    Report r;
+    // 5856 twips over 1 + 9: the first column gets 585 (5 characters), so
+    // "10/15/2026" (10) doesn't fit; in a 10-character column it does.
+    r.columns = {{"Date", 1}, {"Text", 9}};
+    r.rows.push_back(Row::Detail({Cell::Date("20261015"), Cell::Text("narrow")}));
+    auto pages = Layout(r, small(), kMeasure);
+    REQUIRE(pages.size() == 1);
+    CHECK(has(pages[0], "###"));
+    CHECK_FALSE(has(pages[0], "10/15"));
+
+    r.columns = {{"Date", 2}, {"Text", 3}};   // 2342 twips: 23 characters
+    pages = Layout(r, small(), kMeasure);
+    CHECK(has(pages[0], "10/15/2026"));
+}
+
 TEST_CASE("UTF-8 text is cut between code points", "[layout]")
 {
     const std::string s = "\xC3\xA9t\xC3\xA9";   // "été", 3 code points

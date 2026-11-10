@@ -100,6 +100,20 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 
 ## Milestone 2 — Balances, F1, F2, year end
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).** Where the tasks below differ, this note wins.
+> - **Read the data** (task 1): the real company, migrated, agrees with spec §2.5 (all 389 accounts satisfy the identity; `gl_dist` agrees with the period columns). Recorded in §2.5: `gl_dist.TYPE` is blank on GL lines, the voucher number is `BATCHNO`, and a line's date needn't fall in its period.
+> - **Fixture** (task 2): spec §9 "As built". 14 new accounts, 12 journals, an undistributed movement, a deleted line, prior-year and budget amounts. **The fixture was inconsistent:** 101000's and 102101's `CURR_BAL` left out voucher 100; fixed. Spec #1/#2 tests changed only where they counted accounts, read `gl_dist`'s first row, or expected year end's old total; the Spec #1 and #2 sheets carry a note.
+> - **`Balances.{h,cpp}`** (task 3): `LoadBalances` (cents; balance at a period end, movements, prior year, budget, `consistent()`), `ConsistencyNote`, `DistTotalsByAccount`, `DistLines` (deleted rows skipped; `PERIOD` read as `CAST(trim(period) AS INTEGER)`).
+> - **`TrialBalances.{h,cpp}`** (task 4): F1 and F2 as spec §5.2–5.3 with its "As built" note (voucher-line layout, subtitles). F2 marks `*` when its lines' debits less credits differ from the period movement.
+> - **Options** (task 5): one dialog, `IDD_TB_OPTIONS` in `port.rc`, for both (F1 hides To and voucher lines); periods listed with their descriptions and "(current)". The choices are kept for the session (statics in `RunReport.cpp`).
+> - **Year end D16** (task 6): `OPENBAL = CURR_BAL` and `gl_dist` → `gl_distb` inside the transaction. **Added (decided with the user 2026-11-11):** the year's posted vouchers get mode `"9"` (closed year), since Transaction Inquiry (`OPENBAL` plus the posted `gl_btchd` lines) would otherwise count them twice after D16, and Recover could reverse one into the new year. Spec #2 §12 Q6 records it; the Year End message reports the lines archived and vouchers closed.
+> - **Tests** (task 7): `gl_tests/test_reports_tb.cpp` (11 cases: balances, the note, `gl_dist` reads, F1 at three periods and with zeros, an unbalanced ledger, F2 for one period and 1–7, voucher lines, inactive accounts, F1 after year end); `test_yearend.cpp` gains D16, closed vouchers, and refusal-writes-nothing. Expected figures were checked against independent SQL. `gl_tests`: 62 cases, 962 assertions.
+> - **Wiring** (task 8): 6076 → F1, 1075 → F2; both out of `kReportingCommands`. Menu text unchanged.
+> - **Timing** (task 9): F2 with voucher lines, periods 1–2, on the real company: the preview opens in about 0.3 s. The real data has only 13 lines, so this says little about a full year (spec R6 stays open until a larger year exists).
+> - **Sample pages** (task 10): F1 and F2 (periods 1–7, voucher lines, landscape) printed to PDF from the fixture, and F2 from the real company. They showed truncated voucher-line text and dates ("10/15/20"): F2 widens Account and Description in landscape, and **the layout now prints `###` for a date that doesn't fit** (spec §4.2; `report_tests` case added). The house style (spec §14 Q2) is for the user to settle from these pages.
+> - **`/stress`** also opens F1 and F2 (voucher lines) 25 times each; `/checkres` loads `IDD_TB_OPTIONS`.
+> - **Not checked:** the Linux ASan/UBSan build of the new sources; the options dialog by hand (it was driven by messages).
+
 ### Tasks
 
 1. **Read the data**: migrate the real company (`dbf2sqlite --src dbf --out <scratch>/real.db`) and re-check spec §2.5: the `CURR_BAL` identity, `gl_dist` against the period columns, `gl_dist.PERIOD`'s stored form, `TYPE` values. Record surprises in the spec.

@@ -49,8 +49,10 @@ void RunYearEnd(HWND frame)
     MessageBoxW(frame,
                 fx::Format(L"The year is closed. The income statement balances were moved into Retained Earnings, "
                            L"account %s, whose balance is now %.2f; the period amounts are in the previous-year "
-                           L"columns.",
-                           fx::Utf8ToWide(re.account).c_str(), r.transferred)
+                           L"columns. The new year's opening balances are the closing balances; the year's %d "
+                           L"posted lines moved to the archive, and its %d posted vouchers are closed (Recover "
+                           L"and Transaction Inquiry show only the new year's).",
+                           fx::Utf8ToWide(re.account).c_str(), r.transferred, r.archived, r.closedVouchers)
                     .c_str(),
                 szApp, MB_ICONINFORMATION);
 }

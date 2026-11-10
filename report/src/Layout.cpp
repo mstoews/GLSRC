@@ -222,8 +222,10 @@ void Engine::drawCells(const Row& row, int y, Role role)
             w -= in;
         }
         const Role cellRole = cell.bold ? Role::Bold : role;
-        const bool number = cell.type == CellType::Amount || cell.type == CellType::Integer;
-        if (number && m_.TextWidth(cellRole, s) > w)
+        // Numbers and dates that don't fit print "###": cut short, they would
+        // read as another value ("10/15/20" for 10/15/2026).
+        const bool whole = cell.type == CellType::Amount || cell.type == CellType::Integer || cell.type == CellType::Date;
+        if (whole && m_.TextWidth(cellRole, s) > w)
             text(x, y, w, col.alignment(), cellRole, "###");
         else
             text(x, y, w, col.alignment(), cellRole, s);

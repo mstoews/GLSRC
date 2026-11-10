@@ -47,9 +47,10 @@ TEST_CASE("Tgldist and Tgldistb open every field, in batchno order", "[tables]")
             CHECK(f->isValid());
         CHECK(dist.numFields() == 14);
         REQUIRE_FALSE(dist.eof());                       // the "batchno" tag shows GL lines (type blank)
-        CHECK(trimmed(*dist.batchno) == "100");
-        CHECK(trimmed(*dist.period) == "7");
-        CHECK(dist.debit->num() + dist.credit->num() == 250.0);
+        // Lowest voucher first: the finance set's journal 1 (S3-M2), period 1.
+        CHECK(trimmed(*dist.batchno) == "1");
+        CHECK(trimmed(*dist.period) == "1");
+        CHECK(dist.debit->num() + dist.credit->num() == 10000.0);
         // The generator's first tag, "ardist", is FOR TYPE = 'AR ': it hides them.
         REQUIRE(dist.SetIndex("ardist") == r4success);
         CHECK(dist.top() == r4eof);
