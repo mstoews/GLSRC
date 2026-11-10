@@ -77,7 +77,7 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
 | `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (Spec #1, and Spec #2 so far)
+## What runs (Specs #1 and #2, and Spec #3 so far)
 
 - **Frame:**
   - the MANILA menu and the top toolbar;
@@ -121,6 +121,9 @@ DIR=D:\GL\company.db
 - **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
 - **Maintenance > Backup Databases** saves a copy of the company database to a file you choose, by default `<name>-<yyyymmdd>.db` beside it. **Restore Databases** replaces the company database with a backup you choose, after checking it is one and asking. The replaced file is kept as `<name>.db.bak`. If anything goes wrong, the original is put back.
 - **Maintenance > Year End Consolidation** moves the income and expense balances into the Retained Earnings account and the period amounts into the previous-year columns. It runs only when exactly one account has type R; otherwise it names the type-R accounts so you can correct them in the Chart of Accounts. **Reindex Databases** explains that an SQLite company database needs no reindexing.
+- **File > Printer Setup** chooses the printer, paper and margins for reports. The choice lasts until the program exits; it doesn't change the Windows default printer. Orientation isn't offered there: each report has its own.
+- **Report preview** (Spec #3, S3-M1): every report opens in a window of its own, with Print, First / Previous / Next / Last, the page number, Zoom (fit width, fit page, 100 %), Options (the report's options again) and Close. PgUp / PgDn, Home / End, the arrow keys, the mouse wheel and Ctrl+P work in it. **File > Print** and the toolbar Print button print the active preview. On Windows 11 the Print dialog is the system's own print window.
+  No original report is ported yet (they come from S3-M2 on); `gl.exe /samplereport` opens a test report (see Checks).
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
@@ -128,7 +131,8 @@ DIR=D:\GL\company.db
 
 ## Checks
 
-- **`gl.exe /checkres`** loads every Spec #1 resource. Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`). Add `/quiet` to get the failure count as the exit code instead of a message box.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then the sample report's preview 25 times (paging through it at each zoom), on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
+- **`gl.exe /samplereport`** opens the report engine's test report after startup: the chart of accounts grouped by type, with subtotals, a total and a wrapped note. Its options repeat the list (to make pages), drop zero balances, or turn the page to landscape. Use it to check the preview, Printer Setup and printing, e.g. to *Microsoft Print to PDF*.
 - **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.

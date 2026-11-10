@@ -23,7 +23,11 @@ ONLY = set(sys.argv[2:])
 
 def gl_files(pattern):
     base = ROOT / "gl"
-    found = sorted(base.glob("port/" + pattern)) + sorted(base.glob("port/stubs/" + pattern))
+    # Sorted by the case-sensitive path so Windows (whose paths compare without
+    # case) and Linux write the same order.
+    def tree(sub):
+        return sorted(base.glob(sub + pattern), key=lambda f: f.as_posix())
+    found = tree("port/") + tree("port/reports/") + tree("port/stubs/")
     return [str(f.relative_to(base)).replace("/", "\\") for f in found]
 
 
@@ -75,15 +79,18 @@ PROJECTS = [
     dict(name="gl", dir="gl", n=6, type="Application", sub="Windows",
          headers=gl_files("*.h") + ["res\\resource.h"],
          sources=gl_files("*.cpp"),
-         refs=["win32fx", "cb4sqlite"], extra=None,
+         refs=["win32fx", "cb4sqlite", "report"], extra=None,
          res=["res\\gl.rc"], manifest="res\\manifest.xml"),
     # Hand-written .vcxproj (it compiles sources from gl\port and cb4sqlite_tests): only listed in gl.sln.
     dict(name="gl_tests", dir="gl_tests", n=7, hand=True),
-    # The report library (spec #3 4). The Windows-only sources under src\win32 come in S3-M1.
+    # The report library (spec #3 4): the portable core, and the Windows half in src\win32 (S3-M1).
     dict(name="report", dir="report", n=8, type="StaticLibrary", sub=None,
          headers=["include\\report\\Report.h", "include\\report\\Format.h", "include\\report\\Layout.h",
-                  "include\\report\\TextRender.h"],
-         sources=["src\\Format.cpp", "src\\Layout.cpp", "src\\TextRender.cpp"],
+                  "include\\report\\TextRender.h", "include\\report\\win32\\Gdi.h",
+                  "include\\report\\win32\\PrinterSetup.h", "include\\report\\win32\\Print.h",
+                  "include\\report\\win32\\Preview.h"],
+         sources=["src\\Format.cpp", "src\\Layout.cpp", "src\\TextRender.cpp", "src\\win32\\GdiMeasure.cpp",
+                  "src\\win32\\PrinterSetup.cpp", "src\\win32\\Print.cpp", "src\\win32\\Preview.cpp"],
          refs=[], extra=None),
     # Hand-written, as gl_tests (Catch2 from cb4sqlite_tests\vendor).
     dict(name="report_tests", dir="report_tests", n=9, hand=True),

@@ -57,6 +57,8 @@
     <ClInclude Include="..\gl\port\MasterTables.h" />
     <ClInclude Include="..\gl\port\Vouchers.h" />
     <ClInclude Include="..\gl\port\CompanyFiles.h" />
+    <ClInclude Include="..\gl\port\reports\ReportContext.h" />
+    <ClInclude Include="..\gl\port\reports\SampleReport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Stubs.cpp" />
@@ -67,11 +69,14 @@
     <ClCompile Include="test_posting.cpp" />
     <ClCompile Include="test_inquiry.cpp" />
     <ClCompile Include="test_yearend.cpp" />
+    <ClCompile Include="test_reports.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
     <ClCompile Include="..\gl\port\MasterTables.cpp" />
     <ClCompile Include="..\gl\port\Vouchers.cpp" />
     <ClCompile Include="..\gl\port\CompanyFiles.cpp" />
+    <ClCompile Include="..\gl\port\reports\ReportContext.cpp" />
+    <ClCompile Include="..\gl\port\reports\SampleReport.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\cb4sqlite_tests\vendor\catch2\catch_amalgamated.cpp">
@@ -85,6 +90,9 @@
     </ProjectReference>
     <ProjectReference Include="..\dbf2sqlite_core\dbf2sqlite_core.vcxproj">
       <Project>{A0C1C001-0003-4001-A001-000000000003}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\report\report.vcxproj">
+      <Project>{A0C1C001-0008-4001-A001-000000000008}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

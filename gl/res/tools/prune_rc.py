@@ -9,6 +9,13 @@ spec adds a dialog to DIALOGS. Hand edits to gl.rc made since are lost.
 usage: python3 prune_rc.py <repo-root>
 needs: a C preprocessor that understands -P -w -I, to resolve the symbolic IDs
        through gl/header (default x86_64-w64-mingw32-cpp; override with $CPP).
+       On Windows, Visual Studio's LLVM tools have one:
+         set CPP=C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\Llvm\\x64\\bin\\clang-cpp.exe
+         python -I gl\\res\\tools\\prune_rc.py .
+
+Besides the legacy resources, gl.rc #includes gl/port/PortIds.h (top) and
+gl/res/port.rc (end): the port's own IDs and resources (spec #3 3), written
+by hand. MENU_EDITS below changes the copied menus.
 """
 import os, re, subprocess, sys
 
@@ -27,6 +34,18 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1006', '1007', '1023', '1040', '1013',
            '1061', '1015', '1043', '1029', '1017']
 MENUS = ['MANILA', 'GLE', 'GLSUB']
+
+# The port's changes to those menus (spec #3 3: D13 and the new items), made
+# here so gl.rc stays generated. Each edit names a menu and the ID of an item
+# in it (a number, or a symbol from the legacy headers or gl/port/PortIds.h),
+# and must match exactly one item there, or the script stops:
+#   (menu, 'rename', id, '"&New text"')         replaces the item's text
+#   (menu, 'remove', id)                        drops the item
+#   (menu, 'insert_after', id, '"&Text", ID')   adds MENUITEM "&Text", ID after it
+# Items the port adds take IDs from gl/port/PortIds.h, which gl.rc #includes.
+MENU_EDITS = [
+]
+
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
 HEAD = re.compile(r'^(\S+)\s+(BITMAP|ICON|CURSOR|MENU|DIALOG|ACCELERATORS)\b(.*)$', re.I)
 
@@ -259,6 +278,32 @@ def dedupe_controls(r):
                              f"{r['src_line'] + keep[0]} as {keep[1]}; the copy on line {r['src_line'] + h[0]} dropped")
     return [l for i, l in enumerate(lines) if i not in drop]
 
+MENU_ITEM = re.compile(r'^(\s*)MENUITEM\s+("(?:[^"]|"")*")\s*,\s*(\w+)(.*)$')
+
+def apply_menu_edits(r):
+    """MENU_EDITS for menu r, on its cleaned lines."""
+    lines = list(r['lines'])
+    for edit in MENU_EDITS:
+        if edit[0].upper() != r['name'].upper():
+            continue
+        op, target = edit[1], edit[2]
+        hits = [i for i, l in enumerate(lines)
+                if (m := MENU_ITEM.match(l)) and key(m.group(3)) == key(target)]
+        if len(hits) != 1:
+            sys.exit(f'menu edit {edit}: {len(hits)} items with ID {target} in {r["name"]}')
+        i = hits[0]
+        m = MENU_ITEM.match(lines[i])
+        if op == 'rename':
+            lines[i] = f'{m.group(1)}MENUITEM {edit[3]}, {m.group(3)}{m.group(4)}'
+        elif op == 'remove':
+            del lines[i]
+        elif op == 'insert_after':
+            lines.insert(i + 1, f'{m.group(1)}MENUITEM {edit[3]}')
+        else:
+            sys.exit(f'menu edit {edit}: unknown operation {op}')
+        notes.append(f'menu {r["name"]}: {op} {target}' + (f' -> {edit[3]}' if len(edit) > 3 else ''))
+    return lines
+
 used = set()
 body = []
 body += ['// ---- bitmaps (extracted from the hex blocks; see the M4 progress-log entry)'] + bitmap_lines + ['']
@@ -266,12 +311,14 @@ body += ['// ---- icons'] + icon_lines + ['']
 for r in accels:
     body += clean(r['lines']) + ['']
 for r in menus:
-    body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
+    body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + apply_menu_edits(
+        {**r, 'lines': clean(r['lines'])}) + ['']
 for r in dialogs:
     body += [f'// ---- dialog {r["name"]} ({r["src"]} line {r["src_line"]})'] + clean(dedupe_controls(r)) + ['']
 body += ['// ---- strings (gl_new.rc)', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in final_new] + ['}', '']
 if extra:
     body += ['// ---- strings only in gl.rc', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in extra] + ['}', '']
+body += ["// ---- the port's own resources (spec #3 3), written by hand", '#include "port.rc"', '']
 
 text = '\n'.join(body)
 used = sorted(s for s in idents(text) if s in vals)
@@ -286,6 +333,7 @@ hdr = [
     '//',
     '#include <windows.h>',
     '#include "resource.h"',
+    '#include "..\\port\\PortIds.h"   // the IDs the port adds (spec #3 3): port.rc, menu edits',
     '',
     '// The application manifest is added by the linker (gl.vcxproj).',
     '',

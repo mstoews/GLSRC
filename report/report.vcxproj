@@ -41,11 +41,19 @@
     <ClInclude Include="include\report\Format.h" />
     <ClInclude Include="include\report\Layout.h" />
     <ClInclude Include="include\report\TextRender.h" />
+    <ClInclude Include="include\report\win32\Gdi.h" />
+    <ClInclude Include="include\report\win32\PrinterSetup.h" />
+    <ClInclude Include="include\report\win32\Print.h" />
+    <ClInclude Include="include\report\win32\Preview.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Format.cpp" />
     <ClCompile Include="src\Layout.cpp" />
     <ClCompile Include="src\TextRender.cpp" />
+    <ClCompile Include="src\win32\GdiMeasure.cpp" />
+    <ClCompile Include="src\win32\PrinterSetup.cpp" />
+    <ClCompile Include="src\win32\Print.cpp" />
+    <ClCompile Include="src\win32\Preview.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

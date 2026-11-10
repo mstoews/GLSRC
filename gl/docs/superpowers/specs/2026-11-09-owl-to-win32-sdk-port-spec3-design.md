@@ -133,7 +133,8 @@ Checked against the real company's `GLACCTS.DBF` and `GL_DIST.DBF`, migrated:
 | 6080, 10071, 10073 | `ap_repts.cpp:54-63` | `gl/port/reports/AccountReports.{h,cpp}` | portable |
 | 6074, 8082, 6075, 6078, 8136, Voucher Entry Print | `ap_repts.cpp:55-65`, `ap_btche.cpp:1082` | `gl/port/reports/VoucherReports.{h,cpp}` | portable |
 | 6039, 6038, 6041 | `ap_repts.cpp:64-67` | `gl/port/reports/MasterReports.{h,cpp}` | portable |
-| run a report | `PrintReport` | `gl/port/reports/RunReport.{h,cpp}` | Win32: context, options, build, preview |
+| run a report | `PrintReport` | `gl/port/reports/RunReport.{h,cpp}` | Win32: context, options, build, preview. *Corrected in S3-M1:* the context is portable, in `gl/port/reports/ReportContext.{h,cpp}`, so `gl_tests` checks it |
+| the engine's test report | — | `gl/port/reports/SampleReport.{h,cpp}` | *Added in S3-M1:* portable; `gl.exe /samplereport`, `/stress`; not on a menu |
 | 3068 | `gl_rept.cpp` (1022) | `gl/port/reports/ReportList.{h,cpp}` | D9 |
 | 2001 | `gl.cpp:207` | `report/src/win32/PrinterSetup.cpp` | D10 |
 
@@ -156,6 +157,8 @@ report/
 └── report.vcxproj           static library
 report_tests/                Catch2, portable core; also built on Linux under ASan/UBSan
 ```
+
+*Corrected in S3-M1:* `include/report/win32/` also has `Gdi.h` (`GdiMeasure`, the fonts, the twips mapping and `DrawPage`, shared by preview and printing). The Windows half uses `win32fx` (the preview is an `MdiChild`), so a program that uses it links `win32fx.lib` too.
 
 ### 4.1 The model (`Report.h`)
 
@@ -212,6 +215,12 @@ Previews lay out for the current printer setup and re-lay out when it changes.
 - **Print…**: `PrintDlgW` (printer, page range, copies), re-layout for the chosen printer's DC, `StartDoc` … `EndDoc` as one document named with the title; a "Printing page n of m" dialog with Cancel (`SetAbortProc`); GDI errors shown.
 - **Printer Setup** (2001): `PageSetupDlgW` (printer, paper, orientation, margins), kept for the session and used by later previews and prints (D10).
 - Default orientation per report: landscape for F2 with voucher lines, F3 with comparisons, 8082; portrait otherwise.
+
+*Corrected in S3-M1:*
+- Printer Setup doesn't offer orientation (`PSD_DISABLEORIENTATION`): a preview lays out in its report's orientation, so a setting there would be overridden every time. The Print dialog starts in the report's orientation and can still change it for one print.
+- The printer chosen in a Print dialog also becomes the session printer (open previews lay out again for it), as Windows programs usually behave.
+- On Windows 11, `PrintDlgW` shows the system print window, which runs in another process (`explorer.exe`). *Microsoft Print to PDF* asks for its file name during `StartDocW`.
+- With no printer installed, layouts use A4 measured on the screen, and Printer Setup and Print say there is no printer.
 
 ---
 

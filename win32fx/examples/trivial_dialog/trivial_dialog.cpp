@@ -12,15 +12,23 @@
 // instances of one dialog class, and two MDI children of one window class,
 // each receive their own messages. It also drives the custom controls with
 // WM_SETTEXT / WM_CHAR, and the tbSpread grid (fx::Grid, Spec #2 plan M0)
-// through its API, its keyboard and its custom draw.
+// through its API, its keyboard and its custom draw. Since Spec #3 S3-M1 it
+// also checks the report library's Windows half (report.lib): GDI
+// measuring, a page drawn into a bitmap, and a preview's paging and zoom.
 //
 #include <Windows.h>
 
 #include "win32fx.h"
 #include "resource.h"
 
+#include "report/Layout.h"
+#include "report/win32/Gdi.h"
+#include "report/win32/Preview.h"
+
+#include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -307,6 +315,103 @@ void mdiInstances(HINSTANCE inst, Results& r)
             L"frame and children detach when destroyed");
 }
 
+// The report library's Windows half (spec #3 S3-M1 task 8): measure with GDI
+// on the screen, lay out, draw a page into a bitmap, and drive a preview.
+rpt::Report sampleReport(int rows)
+{
+    rpt::Report r;
+    r.company = "Self-test Company";
+    r.title = "Self-test Report";
+    r.subtitles = {"Printed by trivial_dialog /selftest"};
+    r.footerNote = "trivial_dialog";
+    r.columns = {{"Account", 1.0}, {"Description", 3.0}, {"Amount", 1.2, rpt::CellType::Amount}};
+    for (int i = 0; i < rows; ++i)
+        r.rows.push_back(rpt::Row::Detail({rpt::Cell::Text(std::to_string(100000 + i)),
+                                           rpt::Cell::Text("Line " + std::to_string(i + 1)),
+                                           rpt::Cell::Amount(12345 * (i + 1))}));
+    r.rows.push_back(rpt::Row::Total({rpt::Cell::Text("Total"), {}, rpt::Cell::Amount(1)}, true));
+    return r;
+}
+
+void reportChecks(HINSTANCE inst, Results& r)
+{
+    using namespace rpt::win32;
+    GdiMeasure m;   // the screen
+    r.check(m.onScreen(), L"report: GdiMeasure without a printer measures on the screen");
+    const int wide = m.TextWidth(rpt::Role::Body, "WWWW"), narrow = m.TextWidth(rpt::Role::Body, "iiii");
+    r.check(wide > narrow && narrow > 0, L"report: text widths in twips (proportional font)");
+    r.check(m.LineHeight(rpt::Role::Title) > m.LineHeight(rpt::Role::Body) && m.LineHeight(rpt::Role::Body) > 150,
+            L"report: line heights (12 pt title > 9 pt body > 7.5 pt)");
+    r.check(m.TextWidth(rpt::Role::Body, "\xC3\xA9t\xC3\xA9") > 0, L"report: UTF-8 text measures");
+
+    const rpt::PageSetup a4 = rpt::PageSetup::A4();
+    const std::vector<rpt::Page> pages = rpt::Layout(sampleReport(150), a4, m);
+    r.check(pages.size() >= 3, L"report: 150 rows lay out on several A4 pages");
+    bool inside = true;
+    for (const rpt::Page& p : pages)
+        for (const rpt::TextOp& t : p.texts)
+            if (t.x < a4.left || t.x + t.width > a4.width - a4.right) inside = false;
+    r.check(inside, L"report: every text box inside the margins");
+
+    // Page 1 at 50 dpi into a white 32-bit DIB: something black is drawn, inside the paper.
+    const int w = MulDiv(a4.width, 50, 1440), h = MulDiv(a4.height, 50, 1440);
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    void* bits = nullptr;
+    HDC mem = CreateCompatibleDC(nullptr);
+    HBITMAP bmp = CreateDIBSection(mem, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    int dark = 0;
+    if (bmp && bits) {
+        HGDIOBJ old = SelectObject(mem, bmp);
+        RECT all{0, 0, w, h};
+        FillRect(mem, &all, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        SetTwipsMapping(mem, 50, 50);
+        FontSet fonts;
+        DrawPage(mem, pages[0], fonts);
+        GdiFlush();
+        const auto* px = static_cast<const std::uint32_t*>(bits);
+        for (int i = 0; i < w * h; ++i)
+            if ((px[i] & 0xFF) < 0x80) ++dark;
+        SelectObject(mem, old);
+        DeleteObject(bmp);
+    }
+    DeleteDC(mem);
+    r.check(dark > 500, L"report: DrawPage draws the page into a memory DC");
+
+    // A preview in an MDI frame: paging keys, zoom, close.
+    ProbeFrame frame;
+    if (!frame.CreateFrame(inst, L"TrivialReportFrame", L"report", nullptr, -1)) {
+        r.check(false, L"report: frame for the preview");
+        return;
+    }
+    HWND p = OpenPreview(frame, sampleReport(150));
+    r.check(p && IsPreview(p) && PreviewPageCount(p) == static_cast<int>(pages.size()) &&
+                PreviewPage(p) == 0,
+            L"report: OpenPreview shows page 1 of the same layout");
+    HWND view = p ? FindWindowExW(p, nullptr, L"rptPageView", nullptr) : nullptr;
+    if (view) {
+        SendMessageW(view, WM_KEYDOWN, VK_NEXT, 0);
+        const bool next = PreviewPage(p) == 1;
+        SendMessageW(view, WM_KEYDOWN, VK_END, 0);
+        const bool end = PreviewPage(p) == PreviewPageCount(p) - 1;
+        SendMessageW(view, WM_KEYDOWN, VK_NEXT, 0);
+        const bool stays = PreviewPage(p) == PreviewPageCount(p) - 1;
+        SendMessageW(view, WM_KEYDOWN, VK_HOME, 0);
+        r.check(next && end && stays && PreviewPage(p) == 0, L"report: PgDn, End (and no further), Home");
+    } else {
+        r.check(false, L"report: the preview's page view");
+    }
+    r.check(CyclePreviewZoom(p) && CyclePreviewZoom(p) && CyclePreviewZoom(p), L"report: zoom cycles");
+    r.check(!IsPreview(frame.hwnd()), L"report: IsPreview is false for other windows");
+    if (p) SendMessageW(frame.mdiClient(), WM_MDIDESTROY, reinterpret_cast<WPARAM>(p), 0);
+    r.check(!p || !IsWindow(p), L"report: the preview closes (and deletes itself)");
+    DestroyWindow(frame);
+}
+
 } // namespace
 
 int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, _In_ int)
@@ -321,6 +426,7 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     dialogInstances(inst, r);
     gridChecks(inst, r);
     mdiInstances(inst, r);
+    reportChecks(inst, r);
     if (args.find(L"/quiet") == std::wstring::npos) {
         r.log += r.failures ? fx::Format(L"\n%d check(s) FAILED", r.failures) : std::wstring(L"\nAll checks passed");
         MessageBoxW(nullptr, r.log.c_str(), L"win32fx self-test", r.failures ? MB_ICONERROR : MB_ICONINFORMATION);
