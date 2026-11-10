@@ -70,7 +70,7 @@ const WORD kArCommands[] = {
 };
 const WORD kReportingCommands[] = {
     // General Ledger reports
-    1015, 1016, 1018, 1025,   // Financial Statements popup (income, balance sheet, retained earnings, manufacturing)
+    // 1015, 1016, 1018 (Financial Statements) are ported: S3-M3, F3-F5; 1025 left the menu (D13).
     1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings
     // 1075 (GLPrtDistList) and 6076 (trial balance) are ported: S3-M2, F2 and F1.
     // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
@@ -300,6 +300,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_DISTLIST:                      // Reporting > General Ledger > Distribution List (F2, D14)
         RunDistributionTrialBalance(*this);
+        return true;
+    case ID_FININCOME:                     // Reporting > Financial Statements > Income statement (F3, D13)
+        RunIncomeStatement(*this);
+        return true;
+    case ID_FINBS:                         // ... > Balance sheet (F4)
+        RunBalanceSheet(*this);
+        return true;
+    case ID_FINRE:                         // ... > Cash flow statement (F5; was retained earnings, D13)
+        RunCashFlowStatement(*this);
         return true;
     default:
         break;

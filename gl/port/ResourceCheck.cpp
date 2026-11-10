@@ -70,6 +70,7 @@ const DialogCase kDialogs[] = {
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
+    {IDD_STMT_OPTIONS, L"Financial statement options (port.rc, S3-M3)", false},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

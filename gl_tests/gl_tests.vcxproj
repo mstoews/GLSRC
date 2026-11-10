@@ -61,6 +61,8 @@
     <ClInclude Include="..\gl\port\reports\SampleReport.h" />
     <ClInclude Include="..\gl\port\reports\Balances.h" />
     <ClInclude Include="..\gl\port\reports\TrialBalances.h" />
+    <ClInclude Include="..\gl\port\reports\StatementLayout.h" />
+    <ClInclude Include="..\gl\port\reports\Statements.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Stubs.cpp" />
@@ -73,6 +75,7 @@
     <ClCompile Include="test_yearend.cpp" />
     <ClCompile Include="test_reports.cpp" />
     <ClCompile Include="test_reports_tb.cpp" />
+    <ClCompile Include="test_statements.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
     <ClCompile Include="..\gl\port\MasterTables.cpp" />
@@ -82,6 +85,8 @@
     <ClCompile Include="..\gl\port\reports\SampleReport.cpp" />
     <ClCompile Include="..\gl\port\reports\Balances.cpp" />
     <ClCompile Include="..\gl\port\reports\TrialBalances.cpp" />
+    <ClCompile Include="..\gl\port\reports\StatementLayout.cpp" />
+    <ClCompile Include="..\gl\port\reports\Statements.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\cb4sqlite_tests\vendor\catch2\catch_amalgamated.cpp">

@@ -275,6 +275,14 @@ Why the indirect cash flow balances: every posting is balanced, so over any peri
 
 ### 5.5 Presentation
 
+*As built (S3-M3):*
+- **Which lines print:** account and net-income lines that are zero in every column are hidden, unless "show zero lines" is on. Totals, blank lines and the opening/closing cash always print. A heading prints only if an account or net-income line under it does (up to the next heading). A blank line comes before every heading but the first.
+- **Rules:** the statement's last total or closing-cash line is the final total, with the double rule. Other totals are subtotals, with a single rule.
+- **What each line counts:** an account line counts only the accounts its statement covers: income accounts on F3, `B`/`R` accounts on F4, non-cash `B`/`R` accounts on F5. So 999000 Suspense, a `B` account, never lands in F3's "Income tax" (900000–999999). Cash accounts count only on F5's opening and closing lines; on an account line they only raise a warning.
+- **Unclassified accounts:** the line is added to the statement's last total, at sign −1 on F3/F4 and +1 on F5. On F4 it therefore sits on the liabilities-and-equity side, and the sheet still balances.
+- **Balance-sheet check:** "Total assets = total liabilities and equity" is checked as the ledger identity: Σ balances of the `B`/`R` accounts plus the income accounts' year-to-date movement must be zero. The layout's coverage warnings catch the rest.
+- **Unreconciled difference:** printed after the net-change line when opening cash plus net change isn't closing cash. This happens when a non-cash account sits on two lines.
+
 - Statement rows: headings in bold, account lines indented under them, subtotals with a single rule, the final total ("Net income", "Total liabilities and equity", "Cash at end of period") with a double rule.
 - Zero lines are hidden unless "show zero lines" is on; headings with nothing beneath them are hidden too.
 - Subtitles: company; "For the month and year to date ended <period end date>" (F3, F5) or "As at <period end date>" (F4); "Department <code> <description>" when chosen.
@@ -296,6 +304,8 @@ The chosen options are kept for the session per report.
 ### 6.1 Tables
 
 Created by the port with `cb4sqlite::createTable` (so `Data4` and `Query` both read them) the first time a statement or the layout screen opens, and filled with the default (§6.3). Backup and Restore carry them with the company database.
+
+*As built (S3-M3):* `EnsureLayoutTables` creates both tables and seeds the default in one transaction, the first time a statement runs. Each has one tag, `line`, keyed `statement || printf('%5d', lineno)`. `UPDATED` is blank for the default and holds `yyyy-mm-dd hh:mm` once a line is saved from the layout screen (S3-M4). The footer shows "Layout: default" or "Layout: modified <latest UPDATED>".
 
 **`gl_fsline`** — one row per printed line:
 
@@ -541,8 +551,8 @@ Corrections found while porting are recorded under each milestone, as Specs #1 a
 
 1. ~~**Financial statements.**~~ *Settled 2026-11-09:* the finance team wants an Income Statement, Balance Sheet, Cash Flow, a distribution trial balance and a plain trial balance (§5), with a layout kept in a table and maintained in a screen (§6). The original reports follow the finance set.
 2. ~~**House style.**~~ *Settled 2026-11-11 from the S3-M2 sample pages (F1, F2 with voucher lines):* as built. Arial, a 12 pt bold title, 9 pt body, 9 pt bold headings and bold cells; 0.75 inch margins (Printer Setup changes them); half-point rules, a single rule above subtotals and totals and a double rule below a final total; "Printed on" and "Page n of m" beside the company line; the report's name as the footer.
-3. **The default layout's groupings** (§6.3), in particular the 14x accounts as current assets, 18x as other assets, 20x borrowings as financing, and accumulated depreciation as an add-back. Confirmed or changed by the finance team at the end of S3-M3.
+3. **The default layout's groupings** (§6.3), in particular the 14x accounts as current assets, 18x as other assets, 20x borrowings as financing, and accumulated depreciation as an add-back. Confirmed or changed by the finance team at the end of S3-M3. *S3-M3:* the three statements were printed from the real company (period 2, May 94) and the fixture, and sent for that review; open until the finance team answers.
 4. **6080 "by Dept."** keeps the original's lack of department subtotals and its "YTD" (D3). Keep, or add department subtotals?
 5. **Department statements beyond F3.** F3 can be run for one department; should F1 or F2 take a department too?
 6. **Printer setting persistence.** Session only (D10), or saved in `GL.INI`?
-7. **Balance sheet against the same period last year.** F4 compares with the start of the year (`OPENBAL`). After a D16 year end, last year's balance at the end of period `p` can be reconstructed for a `B` account as `OPENBAL − Σ PREVIOUS(p+1)..12`; the `R` account also needs last year's closing transfer taken out (`Σ PREVIOUS1..12` of the income accounts), and last year's year-to-date net income is `− Σ PREVIOUS1..p` of the income accounts. It holds only if no adjustment changed `OPENBAL` since the year end. Add it as an optional column, or leave it out? Settle in S3-M3.
+7. **Balance sheet against the same period last year.** F4 compares with the start of the year (`OPENBAL`). After a D16 year end, last year's balance at the end of period `p` can be reconstructed for a `B` account as `OPENBAL − Σ PREVIOUS(p+1)..12`; the `R` account also needs last year's closing transfer taken out (`Σ PREVIOUS1..12` of the income accounts), and last year's year-to-date net income is `− Σ PREVIOUS1..p` of the income accounts. It holds only if no adjustment changed `OPENBAL` since the year end. Add it as an optional column, or leave it out? Settle in S3-M3. *S3-M3:* not added; asked of the finance team with the sample statements. Open.

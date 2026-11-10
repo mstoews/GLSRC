@@ -44,6 +44,9 @@ MENUS = ['MANILA', 'GLE', 'GLSUB']
 #   (menu, 'insert_after', id, '"&Text", ID')   adds MENUITEM "&Text", ID after it
 # Items the port adds take IDs from gl/port/PortIds.h, which gl.rc #includes.
 MENU_EDITS = [
+    # Spec #3 D13 (S3-M3): Financial Statements runs F3, F4 and F5.
+    ('MANILA', 'rename', '1018', '"&Cash flow statement..."'),
+    ('MANILA', 'remove', '1025'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)

@@ -9,7 +9,9 @@
 #include "win32fx.h"
 
 #include <algorithm>
+#include <exception>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -91,6 +93,68 @@ private:
     DistTrialBalanceOptions* dist_;
 };
 
+// IDD_STMT_OPTIONS for F3 (with department and comparisons), F4 and F5.
+class StatementDialog : public fx::Dialog {
+public:
+    StatementDialog(const ReportContext& ctx, const wchar_t* title, bool income, StatementOptions& opt)
+        : ctx_(ctx), title_(title), income_(income), opt_(opt) {}
+
+protected:
+    bool OnInitDialog() override
+    {
+        SetWindowTextW(hwnd(), title_);
+        fillPeriods(GetDlgItem(hwnd(), IDC_ST_PERIOD), ctx_, opt_.period > 0 ? opt_.period : ctx_.currentPeriod);
+        if (income_) {
+            HWND dept = GetDlgItem(hwnd(), IDC_ST_DEPT);
+            SendMessageW(dept, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"All departments"));
+            depts_.push_back({});
+            try {
+                cb4sqlite::Query q(cb, "SELECT depart, descript FROM gldept WHERE _deleted = 0 ORDER BY depart");
+                while (q.next()) {
+                    depts_.push_back(q.text(0));
+                    const std::wstring text = fx::Utf8ToWide(q.text(0) + "   " + q.text(1));
+                    SendMessageW(dept, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+                }
+            } catch (const std::exception&) {
+                // No gldept: all departments only.
+            }
+            const auto it = std::find(depts_.begin(), depts_.end(), opt_.dept);
+            SendMessageW(dept, CB_SETCURSEL, it == depts_.end() ? 0 : static_cast<WPARAM>(it - depts_.begin()), 0);
+            CheckDlgButton(hwnd(), IDC_ST_PRIOR, opt_.comparePrior ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwnd(), IDC_ST_BUDGET, opt_.compareBudget ? BST_CHECKED : BST_UNCHECKED);
+        } else {
+            for (int id : {IDC_ST_DEPT_LABEL, IDC_ST_DEPT, IDC_ST_PRIOR, IDC_ST_BUDGET})
+                ShowWindow(GetDlgItem(hwnd(), id), SW_HIDE);
+        }
+        CheckDlgButton(hwnd(), IDC_ST_ACCOUNTS, opt_.showAccounts ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd(), IDC_ST_ZEROS, opt_.showZeroLines ? BST_CHECKED : BST_UNCHECKED);
+        return true;
+    }
+
+    bool OnCommand(WORD id, WORD, HWND) override
+    {
+        if (id != IDOK) return false;
+        opt_.period = selectedPeriod(GetDlgItem(hwnd(), IDC_ST_PERIOD));
+        if (income_) {
+            const LRESULT d = SendDlgItemMessageW(hwnd(), IDC_ST_DEPT, CB_GETCURSEL, 0, 0);
+            opt_.dept = d > 0 && static_cast<size_t>(d) < depts_.size() ? depts_[static_cast<size_t>(d)] : std::string();
+            opt_.comparePrior = IsDlgButtonChecked(hwnd(), IDC_ST_PRIOR) == BST_CHECKED;
+            opt_.compareBudget = IsDlgButtonChecked(hwnd(), IDC_ST_BUDGET) == BST_CHECKED;
+        }
+        opt_.showAccounts = IsDlgButtonChecked(hwnd(), IDC_ST_ACCOUNTS) == BST_CHECKED;
+        opt_.showZeroLines = IsDlgButtonChecked(hwnd(), IDC_ST_ZEROS) == BST_CHECKED;
+        End(IDOK);
+        return true;
+    }
+
+private:
+    const ReportContext& ctx_;
+    const wchar_t* title_;
+    bool income_;
+    StatementOptions& opt_;
+    std::vector<std::string> depts_;   // index 0: all departments
+};
+
 class SampleOptionsDialog : public fx::Dialog {
 public:
     explicit SampleOptionsDialog(SampleOptions& opt) : opt_(opt) {}
@@ -146,4 +210,11 @@ bool ShowDistTrialBalanceOptions(HWND owner, const ReportContext& ctx, DistTrial
 {
     TrialBalanceDialog dlg(ctx, nullptr, &opt);
     return dlg.DoModal(hInst, IDD_TB_OPTIONS, owner) == IDOK;
+}
+
+bool ShowStatementOptions(HWND owner, const ReportContext& ctx, const wchar_t* title, bool incomeStatement,
+                          StatementOptions& opt)
+{
+    StatementDialog dlg(ctx, title, incomeStatement, opt);
+    return dlg.DoModal(hInst, IDD_STMT_OPTIONS, owner) == IDOK;
 }
