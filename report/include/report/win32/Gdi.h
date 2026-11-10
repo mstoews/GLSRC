@@ -14,7 +14,7 @@
 //   rpt::win32::SetTwipsMapping(dc, dpiX, dpiY, origin);
 //   rpt::win32::DrawPage(dc, pages[0], fonts);
 //
-// The four roles are the house style proposed in spec #3 14 Q2 (settled
+// The four roles are the house style of spec #3 14 Q2 (accepted 2026-11-11
 // from the S3-M2 sample pages): Arial, a 12 pt bold title, 9 pt body, 9 pt
 // bold for headings and bold cells.
 //

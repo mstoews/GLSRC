@@ -41,8 +41,16 @@ void RunSampleReport(fx::MdiFrame& frame);
 void RunTrialBalance(fx::MdiFrame& frame);
 void RunDistributionTrialBalance(fx::MdiFrame& frame);
 
+// F3 Income Statement (1015), F4 Balance Sheet (1016), F5 Cash Flow
+// Statement (1018), spec #3 5.4, D13: options, then the preview; the options
+// are kept for the session, per statement. The layout tables are created on
+// the first run (StatementLayout.h).
+void RunIncomeStatement(fx::MdiFrame& frame);
+void RunBalanceSheet(fx::MdiFrame& frame);
+void RunCashFlowStatement(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
-// with three copies, F1, F2 with voucher lines), pages through it at every
-// zoom, and closes it. Returns the GDI + USER object growth, or -1 if a
-// preview couldn't be opened.
+// with three copies, F1, F2 with voucher lines, F3 with every column, F4,
+// F5), pages through it at every zoom, and closes it. Returns the GDI + USER
+// object growth, or -1 if a preview couldn't be opened.
 int StressReports(int times);

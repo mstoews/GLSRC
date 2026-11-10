@@ -21,6 +21,7 @@
 
 #define IDD_SAMPLE_OPTIONS      20000   // Sample Report options (S3-M1: the engine's test report)
 #define IDD_TB_OPTIONS          20001   // Trial Balance / Distribution Trial Balance options (S3-M2)
+#define IDD_STMT_OPTIONS        20002   // Income Statement / Balance Sheet / Cash Flow options (S3-M3)
 
 // ---- controls --------------------------------------------------------------
 
@@ -34,6 +35,14 @@
 #define IDC_TB_TO               20113   // F2 only
 #define IDC_TB_LINES            20114   // F2: show voucher lines
 #define IDC_TB_ZEROS            20115   // F1: zero balances; F2: accounts with no balance or activity
+
+#define IDC_ST_PERIOD           20120   // period combo
+#define IDC_ST_DEPT_LABEL       20121   // F3 only
+#define IDC_ST_DEPT             20122   // F3: "All departments" or one
+#define IDC_ST_PRIOR            20123   // F3: compare with the prior year
+#define IDC_ST_BUDGET           20124   // F3: compare with the budget
+#define IDC_ST_ACCOUNTS         20125   // show the accounts under each line
+#define IDC_ST_ZEROS            20126   // show zero lines
 
 // ---- commands --------------------------------------------------------------
 

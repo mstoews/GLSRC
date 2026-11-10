@@ -11,6 +11,7 @@
 
 #include "ReportContext.h"
 #include "SampleReport.h"
+#include "Statements.h"
 #include "TrialBalances.h"
 
 #include <Windows.h>
@@ -22,3 +23,8 @@ bool ShowSampleOptions(HWND owner, SampleOptions& opt);
 // Distribution Trial Balance (from / to period; voucher lines; inactive accounts).
 bool ShowTrialBalanceOptions(HWND owner, const ReportContext& ctx, TrialBalanceOptions& opt);
 bool ShowDistTrialBalanceOptions(HWND owner, const ReportContext& ctx, DistTrialBalanceOptions& opt);
+
+// IDD_STMT_OPTIONS. `title` is the statement's; `incomeStatement` shows the
+// department (from gldept) and the comparisons, which only F3 has.
+bool ShowStatementOptions(HWND owner, const ReportContext& ctx, const wchar_t* title, bool incomeStatement,
+                          StatementOptions& opt);

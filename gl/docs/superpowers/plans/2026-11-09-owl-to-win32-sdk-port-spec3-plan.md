@@ -110,7 +110,7 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 > - **Tests** (task 7): `gl_tests/test_reports_tb.cpp` (11 cases: balances, the note, `gl_dist` reads, F1 at three periods and with zeros, an unbalanced ledger, F2 for one period and 1–7, voucher lines, inactive accounts, F1 after year end); `test_yearend.cpp` gains D16, closed vouchers, and refusal-writes-nothing. Expected figures were checked against independent SQL. `gl_tests`: 62 cases, 962 assertions.
 > - **Wiring** (task 8): 6076 → F1, 1075 → F2; both out of `kReportingCommands`. Menu text unchanged.
 > - **Timing** (task 9): F2 with voucher lines, periods 1–2, on the real company: the preview opens in about 0.3 s. The real data has only 13 lines, so this says little about a full year (spec R6 stays open until a larger year exists).
-> - **Sample pages** (task 10): F1 and F2 (periods 1–7, voucher lines, landscape) printed to PDF from the fixture, and F2 from the real company. They showed truncated voucher-line text and dates ("10/15/20"): F2 widens Account and Description in landscape, and **the layout now prints `###` for a date that doesn't fit** (spec §4.2; `report_tests` case added). The house style (spec §14 Q2) is for the user to settle from these pages.
+> - **Sample pages** (task 10): F1 and F2 (periods 1–7, voucher lines, landscape) printed to PDF from the fixture, and F2 from the real company. They showed truncated voucher-line text and dates ("10/15/20"): F2 widens Account and Description in landscape, and **the layout now prints `###` for a date that doesn't fit** (spec §4.2; `report_tests` case added). The user accepted the house style from these pages on 2026-11-11 (spec §14 Q2, settled).
 > - **`/stress`** also opens F1 and F2 (voucher lines) 25 times each; `/checkres` loads `IDD_TB_OPTIONS`.
 > - **Not checked:** the Linux ASan/UBSan build of the new sources; the options dialog by hand (it was driven by messages).
 
@@ -130,6 +130,17 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 ---
 
 ## Milestone 3 — The statements
+
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).** Where the tasks below differ, this note wins.
+> - **`StatementLayout.{h,cpp}`** (task 1): spec §6.1 "As built". `DefaultLayout` is spec §6.3 line for line (IS 23 lines, BS 26, CF 23). Also `EnsureLayoutTables` (create and seed in one transaction), `LoadLayout`, `SaveLayout` (delete and re-append the statement in one transaction), `ResetLayout`, `LayoutDescription`, `ParseFormula`, `AccountInRanges`, `StatementCovers` and `CheckLayout` (every §6.5 error and warning).
+> - **`Statements.{h,cpp}`** (task 2): F3, F4 and F5 as spec §5.4, with the §5.5 "As built" note. F3's comparison columns are Prior year to date, Budget to date and Variance (year to date less budget); with either comparison the page turns landscape. Negatives print in parentheses.
+> - **Options** (task 3): `IDD_STMT_OPTIONS` in `port.rc`, one dialog for the three statements: period, department (F3, from `gldept`), the comparisons (F3), show accounts, show zero lines. The choices are kept per statement for the session.
+> - **Menu** (task 4): `prune_rc.py` `MENU_EDITS` renames 1018 "&Cash flow statement..." and removes 1025. `gl.rc` was regenerated (two lines changed). The fixture was regenerated too, since its menu-access tables follow the MANILA menu (105 items, was 106). 1015, 1016 and 1018 are wired and off `kReportingCommands`; 1025 is gone from both.
+> - **Tests** (task 5): `gl_tests/test_statements.cpp`, 15 cases: `ParseFormula`; seeding (idempotent); save and reset; the defaults' checks on the fixture (999000 only); every error; accounts on two lines and cash on an account line; F3 month/YTD, comparisons, department and options; F4 balances (and its net income is F3's YTD); an account the layout misses (still balanced); an unbalanced ledger; F5 reconciles (closing cash is F4's cash), at period 4 and period 1, with an unreconciled difference, and with narrower cash ranges. The figures were worked out by hand and are in the file's header. `gl_tests`: 77 cases.
+> - **Finance review** (task 6): F3, F4 and F5 printed to PDF from the real company (period 2, May 94; one voucher, so cash is negative) and from the fixture, and sent to the user for the finance team. The real statements balance and reconcile. **Open:** the groupings (spec §14 Q3) and the prior-year balance-sheet column (Q7) wait for their answer.
+> - Found while printing: a heading showed above nothing but the closing-cash line, and opening cash was hidden when zero; both fixed (§5.5 "As built").
+> - **`/stress`** also opens F3 (every column, with accounts), F4 and F5; `/checkres` loads `IDD_STMT_OPTIONS`.
+> - **Not checked:** the Linux sanitizer build; the options dialog by hand.
 
 ### Tasks
 

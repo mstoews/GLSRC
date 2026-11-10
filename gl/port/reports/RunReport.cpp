@@ -5,6 +5,7 @@
 
 #include "ReportOptions.h"
 #include "SampleReport.h"
+#include "Statements.h"
 #include "TrialBalances.h"
 
 #include "../Globals.h"
@@ -82,6 +83,25 @@ DistTrialBalanceOptions& distTrialBalanceOptions()
     return opt;
 }
 
+// One set per statement (0 IS, 1 BS, 2 CF).
+StatementOptions& statementOptions(int which)
+{
+    static StatementOptions opt[3];
+    return opt[which];
+}
+
+using StatementBuilder = rpt::Report (*)(cb4sqlite::Code4&, const ReportContext&, const StatementOptions&);
+
+void runStatement(fx::MdiFrame& frame, int which, const wchar_t* title, StatementBuilder builder)
+{
+    RunReport(
+        frame,
+        [which, title](HWND owner) {
+            return ShowStatementOptions(owner, CurrentReportContext(), title, which == 0, statementOptions(which));
+        },
+        [which, builder](const ReportContext& ctx) { return builder(cb, ctx, statementOptions(which)); });
+}
+
 // A frame for /stress that isn't the main window (no WM_QUIT when destroyed).
 class StressFrame : public fx::MdiFrame {
 protected:
@@ -154,6 +174,10 @@ void RunDistributionTrialBalance(fx::MdiFrame& frame)
         [](const ReportContext& ctx) { return DistributionTrialBalance(cb, ctx, distTrialBalanceOptions()); });
 }
 
+void RunIncomeStatement(fx::MdiFrame& frame) { runStatement(frame, 0, L"Income Statement", &IncomeStatement); }
+void RunBalanceSheet(fx::MdiFrame& frame) { runStatement(frame, 1, L"Balance Sheet", &BalanceSheet); }
+void RunCashFlowStatement(fx::MdiFrame& frame) { runStatement(frame, 2, L"Cash Flow Statement", &CashFlowStatement); }
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -165,12 +189,18 @@ int StressReports(int times)
     DistTrialBalanceOptions lines;
     lines.from = 1;
     lines.voucherLines = true;
-    // The sample report (several pages), F1, and F2 for periods 1 to the
-    // current one with voucher lines (landscape).
+    StatementOptions everything;
+    everything.comparePrior = everything.compareBudget = everything.showAccounts = true;
+    // The sample report (several pages), F1, F2 for periods 1 to the current
+    // one with voucher lines (landscape), F3 with every column and its
+    // accounts (landscape), F4 and F5.
     const ReportBuilder builders[] = {
         sampleReport(three, false).second,
         [](const ReportContext& ctx) { return TrialBalance(cb, ctx, {}); },
         [lines](const ReportContext& ctx) { return DistributionTrialBalance(cb, ctx, lines); },
+        [everything](const ReportContext& ctx) { return IncomeStatement(cb, ctx, everything); },
+        [](const ReportContext& ctx) { return BalanceSheet(cb, ctx, {}); },
+        [](const ReportContext& ctx) { return CashFlowStatement(cb, ctx, {}); },
     };
     auto round = [&] {
         for (const ReportBuilder& b : builders)
