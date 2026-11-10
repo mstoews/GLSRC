@@ -330,7 +330,8 @@ void ChartOfAccounts::SetupBudget()   // TGLBudget::SetupWindow
     RECT rc{};
     GetClientRect(grid_.hwnd(), &rc);
     const int first = 7 * grid_.CharWidth();
-    const int rest = (std::max)(10 * grid_.CharWidth(), (rc.right - first - GetSystemMetrics(SM_CXVSCROLL)) / 3);
+    const int rest = (std::max)(10 * grid_.CharWidth(),
+                                (static_cast<int>(rc.right) - first - GetSystemMetrics(SM_CXVSCROLL)) / 3);
     grid_.SetColumns({{L"Period", first, fx::GridAlign::Right},
                       {L"Budget", rest, fx::GridAlign::Right},
                       {L"Current Year", rest, fx::GridAlign::Right},
