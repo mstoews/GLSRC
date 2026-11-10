@@ -81,7 +81,8 @@ G=""
 for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/MasterTables.cpp "$ROOT"/gl/port/Vouchers.cpp "$ROOT"/gl/port/CompanyFiles.cpp \
          "$ROOT"/gl/port/reports/ReportContext.cpp "$ROOT"/gl/port/reports/SampleReport.cpp \
          "$ROOT"/gl/port/reports/Balances.cpp "$ROOT"/gl/port/reports/TrialBalances.cpp \
-         "$ROOT"/gl/port/reports/StatementLayout.cpp "$ROOT"/gl/port/reports/Statements.cpp; do
+         "$ROOT"/gl/port/reports/StatementLayout.cpp "$ROOT"/gl/port/reports/Statements.cpp \
+         "$ROOT"/gl/port/reports/AccountReports.cpp; do
   o="$OUT/g_$(basename "$f" .cpp).o"; compile "$f" "$o" $CATCH -I"$ROOT/gl/port" -I"$ROOT/gl_tests"; G="$G $o"
 done
 # shellcheck disable=SC2086
