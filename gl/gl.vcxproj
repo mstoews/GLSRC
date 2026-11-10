@@ -57,6 +57,7 @@
     <ClInclude Include="port\ManilaGL.h" />
     <ClInclude Include="port\MasterData.h" />
     <ClInclude Include="port\MasterTables.h" />
+    <ClInclude Include="port\PortIds.h" />
     <ClInclude Include="port\ResourceCheck.h" />
     <ClInclude Include="port\TableList.h" />
     <ClInclude Include="port\Tables.h" />
@@ -68,6 +69,10 @@
     <ClInclude Include="port\YearEnd.h" />
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
+    <ClInclude Include="port\reports\ReportContext.h" />
+    <ClInclude Include="port\reports\ReportOptions.h" />
+    <ClInclude Include="port\reports\RunReport.h" />
+    <ClInclude Include="port\reports\SampleReport.h" />
     <ClInclude Include="port\stubs\Stubs.h" />
     <ClInclude Include="res\resource.h" />
   </ItemGroup>
@@ -94,6 +99,10 @@
     <ClCompile Include="port\VoucherPosting.cpp" />
     <ClCompile Include="port\Vouchers.cpp" />
     <ClCompile Include="port\YearEnd.cpp" />
+    <ClCompile Include="port\reports\ReportContext.cpp" />
+    <ClCompile Include="port\reports\ReportOptions.cpp" />
+    <ClCompile Include="port\reports\RunReport.cpp" />
+    <ClCompile Include="port\reports\SampleReport.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />
     <ClCompile Include="port\stubs\ReportingStubs.cpp" />
@@ -113,6 +122,9 @@
     </ProjectReference>
     <ProjectReference Include="..\cb4sqlite\cb4sqlite.vcxproj">
       <Project>{A0C1C001-0001-4001-A001-000000000001}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\report\report.vcxproj">
+      <Project>{A0C1C001-0008-4001-A001-000000000008}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

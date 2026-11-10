@@ -5,7 +5,7 @@
   win32fx.vcxproj: it links the released library the way the AP / AR projects
   will, from the gl.sln output folder:
 
-      <repo root>\x64\$(Configuration)\win32fx.lib
+      <repo root>\x64\$(Configuration)\win32fx.lib   (and report.lib, spec #3 S3-M1)
 
   Build gl.sln (or win32fx.vcxproj) for the same configuration first. The
   settings below must match win32fx's: x64, Unicode, static CRT (/MTd, /MT),
@@ -51,7 +51,7 @@
   <PropertyGroup>
     <OutDir>$(MSBuildThisFileDirectory)x64\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)x64\$(Configuration)\obj\</IntDir>
-    <IncludePath>$(Win32fxRoot)include;$(IncludePath)</IncludePath>
+    <IncludePath>$(Win32fxRoot)include;$(Win32fxRoot)..\report\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -66,7 +66,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(Win32fxLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>win32fx.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>report.lib;win32fx.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">

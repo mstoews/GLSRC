@@ -14,7 +14,12 @@
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
+#include "PortIds.h"
+#include "reports/RunReport.h"
 #include "stubs/Stubs.h"
+
+#include "report/win32/Preview.h"
+#include "report/win32/PrinterSetup.h"
 
 #include <CommCtrl.h>
 #pragma comment(lib, "comctl32.lib")   // SetWindowSubclass
@@ -68,8 +73,8 @@ const WORD kReportingCommands[] = {
     1015, 1016, 1018, 1025,   // Financial Statements popup (income, balance sheet, retained earnings, manufacturing)
     1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings
     1075,                     // GLPrtDistList
-    2001,                     // CMDialogPrint: printer setup
-    3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button)
+    // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
+    3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button), without a preview open
     6038, 6039, 6041,         // GLProductList, GLMedRepsList, GLDoctorRpt
     6074, 6075, 6076, 6077, 6078, 6080,   // slips, slip summary, trial balances, accounts, pre-posting
     8082, 8136,               // GLPrtSlipDetail, GLPrePosting
@@ -280,6 +285,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     }
     case ID_GL:                            // the toolbar's GL button (not in gl_new.rc's 1032)
+        return true;
+    case CM_DIALOGPRINT:                   // TGlWindow::CMDialogPrint: File > Printer Setup (spec #3 D10)
+        rpt::win32::ShowPrinterSetup(hwnd());
+        return true;
+    case ID_PRINT:                         // File > Print, the toolbar Print button (spec #3 D9)
+        if (rpt::win32::PrintActivePreview(*this)) return true;
+        break;                             // no preview open: the report list comes in S3-M7
+    case CM_SAMPLE_REPORT:                 // the report engine's test report (gl.exe /samplereport)
+        RunSampleReport(*this);
         return true;
     default:
         break;

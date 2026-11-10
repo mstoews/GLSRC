@@ -1,0 +1,28 @@
+//
+// port.rc - the resources the port adds, which have no original template
+// (spec #3 3). Written by hand; gl/res/tools/prune_rc.py #includes it at the
+// end of the generated gl.rc. IDs are in gl/port/PortIds.h.
+//
+// Keep this file plain ASCII: gl.rc is UTF-16, and rc.exe reads an included
+// file in the build's code page.
+//
+// New dialogs use the system dialog font (DS_SHELLFONT, "MS Shell Dlg 2")
+// and standard controls. Add each one to /checkres (gl/port/ResourceCheck.cpp).
+//
+#include "..\port\PortIds.h"
+
+// ---- Sample Report options (S3-M1) -----------------------------------------
+// The report engine's test report: gl.exe /samplereport (gl/README.md, Checks).
+
+IDD_SAMPLE_OPTIONS DIALOGEX 0, 0, 220, 96
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Sample Report"
+FONT 8, "MS Shell Dlg 2"
+{
+ AUTOCHECKBOX "Include accounts with a &zero balance", IDC_SAMPLE_ZEROS, 10, 10, 200, 10
+ AUTOCHECKBOX "&Landscape", IDC_SAMPLE_LANDSCAPE, 10, 26, 200, 10
+ LTEXT "&Repeat the list (1-50 times, to make pages):", -1, 10, 45, 150, 8
+ EDITTEXT IDC_SAMPLE_REPEAT, 164, 43, 30, 12, ES_NUMBER | WS_TABSTOP
+ DEFPUSHBUTTON "OK", IDOK, 108, 72, 50, 14
+ PUSHBUTTON "Cancel", IDCANCEL, 162, 72, 50, 14
+}

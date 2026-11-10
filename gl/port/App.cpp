@@ -18,9 +18,12 @@
 //                               times (Add, Delete and Budget Data in turn),
 //                               each master-data screen 25 times, and Voucher
 //                               Entry, Post, Recover, Cancel and Transaction
-//                               Inquiry 25 times each, on the company
-//                               database (plan risk P6); the exit code is the
-//                               GDI + USER object growth
+//                               Inquiry 25 times each, and the sample report's
+//                               preview 25 times (paging at every zoom), on the
+//                               company database (plan risk P6); the exit code
+//                               is the GDI + USER object growth
+//   gl.exe /samplereport        opens the report engine's test report after
+//                               startup (spec #3 S3-M1; reports/SampleReport.h)
 //   gl.exe /failpost <n>        fault injection (spec #2 8 #6): posting throws
 //                               after writing its nth line, so the check can
 //                               see that nothing was written (Vouchers.h)
@@ -44,7 +47,9 @@
 #include "Globals.h"
 #include "Ini.h"
 #include "ManilaGL.h"
+#include "PortIds.h"
 #include "ResourceCheck.h"
+#include "reports/RunReport.h"
 
 #include "cb4sqlite.h"
 
@@ -115,17 +120,20 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
         const int vouchers = StressVoucherEntry(25);
         const int posting = StressVoucherPosting(25);
         const int inquiry = StressTransactionInquiry(25);
-        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0)
+        const int reports = StressReports(25);
+        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0 || reports < 0)
                                ? -1
-                               : accounts + master + vouchers + posting + inquiry;
+                               : accounts + master + vouchers + posting + inquiry + reports;
         cb.close();
         if (args.find(L"/quiet") == std::wstring::npos)
             MessageBoxW(nullptr,
                         fx::Format(L"Chart of Accounts opened and closed 100 times, and Department, Medical Rep, "
-                                   L"Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction "
-                                   L"Inquiry 25 times each.\n"
-                                   L"GDI + USER objects: %+d.",
-                                   growth).c_str(),
+                                   L"Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel, Transaction "
+                                   L"Inquiry and the sample report's preview 25 times each.\n"
+                                   L"GDI + USER objects: %+d.\n\n"
+                                   L"Per step (-1: could not run): Chart of Accounts %+d, master data %+d, "
+                                   L"voucher entry %+d, posting %+d, inquiry %+d, reports %+d.",
+                                   growth, accounts, master, vouchers, posting, inquiry, reports).c_str(),
                         szApp, MB_OK | (growth == 0 ? MB_ICONINFORMATION : MB_ICONEXCLAMATION));
         return growth;
     }
@@ -145,6 +153,9 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
         if (frame.Create(inst)) {
             ShowWindow(frame, show);
             UpdateWindow(frame);
+            // After the login the frame posted at creation, if there is one.
+            if (args.find(L"/samplereport") != std::wstring::npos)
+                PostMessageW(frame, WM_COMMAND, CM_SAMPLE_REPORT, 0);
             rc = fx::RunMessageLoop(frame, frame.mdiClient());
         }
     }

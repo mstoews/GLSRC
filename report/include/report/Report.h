@@ -127,7 +127,7 @@ struct Report {
     std::string              company;     // first header line
     std::string              title;       // second header line
     std::vector<std::string> subtitles;   // "As at 10/31/2026", "Department 10 Sales"...
-    std::string              printedOn;   // "Printed on <date>"; empty: left out (tests)
+    std::string              printedOn;   // the date only: Layout prints "Printed on <date>"; empty: left out (tests)
     std::string              footerNote;  // bottom left of every page, e.g. the report's name
     Orientation              orientation = Orientation::Portrait;
     NegativeStyle            negatives = NegativeStyle::Minus;

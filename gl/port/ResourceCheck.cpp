@@ -8,6 +8,8 @@
 //
 #include "ResourceCheck.h"
 
+#include "PortIds.h"
+
 #include "win32fx.h"
 
 #include <cwchar>
@@ -65,6 +67,8 @@ const DialogCase kDialogs[] = {
     // Spec #2 S2-M5.
     {1029, L"Transaction Inquiry (TGLTransInq)", true},
     {1017, L"Budget Data (TGLBudget)", true},
+    // The port's own (gl/res/port.rc, spec #3 3).
+    {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)
