@@ -76,9 +76,9 @@ const WORD kReportingCommands[] = {
     // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
     3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button), without a preview open
     6038, 6039, 6041,         // GLProductList, GLMedRepsList, GLDoctorRpt
-    6074, 6075, 6077, 6078, 6080,         // slips, slip summary, trial balances, accounts, pre-posting
+    6074, 6075, 6077, 6078,               // slips, slip summary, accounts, pre-posting
     8082, 8136,               // GLPrtSlipDetail, GLPrePosting
-    10071, 10073,             // GLChartInquiry, GLBudgetInquiry
+    // 6080 (trial balance by dept.), 10071, 10073 (chart, budget) are ported: S3-M5.
     // Accounts Payable reports
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
     4091, 4092,
@@ -309,6 +309,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_FINRE:                         // ... > Cash flow statement (F5; was retained earnings, D13)
         RunCashFlowStatement(*this);
+        return true;
+    case ID_TBBYDEPT:                      // Reporting > General Ledger > Trial Balance by Dept. (GLDEPT.RPT)
+        RunTrialBalanceByDept(*this);
+        return true;
+    case ID_GLCHARTINQ:                    // Accounts > Chart of Accounts Report, the toolbar's inquiry button
+        RunChartOfAccountsReport(*this);
+        return true;
+    case ID_GLBUDGETINQ:                   // Accounts > Budget Report (GL_BUDGT.RPT, D6)
+        RunBudgetReport(*this);
         return true;
     default:
         break;

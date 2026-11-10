@@ -3,6 +3,7 @@
 //
 #include "RunReport.h"
 
+#include "AccountReports.h"
 #include "ReportOptions.h"
 #include "SampleReport.h"
 #include "Statements.h"
@@ -178,6 +179,21 @@ void RunIncomeStatement(fx::MdiFrame& frame) { runStatement(frame, 0, L"Income S
 void RunBalanceSheet(fx::MdiFrame& frame) { runStatement(frame, 1, L"Balance Sheet", &BalanceSheet); }
 void RunCashFlowStatement(fx::MdiFrame& frame) { runStatement(frame, 2, L"Cash Flow Statement", &CashFlowStatement); }
 
+void RunTrialBalanceByDept(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return TrialBalanceByDept(cb, ctx); });
+}
+
+void RunChartOfAccountsReport(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return ChartOfAccountsReport(cb, ctx); });
+}
+
+void RunBudgetReport(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return BudgetReport(cb, ctx); });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -201,6 +217,9 @@ int StressReports(int times)
         [everything](const ReportContext& ctx) { return IncomeStatement(cb, ctx, everything); },
         [](const ReportContext& ctx) { return BalanceSheet(cb, ctx, {}); },
         [](const ReportContext& ctx) { return CashFlowStatement(cb, ctx, {}); },
+        [](const ReportContext& ctx) { return TrialBalanceByDept(cb, ctx); },
+        [](const ReportContext& ctx) { return ChartOfAccountsReport(cb, ctx); },
+        [](const ReportContext& ctx) { return BudgetReport(cb, ctx); },
     };
     auto round = [&] {
         for (const ReportBuilder& b : builders)

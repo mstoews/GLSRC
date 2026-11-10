@@ -49,6 +49,13 @@ void RunIncomeStatement(fx::MdiFrame& frame);
 void RunBalanceSheet(fx::MdiFrame& frame);
 void RunCashFlowStatement(fx::MdiFrame& frame);
 
+// The original account reports (AccountReports.h): 6080 Trial Balance by
+// Dept., 10071 Chart of Accounts Report (also the toolbar's inquiry button),
+// 10073 Budget Report. No options, as the originals: straight to the preview.
+void RunTrialBalanceByDept(fx::MdiFrame& frame);
+void RunChartOfAccountsReport(fx::MdiFrame& frame);
+void RunBudgetReport(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5), pages through it at every zoom, and closes it. Returns the GDI + USER

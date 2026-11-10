@@ -166,6 +166,13 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 
 ## Milestone 5 — Original account reports
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).** Built before S3-M4, which waits for the finance team's review (spec R1).
+> - **Read** (task 1): `GLDEPT.RPT` is titled "Trial Balance by Department" and has the columns Acct Number, Dept Code, Description, Opening Balance, Current Period, YTD (`CURR_BAL − OPENBAL − @Period Amount`) and Current Balance, with totals; its ACCOUNT < 2000000 selection is commented out. `GL_CHART.RPT` is "Chart of Accounts Inquiry" with Opening Balance, Accumulated This Year (`PERIOD1`–`12`) and Current Balance. `GL_BUDGT.RPT` is "Budget Inquiry" with Current Year, Current Period, Budget Amount (`BUDGET<p>`) and Difference (month less budget), totalled as "Chart of Accounts Total". Its debit/credit formulas and its `gldept` description formula aren't on its layout. All three sort by account, then dept; the footers name the report.
+> - **`AccountReports.{h,cpp}`** (task 2): the three as read, portable. Every account is listed (as the originals: no selection). With no open period they use period 12 and say so (D2). 6080 and 10073 print landscape. No options dialog: the preview has no Options button.
+> - **Tests** (task 3): `gl_tests/test_reports_accounts.cpp`, 4 cases: order, rows by hand, and every column total against SQL `sum()` over `glaccts`; the no-open-period note. `gl_tests`: 81 cases.
+> - **Wire** (task 4): 6080 → `RunTrialBalanceByDept`, 10071 → `RunChartOfAccountsReport` (also the toolbar's inquiry button, as the original), 10073 → `RunBudgetReport`. All three are off `kReportingCommands`, and `/stress` opens all three.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass; all three printed to PDF from the fixture.
+
 1. **Read** `GLDEPT.RPT`, `GL_CHART.RPT`, `GL_BUDGT.RPT`, `ap_repts.cpp:54-63`.
 2. **`AccountReports.{h,cpp}`**: 6080 (D3), 10071, 10073 (D6), each at the current period (D2).
 3. **Tests** (`test_reports_accounts.cpp`): order and totals against `sum()` over `glaccts`.
