@@ -1,7 +1,8 @@
 //
 // gl_tests: Year End (Vouchers.cpp) and Restore (CompanyFiles.cpp), plan
 // S2-M6, on the dev fixture. Its one type-R account is 340000 Retained
-// Earnings (curr_bal -16,840); 410001 depts 10 and 20 are income accounts.
+// Earnings (curr_bal -16,840); 410001 depts 10 and 20 and the finance set's
+// 411000-911000 (S3-M2) are income accounts.
 //
 
 #include "GlTestDb.h"
@@ -35,6 +36,16 @@ void setType(Code4& code, const char* account, const char* type)
     REQUIRE(SeekAccount(gl, account, ""));
     gl.type->assign(type);
     gl.flush();
+}
+
+// The income-statement (type I) accounts' total balance.
+double incomeTotal(Code4& code)
+{
+    AccountsTable gl(code);
+    double sum = 0;
+    for (gl.top(); !gl.eof(); gl.skip())
+        if (std::string(gl.type->str()) == "I") sum += gl.curr_bal->num();
+    return sum;
 }
 
 double field(Code4& code, const char* account, const char* dept, Field4* Tglaccts::*f)
@@ -74,15 +85,18 @@ TEST_CASE("YearEnd moves the income accounts into Retained Earnings", "[yearend]
     const double before = sumCurrBal(db.code);
     const double retained = field(db.code, "340000", "", &Tglaccts::curr_bal);
     const double receivable = field(db.code, "111101", "", &Tglaccts::curr_bal);
+    // 410001's -1,150 from voucher 101, and the finance set's -1,450 (S3-M2).
+    const double income = incomeTotal(db.code);
+    CHECK(income == Approx(-2600.0));
 
     const YearEndResult r = YearEnd(db.code);
     REQUIRE(r.closed);
     REQUIRE(r.retained.size() == 1);
     CHECK(r.retained[0].account == "340000");
-    CHECK(r.transferred == Approx(retained - 1150.0));   // 340000's own balance, plus the income
+    CHECK(r.transferred == Approx(retained + income));   // 340000's own balance, plus the income
 
     CHECK(sumCurrBal(db.code) == Approx(before));   // the books still balance
-    CHECK(field(db.code, "340000", "", &Tglaccts::curr_bal) == Approx(retained - 1150.0));
+    CHECK(field(db.code, "340000", "", &Tglaccts::curr_bal) == Approx(retained + income));
     CHECK(field(db.code, "410001", "10", &Tglaccts::curr_bal) == 0.0);
     CHECK(field(db.code, "410001", "20", &Tglaccts::curr_bal) == 0.0);
     CHECK(field(db.code, "111101", "", &Tglaccts::curr_bal) == Approx(receivable));   // balance sheet: kept
@@ -92,7 +106,89 @@ TEST_CASE("YearEnd moves the income accounts into Retained Earnings", "[yearend]
     CHECK(field(db.code, "111101", "", &Tglaccts::period7) == 0.0);
     CHECK(field(db.code, "101000", "", &Tglaccts::previous7) == Approx(-250.0));
     CHECK(field(db.code, "101000", "", &Tglaccts::previous12) == 0.0);   // period12 was blank
-    CHECK(field(db.code, "102101", "", &Tglaccts::openbal) == Approx(12500.0));   // openbal untouched
+
+    // Spec #3 D16: the new year opens at the closing balances (until S3-M2,
+    // openbal was left alone: 102101 kept 12,500).
+    CHECK(field(db.code, "102101", "", &Tglaccts::openbal) == Approx(12750.0));
+    CHECK(field(db.code, "340000", "", &Tglaccts::openbal) == Approx(retained + income));
+    CHECK(field(db.code, "411000", "", &Tglaccts::openbal) == 0.0);
+    AccountsTable gl(db.code);
+    for (gl.top(); !gl.eof(); gl.skip()) CHECK(gl.openbal->num() == Approx(gl.curr_bal->num()));
+}
+
+TEST_CASE("YearEnd D16: the year's gl_dist lines move to gl_distb", "[yearend]")
+{
+    FixtureDb db;
+    auto rows = [&](const char* table, bool live) {
+        Data4 d(&db.code, table);
+        int n = 0;
+        for (d.top(); !d.eof(); d.skip())
+            if (!live || !d.deleted()) ++n;
+        d.close();
+        return n;
+    };
+    const int lines = rows("gl_dist", true);
+    CHECK(lines == 27);   // voucher 100's 2, the finance journals' 25 (and one deleted row)
+    REQUIRE(rows("gl_distb", false) == 0);
+
+    const YearEndResult r = YearEnd(db.code);
+    REQUIRE(r.closed);
+    CHECK(r.archived == lines);
+    CHECK(rows("gl_dist", false) == 0);   // the deleted row is packed away too
+    CHECK(rows("gl_distb", false) == lines);
+
+    // The archived lines keep their content (journal 9, October's cash sales).
+    Data4 b(&db.code, "gl_distb");
+    Field4 batchno(b, "batchno"), account(b, "account"), period(b, "period"), credit(b, "credit"), ref(b, "reference");
+    bool found = false;
+    for (b.top(); !b.eof(); b.skip()) {
+        if (batchno.num() == 9 && TrimText(account.str()) == "411000") {
+            found = true;
+            CHECK(TrimText(period.str()) == "7");
+            CHECK(credit.num() == Approx(6000.0));
+            CHECK(TrimText(ref.str()) == "October cash sales");
+        }
+    }
+    b.close();
+    CHECK(found);
+}
+
+TEST_CASE("YearEnd closes the year's posted vouchers (mode 9)", "[yearend]")
+{
+    FixtureDb db;
+    // Before: voucher 100 is posted, and 102101's inquiry shows its line.
+    const AccountActivity before = AccountTransactions(db.code, "102101", "");
+    REQUIRE(before.lines.size() == 1);
+    CHECK(before.balance == Approx(12750.0));
+
+    const YearEndResult r = YearEnd(db.code);
+    REQUIRE(r.closed);
+    CHECK(r.closedVouchers == 1);   // 100; 101-103 are open
+
+    VoucherHeaders h(db.code);
+    REQUIRE(SeekVoucher(h, 100));
+    CHECK(ReadHeader(h).mode == voucher_mode::kClosedYear);
+    CHECK(IsPostedMode(voucher_mode::kClosedYear));   // Voucher Entry won't load it, Cancel won't delete it
+    CHECK(ListVouchers(h, {voucher_mode::kPosted}).empty());   // nothing for Recover
+    CHECK(ListVouchers(h, {voucher_mode::kOpen, voucher_mode::kAdjustment}).size() == 3);
+
+    // After: the new year's opening balance, and no lines counted twice.
+    const AccountActivity after = AccountTransactions(db.code, "102101", "");
+    CHECK(after.openBal == Approx(12750.0));
+    CHECK(after.lines.empty());
+    CHECK(after.balance == Approx(12750.0));
+}
+
+TEST_CASE("YearEnd: refused, it writes nothing (no archive, openbal kept)", "[yearend]")
+{
+    FixtureDb db;
+    setType(db.code, "340000", "B");   // no R account
+    REQUIRE_FALSE(YearEnd(db.code).closed);
+    CHECK(field(db.code, "102101", "", &Tglaccts::openbal) == Approx(12500.0));
+    Data4 d(&db.code, "gl_distb");
+    d.top();
+    CHECK(d.eof());
+    d.close();
 }
 
 TEST_CASE("BackupFileName: <stem>-<yyyymmdd>.db", "[backup]")

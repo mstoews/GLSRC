@@ -26,3 +26,22 @@ FONT 8, "MS Shell Dlg 2"
  DEFPUSHBUTTON "OK", IDOK, 108, 72, 50, 14
  PUSHBUTTON "Cancel", IDCANCEL, 162, 72, 50, 14
 }
+
+// ---- Trial balance options (S3-M2, spec #3 5.6) ------------------------------
+// F1 Trial Balance (6076) hides the To period and the voucher lines; the
+// caption and labels are set by code (gl/port/reports/ReportOptions.cpp).
+
+IDD_TB_OPTIONS DIALOGEX 0, 0, 232, 112
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Trial Balance"
+FONT 8, "MS Shell Dlg 2"
+{
+ LTEXT "&From period:", IDC_TB_FROM_LABEL, 10, 12, 60, 8
+ COMBOBOX IDC_TB_FROM, 74, 10, 148, 160, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+ LTEXT "&To period:", IDC_TB_TO_LABEL, 10, 30, 60, 8
+ COMBOBOX IDC_TB_TO, 74, 28, 148, 160, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+ AUTOCHECKBOX "Show &voucher lines", IDC_TB_LINES, 10, 50, 212, 10
+ AUTOCHECKBOX "&Include accounts with no balance or activity", IDC_TB_ZEROS, 10, 64, 212, 10
+ DEFPUSHBUTTON "OK", IDOK, 118, 88, 50, 14
+ PUSHBUTTON "Cancel", IDCANCEL, 172, 88, 50, 14
+}

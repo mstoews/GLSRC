@@ -72,11 +72,11 @@ const WORD kReportingCommands[] = {
     // General Ledger reports
     1015, 1016, 1018, 1025,   // Financial Statements popup (income, balance sheet, retained earnings, manufacturing)
     1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings
-    1075,                     // GLPrtDistList
+    // 1075 (GLPrtDistList) and 6076 (trial balance) are ported: S3-M2, F2 and F1.
     // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
     3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button), without a preview open
     6038, 6039, 6041,         // GLProductList, GLMedRepsList, GLDoctorRpt
-    6074, 6075, 6076, 6077, 6078, 6080,   // slips, slip summary, trial balances, accounts, pre-posting
+    6074, 6075, 6077, 6078, 6080,         // slips, slip summary, trial balances, accounts, pre-posting
     8082, 8136,               // GLPrtSlipDetail, GLPrePosting
     10071, 10073,             // GLChartInquiry, GLBudgetInquiry
     // Accounts Payable reports
@@ -294,6 +294,12 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         break;                             // no preview open: the report list comes in S3-M7
     case CM_SAMPLE_REPORT:                 // the report engine's test report (gl.exe /samplereport)
         RunSampleReport(*this);
+        return true;
+    case ID_TB:                            // Reporting > General Ledger > Trial Balance (spec #3 F1, D14)
+        RunTrialBalance(*this);
+        return true;
+    case ID_DISTLIST:                      // Reporting > General Ledger > Distribution List (F2, D14)
+        RunDistributionTrialBalance(*this);
         return true;
     default:
         break;

@@ -71,7 +71,7 @@ Keep an untouched copy of `dev.db` so the walkthrough can be repeated. For the e
 
 ## The 9 criteria (spec §6.7)
 
-Run these on the test machine, logged in as `ADMIN`, against the dev fixture. The fixture has 11 accounts. 340000 is the only Retained Earnings account. Every account with a non-zero balance counts as having activity (its previous-year balance), and 102101 also has period activity. The accounts that can be deleted are 144910, 410001 dept 10 and 410001 dept 20.
+Run these on the test machine, logged in as `ADMIN`, against the dev fixture. The fixture has 11 accounts. *(Since Spec #3 S3-M2 the fixture has 25: 14 accounts with a balance or activity were added for the reports. Read "11" below as 25; the accounts that can be deleted are the same three.)* 340000 is the only Retained Earnings account. Every account with a non-zero balance counts as having activity (its previous-year balance), and 102101 also has period activity. The accounts that can be deleted are 144910, 410001 dept 10 and 410001 dept 20.
 
 ### 1. Launch and frame
 

@@ -42,9 +42,14 @@ inline constexpr char kOpen[] = "1";
 inline constexpr char kPosted[] = "0";
 inline constexpr char kAdjustment[] = "3";
 inline constexpr char kPostedAdjustment[] = "2";   // PostAdjustment
+// A voucher posted in a year that year end has closed (spec #3 S3-M2, with
+// D16). The port's own value: the original never closed vouchers. Set on
+// gl_btch rows that were "0" or "2" and on gl_btchd lines that were "0", so
+// Transaction Inquiry and Recover see only the current year.
+inline constexpr char kClosedYear[] = "9";
 } // namespace voucher_mode
 
-// "0" or "2": posted, so Voucher Entry shows nothing and Cancel refuses it.
+// "0", "2" or "9": posted, so Voucher Entry shows nothing and Cancel refuses it.
 bool IsPostedMode(const std::string& mode);
 
 // gl_btch, on its "batchno" tag.
@@ -262,6 +267,10 @@ struct YearEndResult {
     std::vector<RetainedAccount> retained;
     // The total moved into it, its own balance included: its new balance.
     double transferred = 0;
+    // The gl_dist lines moved to gl_distb (D16).
+    int archived = 0;
+    // The posted vouchers marked voucher_mode::kClosedYear.
+    int closedVouchers = 0;
 };
 
 // TGlWindow::GLYearEnd (gl_postb.cpp), corrected (spec D2), in one
@@ -270,8 +279,14 @@ struct YearEndResult {
 //      is set to 0 (the Retained Earnings account included);
 //   2. every account's period1-12 are copied to previous1-12 and zeroed;
 //   3. the total is added to the Retained Earnings account (type "R").
-// The original's step 3 added it to every account that *isn't* type "R".
+//   4. (spec #3 D16) every account's openbal is set to its new curr_bal, so
+//      the new year opens at the closing balances and curr_bal = openbal +
+//      the periods holds again;
+//   5. (D16) the gl_dist lines move to gl_distb, and gl_dist is emptied;
+//   6. the posted vouchers (gl_btch "0"/"2", gl_btchd "0") become
+//      voucher_mode::kClosedYear.
+// The original's step 3 added it to every account that *isn't* type "R",
+// and it never did 4 or 5 (Spec #2 12 Q6, settled by Spec #3 D16).
 // Refuses, changing nothing, unless exactly one account has type "R".
-// openbal is left alone, as before. Throws on a database failure, having
-// written nothing.
+// Throws on a database failure, having written nothing.
 YearEndResult YearEnd(Code4& code);

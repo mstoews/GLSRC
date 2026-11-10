@@ -69,6 +69,7 @@ const DialogCase kDialogs[] = {
     {1017, L"Budget Data (TGLBudget)", true},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
+    {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

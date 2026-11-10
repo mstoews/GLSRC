@@ -14,6 +14,9 @@ using namespace gltest;
 
 namespace {
 
+// The fixture's accounts: 11 from Specs #1/#2, 14 more from Spec #3 S3-M2.
+constexpr int kFixtureAccounts = 25;
+
 int countLive(Code4& code)
 {
     Data4 d(code, "glaccts");
@@ -62,7 +65,7 @@ TEST_CASE("HasActivity, the Retained Earnings account and departments", "[accoun
     int n = 0;
     for (dept.top(); !dept.eof(); dept.skip()) ++n;
     CHECK(n == 2);
-    CHECK(countLive(db.code) == 11);
+    CHECK(countLive(db.code) == kFixtureAccounts);
 }
 
 TEST_CASE("Add, modify and delete an account", "[accounts]")
@@ -74,7 +77,7 @@ TEST_CASE("Add, modify and delete an account", "[accounts]")
         CHECK_FALSE(SeekAccount(gl, in.account, in.dept));
         AppendAccount(gl, in);
     }
-    CHECK(countLive(db.code) == 12);
+    CHECK(countLive(db.code) == kFixtureAccounts + 1);
     {
         AccountsTable gl(db.code);
         REQUIRE(SeekAccount(gl, "500100", ""));
@@ -105,10 +108,10 @@ TEST_CASE("Add, modify and delete an account", "[accounts]")
         DeleteAccount(gl);
         CHECK_FALSE(SeekAccount(gl, "500100", ""));
     }
-    CHECK(countLive(db.code) == 11);
+    CHECK(countLive(db.code) == kFixtureAccounts);
     {
         Data4 d(db.code, "glaccts");
-        CHECK(d.recCount() == 11);   // pack removed the row
+        CHECK(d.recCount() == kFixtureAccounts);   // pack removed the row
     }
     {
         AccountsTable gl(db.code);

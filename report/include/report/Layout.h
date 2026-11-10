@@ -19,7 +19,8 @@
 // never ends on a heading or starts with a total. A PageBreak, and every
 // Slip row but the first, start a new page; a Blank is dropped at the top of
 // a page. Text cells that don't fit their column are cut short; numbers that
-// don't fit print "###". Only Note rows wrap.
+// don't fit print "###", and so do dates (S3-M2: a cut date reads as another
+// date). Only Note rows wrap.
 //
 #include "report/Report.h"
 

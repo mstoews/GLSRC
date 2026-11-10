@@ -127,7 +127,7 @@ After confirming with string 8111, `GLYearEnd` (`gl_postb.cpp`) does three thing
 *Confirmed in S2-M6:*
 - Step 1 includes the Retained Earnings account itself, which isn't type `B`. Its balance joins the total and comes back in step 3, so its new balance is its old one plus the year's income and expenses.
 - Accounts with a blank or other type count as non-`B`, as before.
-- Year end leaves `openbal`, `gl_btchd` and `gl_dist` alone, as before; see §12 Q6.
+- Year end leaves `openbal`, `gl_btchd` and `gl_dist` alone, as before; see §12 Q6. *Changed in Spec #3 S3-M2 (D16): it no longer does; see §12 Q6.*
 - It said nothing afterwards. The port reports the Retained Earnings account's new balance.
 
 ---
@@ -454,3 +454,5 @@ Corrections found while porting are recorded under each milestone here, as Spec 
    - posting an adjustment, which sets `curr_bal` to `openbal` plus the 12 period columns, now zero, and so drops the earlier years' activity of a balance-sheet account.
 
    The real data's year end has never run (D2), so nothing depends on it yet. Settle before the first real year end: probably year end should set `openbal` to the closing `curr_bal`, and the inquiry should list one year's lines.
+
+   *Settled in Spec #3 S3-M2 (spec #3 D16):* year end now also sets `openbal` to the closing `curr_bal`, moves `gl_dist` to `gl_distb`, and marks the year's posted vouchers with a new mode, `"9"` (closed year: `gl_btch` `"0"`/`"2"`, `gl_btchd` `"0"`). Transaction Inquiry, which selects mode `"0"` lines, then lists only the new year's, and Recover can't reverse a voucher of a closed year. Mode `"9"` counts as posted for Voucher Entry and Cancel.

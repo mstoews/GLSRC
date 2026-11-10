@@ -2,7 +2,7 @@
 // gl_tests: the report context and the sample report (spec #3 4.4, D2;
 // plan S3-M1). The fixture's company is "Dev Fixture Company Ltd."; periods
 // 1-6 (Apr-Sep 26) are closed, so the current period is 7, "Oct 26", ending
-// 2026-10-31. Its eleven accounts' current balances add up to zero.
+// 2026-10-31. Its 25 accounts' current balances add up to zero.
 //
 
 #include "GlTestDb.h"
@@ -92,7 +92,7 @@ TEST_CASE("BuildSampleReport: groups by type, subtotals, a final total of zero",
     CHECK(r.orientation == rpt::Orientation::Portrait);
     REQUIRE(r.columns.size() == 6);
 
-    CHECK(countRows(r, rpt::RowKind::Detail) == 11);
+    CHECK(countRows(r, rpt::RowKind::Detail) == 25);
     CHECK(countRows(r, rpt::RowKind::GroupHeader) == 3);   // types B, I, R
     CHECK(countRows(r, rpt::RowKind::GroupFooter) == 3);
     REQUIRE(countRows(r, rpt::RowKind::Total) == 1);
@@ -115,7 +115,7 @@ TEST_CASE("BuildSampleReport: options", "[reports]")
     const rpt::Report r = BuildSampleReport(db.code, ctx, opt);
     CHECK(r.orientation == rpt::Orientation::Landscape);
     // 144910 and the two 410001 departments have a zero balance.
-    CHECK(countRows(r, rpt::RowKind::Detail) == 3 * 8);
+    CHECK(countRows(r, rpt::RowKind::Detail) == 3 * 22);
     CHECK(countRows(r, rpt::RowKind::Heading) == 3);   // "Copy n of 3"
 
     opt.repeat = 500;   // clamped to 50

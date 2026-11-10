@@ -60,7 +60,7 @@ The database's columns are named as in the `.dbf` files (`ACCOUNT`, `CURR_BAL`, 
 
 ## The fixture
 
-- **Accounts:** 11, as in the Spec #1 sheet. 340000 is the only type-R account. 410001 has depts 10 and 20, both income (type I).
+- **Accounts:** 11, as in the Spec #1 sheet. 340000 is the only type-R account. 410001 has depts 10 and 20, both income (type I). *(Since Spec #3 S3-M2: 25 accounts, and 12 more posted journals with `gl_dist` lines on the new ones (voucher numbers 1–12, no `gl_btch` header). The checks below name only the original accounts and vouchers, and still hold; 101000's and 102101's `curr_bal` now include voucher 100: 250.00 and 12,750.00.)*
 - **Periods:** 1–6 (Apr 26 – Sep 26) are closed and 7–12 (Oct 26 – Mar 27) are open; the current period is "Oct 26".
 - **Vouchers:**
   - 100 is posted: 102101 Dr 250.00 / 101000 Cr 250.00 in period 7, with its two `gl_dist` rows;
@@ -187,7 +187,7 @@ Record `glaccts` and `gl_dist` for 101's accounts (111101, 410001-10, 410001-20)
 - [ ] Copy `dev.db` aside (year end can't be undone, except by Restore). Record `select sum(curr_bal) from glaccts` (0).
 - [ ] In the Chart of Accounts set 101000's type to **Retained earnings**. (The Chart refuses a second R account on Add, but Modify allows it, as in the real data.) **Maintenance > Year End Consolidation**, **Yes** to 8111: it refuses and names 101000 and 340000. Nothing changed.
 - [ ] Set 101000 back to **Balance Sheet** and run it again: it reports the year closed and 340000's new balance.
-- [ ] `glaccts`: 410001-10 and -20 have `curr_bal` 0; 340000's `curr_bal` is its old balance plus theirs; every account's `period1`–`period12` are 0 and `previous1`–`previous12` hold the old periods; balance-sheet accounts keep their `curr_bal`.
+- [ ] `glaccts`: 410001-10 and -20 have `curr_bal` 0; 340000's `curr_bal` is its old balance plus theirs; every account's `period1`–`period12` are 0 and `previous1`–`previous12` hold the old periods; balance-sheet accounts keep their `curr_bal`. *(Since Spec #3 S3-M2, D16: every income account has `curr_bal` 0 and 340000 gets all of them; every account's `openbal` equals its new `curr_bal`; `gl_dist` is empty and `gl_distb` holds its lines; voucher 100's `mode` is 9.)*
 - [ ] `select sum(curr_bal) from glaccts` is still 0.
 
 **Result:** ____ **Notes:** ____

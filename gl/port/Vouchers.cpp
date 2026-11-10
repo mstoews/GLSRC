@@ -40,6 +40,7 @@
 #include "Accounts.h"   // TrimText, AccountsTable, SeekAccount
 #include "Company.h"    // UpdateUserTime
 #include "db_gl_dist.h"
+#include "db_gl_distb.h"   // year end's archive (spec #3 D16)
 
 #include <algorithm>
 #include <cmath>
@@ -188,7 +189,8 @@ VoucherHeader ReadHeader(const VoucherHeaders& h)
 
 bool IsPostedMode(const std::string& mode)
 {
-    return mode == voucher_mode::kPosted || mode == voucher_mode::kPostedAdjustment;
+    return mode == voucher_mode::kPosted || mode == voucher_mode::kPostedAdjustment ||
+           mode == voucher_mode::kClosedYear;
 }
 
 bool Balanced(double debit, double credit)
@@ -637,6 +639,73 @@ AccountActivity AccountTransactions(Code4& code, const std::string& account, con
 
 // ---- Year End -------------------------------------------------------------
 
+namespace {
+
+// D16 (spec #3): the year's posted lines move from gl_dist to gl_distb, so
+// the new year's gl_dist starts empty and a period number means one year.
+// Rows already deleted in gl_dist are dropped. gl_distb has no medrep,
+// drcode or prod, and a 40-character description (gl_dist's is 50).
+int archiveDistribution(Code4& code)
+{
+    Tgldist d(&code);
+    if (!d.isValid()) return 0;
+    Tgldistb b(&code);
+    if (!b.isValid()) throw std::runtime_error("gl: the gl_distb table is missing");
+    int moved = 0;
+    for (d.top(); !d.eof(); d.skip()) {
+        if (d.deleted()) continue;
+        must(b.appendStart(), "adding to gl_distb");
+        b.account->assign(d.account->str());
+        b.dept->assign(d.dept->str());
+        b.period->assign(d.period->str());
+        b.date->assign(d.date->str());
+        b.type->assign(d.type->str());
+        b.batchno->assignLong(toLong(*d.batchno));
+        b.reference->assign(d.reference->str());
+        b.cheque->assign(d.cheque->str());
+        b.descript->assign(d.descript->str());
+        b.debit->assignDouble(fromCents(toCents(d.debit->num())));
+        b.credit->assignDouble(fromCents(toCents(d.credit->num())));
+        must(b.append(), "adding to gl_distb");
+        d.deleteRec();
+        ++moved;
+    }
+    must(d.pack(), "packing gl_dist");
+    return moved;
+}
+
+// With D16: the year's posted vouchers become kClosedYear, headers ("0" and
+// "2") and posted lines ("0"), so Transaction Inquiry (opening balance plus
+// the posted lines) doesn't count them twice and Recover can't reverse one
+// into the new year. Returns the vouchers closed.
+int closeYearVouchers(Code4& code)
+{
+    int closed = 0;
+    VoucherHeaders h(code);
+    if (h.isValid()) {
+        for (h.top(); !h.eof(); h.skip()) {
+            const std::string mode = TrimText(h.mode.str());
+            if (h.deleted() || (mode != voucher_mode::kPosted && mode != voucher_mode::kPostedAdjustment)) continue;
+            h.mode.assign(voucher_mode::kClosedYear);
+            UpdateUserTime(h, szUser);
+            must(h.flush(), "updating gl_btch");
+            ++closed;
+        }
+    }
+    VoucherLines l(code);
+    if (l.isValid()) {
+        l.SetIndex("batchno");
+        for (l.top(); !l.eof(); l.skip()) {
+            if (l.deleted() || TrimText(l.mode.str()) != voucher_mode::kPosted) continue;
+            l.mode.assign(voucher_mode::kClosedYear);
+            must(l.flush(), "updating gl_btchd");
+        }
+    }
+    return closed;
+}
+
+} // namespace
+
 YearEndResult YearEnd(Code4& code)
 {
     YearEndResult r;
@@ -672,6 +741,17 @@ YearEndResult YearEnd(Code4& code)
     addCents(*gl.curr_bal, total);
     UpdateUserTime(gl, szUser);
     must(gl.flush(), "updating glaccts");
+
+    // D16 (spec #3): the new year opens at the closing balances, so
+    // CURR_BAL = OPENBAL + the (now zero) periods holds again.
+    for (gl.top(); !gl.eof(); gl.skip()) {
+        if (gl.deleted()) continue;
+        gl.openbal->assignDouble(fromCents(toCents(gl.curr_bal->num())));
+        must(gl.flush(), "updating glaccts");
+    }
+    r.archived = archiveDistribution(code);
+    r.closedVouchers = closeYearVouchers(code);
+
     tx.commit();
     r.closed = true;
     r.transferred = fromCents(total);

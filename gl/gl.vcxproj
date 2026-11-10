@@ -69,10 +69,12 @@
     <ClInclude Include="port\YearEnd.h" />
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
+    <ClInclude Include="port\reports\Balances.h" />
     <ClInclude Include="port\reports\ReportContext.h" />
     <ClInclude Include="port\reports\ReportOptions.h" />
     <ClInclude Include="port\reports\RunReport.h" />
     <ClInclude Include="port\reports\SampleReport.h" />
+    <ClInclude Include="port\reports\TrialBalances.h" />
     <ClInclude Include="port\stubs\Stubs.h" />
     <ClInclude Include="res\resource.h" />
   </ItemGroup>
@@ -99,10 +101,12 @@
     <ClCompile Include="port\VoucherPosting.cpp" />
     <ClCompile Include="port\Vouchers.cpp" />
     <ClCompile Include="port\YearEnd.cpp" />
+    <ClCompile Include="port\reports\Balances.cpp" />
     <ClCompile Include="port\reports\ReportContext.cpp" />
     <ClCompile Include="port\reports\ReportOptions.cpp" />
     <ClCompile Include="port\reports\RunReport.cpp" />
     <ClCompile Include="port\reports\SampleReport.cpp" />
+    <ClCompile Include="port\reports\TrialBalances.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />
     <ClCompile Include="port\stubs\ReportingStubs.cpp" />
