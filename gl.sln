@@ -16,6 +16,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gl", "gl\gl.vcxproj", "{A0C
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gl_tests", "gl_tests\gl_tests.vcxproj", "{A0C1C001-0007-4001-A001-000000000007}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "report", "report\report.vcxproj", "{A0C1C001-0008-4001-A001-000000000008}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "report_tests", "report_tests\report_tests.vcxproj", "{A0C1C001-0009-4001-A001-000000000009}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -50,6 +54,14 @@ Global
 		{A0C1C001-0007-4001-A001-000000000007}.Debug|x64.Build.0 = Debug|x64
 		{A0C1C001-0007-4001-A001-000000000007}.Release|x64.ActiveCfg = Release|x64
 		{A0C1C001-0007-4001-A001-000000000007}.Release|x64.Build.0 = Release|x64
+		{A0C1C001-0008-4001-A001-000000000008}.Debug|x64.ActiveCfg = Debug|x64
+		{A0C1C001-0008-4001-A001-000000000008}.Debug|x64.Build.0 = Debug|x64
+		{A0C1C001-0008-4001-A001-000000000008}.Release|x64.ActiveCfg = Release|x64
+		{A0C1C001-0008-4001-A001-000000000008}.Release|x64.Build.0 = Release|x64
+		{A0C1C001-0009-4001-A001-000000000009}.Debug|x64.ActiveCfg = Debug|x64
+		{A0C1C001-0009-4001-A001-000000000009}.Debug|x64.Build.0 = Debug|x64
+		{A0C1C001-0009-4001-A001-000000000009}.Release|x64.ActiveCfg = Release|x64
+		{A0C1C001-0009-4001-A001-000000000009}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

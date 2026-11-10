@@ -8,8 +8,9 @@
 # Builds into out-dir (default x64/linux-asan, git-ignored):
 #   cb4sqlite_tests   cb4sqlite + dbf2sqlite_core layer-1 tests
 #   gl_tests          the portable gl/port sources on the migrated dev fixture
+#   report_tests      the portable report core (spec #3 4)
 #   dbf2sqlite        the migration CLI (for the dev fixture: --src gl/test/dev-fixture/dbf)
-# --run then runs both test programs from the repository root and stops at the
+# --run then runs the test programs from the repository root and stops at the
 # first failure. Objects are rebuilt only when their source is newer, so after
 # a header change delete out-dir.
 #
@@ -26,7 +27,7 @@ mkdir -p "$OUT"
 SAN="-fsanitize=address,undefined -fno-omit-frame-pointer"
 CXXFLAGS="-std=c++20 -g -O1 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Werror $SAN
   -include $ROOT/tools/linux/msvc_compat.h
-  -I$ROOT/cb4sqlite/include -I$ROOT/dbf2sqlite_core/include -I$ROOT/include -I$ROOT/gl/header"
+  -I$ROOT/cb4sqlite/include -I$ROOT/dbf2sqlite_core/include -I$ROOT/report/include -I$ROOT/include -I$ROOT/gl/header"
 CATCH="-I$ROOT/cb4sqlite -I$ROOT/cb4sqlite_tests/vendor/catch2"
 
 # compile <source> <object> [extra flags...]: skipped when the object is newer.
@@ -77,6 +78,18 @@ done
 # shellcheck disable=SC2086
 g++ $SAN -o "$OUT/gl_tests" $G $LIB $THIRD "$OUT/catch.o" -lm
 
+echo "report_tests"
+RLIB=""
+for f in "$ROOT"/report/src/*.cpp; do
+  o="$OUT/r_$(basename "$f" .cpp).o"; compile "$f" "$o"; RLIB="$RLIB $o"
+done
+R=""
+for f in "$ROOT"/report_tests/*.cpp; do
+  o="$OUT/rt_$(basename "$f" .cpp).o"; compile "$f" "$o" $CATCH; R="$R $o"
+done
+# shellcheck disable=SC2086
+g++ $SAN -o "$OUT/report_tests" $R $RLIB "$OUT/catch.o"
+
 echo "built in $OUT"
 if [ $RUN = 1 ]; then
   cd "$ROOT"
@@ -86,4 +99,5 @@ if [ $RUN = 1 ]; then
   export TMPDIR="${TMPDIR_FOR_TESTS:-$OUT/tmp}"
   "$OUT/cb4sqlite_tests"
   "$OUT/gl_tests"
+  "$OUT/report_tests"
 fi

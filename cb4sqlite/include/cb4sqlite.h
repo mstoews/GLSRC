@@ -13,3 +13,4 @@
 #include "Field4.h"
 #include "Date4.h"
 #include "Relate4set.h"
+#include "Query.h"
