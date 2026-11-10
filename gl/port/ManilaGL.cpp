@@ -179,7 +179,7 @@ bool ManilaGL::OnCreate(LPCREATESTRUCTW cs)
         bMenuSetup = FALSE;
         PostMessageW(hwnd(), WM_COMMAND, ID_SYSACCESS, 0);
     } else {
-        std::strcpy(szUser, "NOLOGIN");   // fits; the original wrote strcmp(szUser, "NOLOGIN"), a no-op
+        strcpy_s(szUser, "NOLOGIN");   // fits; the original wrote strcmp(szUser, "NOLOGIN"), a no-op
         bMenuSetup = TRUE;
     }
     RefreshStatus();
