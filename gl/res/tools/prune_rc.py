@@ -17,9 +17,15 @@ GL = os.path.join(ROOT, 'gl')
 OUT = os.path.join(GL, 'res')
 CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 
-# Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc.
+# Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc,
+# then Spec #2's as each milestone adds them (S2-M2: 1006, 1007, 1023, 1040;
+# S2-M3: 1013; S2-M4: 1061, 1015, 1043; S2-M5: 1029, 1017). gl_new.rc's only complete copy of
+# 1061 is missing (its second copy has no closing brace and no Close button),
+# so a dialog gl_new.rc lacks is taken from gl.rc, and the note says so.
 DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035',
-           '2057', '1158', '1159', '1160']
+           '2057', '1158', '1159', '1160',
+           '1006', '1007', '1023', '1040', '1013',
+           '1061', '1015', '1043', '1029', '1017']
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
 HEAD = re.compile(r'^(\S+)\s+(BITMAP|ICON|CURSOR|MENU|DIALOG|ACCELERATORS)\b(.*)$', re.I)
@@ -109,11 +115,17 @@ def first(items, typ, name):
 dialogs, notes = [], []
 for d in DIALOGS:
     hits = first(new, 'DIALOG', d)
+    src = 'gl_new.rc'
     if not hits:
-        sys.exit(f'dialog {d} missing from gl_new.rc')
+        hits, src = first(old, 'DIALOG', d), 'gl.rc'
+        if not hits:
+            sys.exit(f'dialog {d} missing from gl_new.rc and gl.rc')
+        notes.append(f'dialog {d}: not complete in gl_new.rc; taken from gl.rc line {hits[0]["src_line"]}')
+    for h in hits:
+        h['src'] = src
     if len(hits) > 1:
         same = all(h['lines'][1:] == hits[0]['lines'][1:] for h in hits)
-        notes.append(f'dialog {d}: {len(hits)} copies in gl_new.rc (lines '
+        notes.append(f'dialog {d}: {len(hits)} copies in {src} (lines '
                      + ', '.join(str(h['src_line']) for h in hits) + f'); identical={same}; first used')
     dialogs.append(hits[0])
 menus = []
@@ -219,6 +231,34 @@ def clean(block):
     out = [STRIP.sub('', block[0]).rstrip()] + [l.rstrip() for l in block[1:]]
     return out
 
+# A control line's ID: the first field, or the second when the first is its text.
+CTL_ID = re.compile(r'^\s*[A-Z]+\s+(?:"(?:[^"]|"")*"\s*,\s*)?([\w]+|-1)\s*,')
+
+def dedupe_controls(r):
+    """Drop a dialog's controls whose ID repeats an earlier one's (rc.exe RC2182).
+    GetDlgItem finds only one control per ID, so the rest are unreachable. A
+    control written with a symbolic ID is kept over one with the same number
+    written as a literal, so the symbol stays in resource.h."""
+    lines = r['lines']
+    # Controls only: skip the header (STYLE, CAPTION, FONT 8, "..." would match CTL_ID).
+    body_start = next(i for i, l in enumerate(lines) if re.match(r'^\s*(\{|BEGIN\b)', l, re.I)) + 1
+    by_id = {}
+    for i, l in enumerate(lines[body_start:], body_start):
+        m = CTL_ID.match(l)
+        if m and m.group(1) not in ('-1', 'IDC_STATIC'):
+            by_id.setdefault(key(m.group(1)), []).append((i, m.group(1)))
+    drop = set()
+    for k, hits in by_id.items():
+        if len(hits) < 2:
+            continue
+        keep = next((h for h in hits if num(h[1]) is None), hits[0])
+        for h in hits:
+            if h is not keep:
+                drop.add(h[0])
+                notes.append(f"dialog {r['name']}: control ID {h[1]} (= {k}) also on {r['src']} line "
+                             f"{r['src_line'] + keep[0]} as {keep[1]}; the copy on line {r['src_line'] + h[0]} dropped")
+    return [l for i, l in enumerate(lines) if i not in drop]
+
 used = set()
 body = []
 body += ['// ---- bitmaps (extracted from the hex blocks; see the M4 progress-log entry)'] + bitmap_lines + ['']
@@ -228,7 +268,7 @@ for r in accels:
 for r in menus:
     body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
 for r in dialogs:
-    body += [f'// ---- dialog {r["name"]} (gl_new.rc line {r["src_line"]})'] + clean(r['lines']) + ['']
+    body += [f'// ---- dialog {r["name"]} ({r["src"]} line {r["src_line"]})'] + clean(dedupe_controls(r)) + ['']
 body += ['// ---- strings (gl_new.rc)', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in final_new] + ['}', '']
 if extra:
     body += ['// ---- strings only in gl.rc', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in extra] + ['}', '']

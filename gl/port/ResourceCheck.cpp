@@ -51,6 +51,20 @@ const DialogCase kDialogs[] = {
     {1159, L"User Access Update (TGLAdministration)", false},
     {1011, L"Cash Accounts list (TAPCashAcctsList)", true},
     {1160, L"Menu Access (TAccessMenus)", true},
+    // Spec #2 S2-M2.
+    {1023, L"Department Codes (TGLDeptCodes)", false},
+    {1006, L"Medical Reps (TGLMedReps)", false},
+    {1040, L"Doctor Codes (TGLDrCodes)", false},
+    {1007, L"Product Codes (TGLProd)", false},
+    // Spec #2 S2-M3.
+    {1013, L"Voucher Entry (TGLBatchEntry, TGLPrior)", false},
+    // Spec #2 S2-M4.
+    {1061, L"Post General Ledger Voucher (TGLPostBatch)", true},
+    {1015, L"Recover General Ledger Voucher (TGLRecoverBatch)", true},
+    {1043, L"Cancel General Ledger Voucher (TGLCancelBatch)", true},
+    // Spec #2 S2-M5.
+    {1029, L"Transaction Inquiry (TGLTransInq)", true},
+    {1017, L"Budget Data (TGLBudget)", true},
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

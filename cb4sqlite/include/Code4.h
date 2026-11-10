@@ -28,6 +28,11 @@
 //   backupTo(path) - copies the open database to `path` with SQLite's online
 //   backup API. Throws Error on failure, leaving no partial file behind.
 //
+//   checkDatabase(path, tables) - new in spec #2 S2-M6 (Restore, D5): opens
+//   `path` read-only, without changing it (open() would add the meta
+//   tables), and checks that it is an undamaged SQLite database holding
+//   every table in `tables`.
+//
 
 #include "cb4sqlite_compat.h"
 #include "Errors.h"
@@ -77,6 +82,12 @@ public:
 
     // Online backup (spec #2 5.3), UTF-8 path. Overwrites an existing file.
     void backupTo(const char* utf8Path);
+
+    // False, with a reason in `why`, if `utf8Path` can't be opened read-only,
+    // isn't an SQLite database, fails PRAGMA quick_check, or lacks one of
+    // `tables`. Never writes to the file.
+    static bool checkDatabase(const char* utf8Path, const std::vector<std::string>& tables,
+                              std::string* why = nullptr);
 #ifdef _WIN32
     void backupTo(std::wstring_view path);
 #endif

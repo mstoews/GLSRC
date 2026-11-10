@@ -75,8 +75,9 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[ACCESS] PSW` | `T`: log in at startup. Anything else: no login, user `NOLOGIN`, no menu items grayed |
 | `GL.INI` | `[WITHHOLDING] TAX` | Company Profile's "Withholding Tax Excluded" box (written on Save) |
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
+| `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (plans M5 and M6)
+## What runs (Spec #1, and Spec #2 so far)
 
 - **Frame:**
   - the MANILA menu and the top toolbar;
@@ -98,7 +99,28 @@ DIR=D:\GL\company.db
   - typing jumps to an account;
   - right-click edits the list query.
 
-  Its position and query are kept in `GL.INI [GLACCTS]`. Spec #1 can only run the query `.NOT. DELETED()` (the default), so leave `QUERY` empty.
+  Its position and query are kept in `GL.INI [GLACCTS]`. `QUERY` accepts `.NOT. DELETED()` (the default) and comparisons of a text field with a quoted value, joined with `.AND.`: for example `ACCOUNT = '4'` lists the accounts starting with 4.
+- **Accounts > Department Codes** (1023, also GLSUB), **Medical Reps** (1006), **Doctor Codes** (1040) and **Product Codes** (1007):
+  - Add/Mod adds the typed code, or updates it after asking.
+  - Delete removes the typed code.
+  - Medical Reps, Doctor Codes and Product Codes also have New and Top / Bottom / Next / Previous.
+  - Each has a list beside it, like the account list. Search, or the Med Reps / Doctor / Products button, shows the list at the typed code, and picking a row shows that record. The lists keep their positions and queries in `GL.INI [GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]` and `[GL_ITEMM]`.
+- **Transactions > General Ledger Voucher** (1013, also GLSUB and the toolbar's batch button) and **Transactions > Prior Period Entry** (the same dialog, for adjustment vouchers):
+  - **Fields:** a voucher has a description, a date, a period (only open periods are offered), a cheque number and its lines.
+  - **Add/Mod** (or Enter) saves the line shown into the voucher, creating the voucher with the number displayed if it's new. A line typed with an existing line number replaces that line.
+  - **Delete** removes the line shown.
+  - **New** starts the next voucher. For a voucher created in this session, New and Close first ask whether to keep it; No removes it.
+  - **Top / Bottom / Next / Previous** move between vouchers not yet posted.
+  - **Windows:** the Distribution List below the dialog shows the voucher's lines and totals; double-click a line to edit it. List shows the account list, Voucher the list of vouchers, and Show the floating tool box.
+  - **Print** is the Spec #3 "not yet ported" message.
+  - The lists keep their positions in `GL.INI [GL_DISTLIST]`, `[GL_BTCH]` and `[GLACCTS]`.
+- **Transactions > Post Voucher > General Ledger Voucher** (1061, also GLSUB and the toolbar's post button) lists the open and adjustment vouchers. **Post** posts them all; double-clicking one posts just that one. A voucher whose lines don't balance, or that uses an account not in the chart, is refused with a message and stays listed. Posting is all or nothing: if anything fails, nothing is posted.
+- **Transactions > Recover General Ledger Voucher** (1015) lists the posted vouchers. Double-click one and confirm: its postings are reversed and it is reopened for editing.
+- **Transactions > Cancel Voucher > General Ledger Voucher** (1043) lists the vouchers not yet posted. Double-click one and confirm to delete it.
+- **Transactions > Voucher Reports > General Ledger Voucher Inquiry** (1029): type an account and dept, or pick one in the account list (Search shows and hides it), then Set Data. It lists the account's posted lines between its opening balance and its balance.
+- **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
+- **Maintenance > Backup Databases** saves a copy of the company database to a file you choose, by default `<name>-<yyyymmdd>.db` beside it. **Restore Databases** replaces the company database with a backup you choose, after checking it is one and asking. The replaced file is kept as `<name>.db.bak`. If anything goes wrong, the original is put back.
+- **Maintenance > Year End Consolidation** moves the income and expense balances into the Retained Earnings account and the period amounts into the previous-year columns. It runs only when exactly one account has type R; otherwise it names the type-R accounts so you can correct them in the Chart of Accounts. **Reindex Databases** explains that an SQLite company database needs no reindexing.
 - **Help > About.**
 - **Everything else:**
   - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
@@ -107,5 +129,6 @@ DIR=D:\GL\company.db
 ## Checks
 
 - **`gl.exe /checkres`** loads every Spec #1 resource. Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times on the company database and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, on the company database, and reports the change in GDI and USER objects. With `/quiet` that change is the exit code, so 0 passes.
+- **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.

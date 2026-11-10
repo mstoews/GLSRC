@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Generate the solution's .vcxproj files and gl.sln.
 
-Usage: genproj.py <repo-root> [project ...]
+Usage: genproj.py <repo-root> [project ...] [gl.sln]
 
 With no project names it writes every .vcxproj and gl.sln. With names it
-writes only those projects' .vcxproj files, not gl.sln, so a project changed
-by hand in Visual Studio (cb4sqlite.vcxproj is currently retargeted to
-PlatformToolset v145) is left alone. gl's file list is every .h and .cpp in
+writes only those projects' .vcxproj files, and gl.sln only if "gl.sln" is
+one of the names, so a project changed by hand in Visual Studio is left
+alone. Every project uses PlatformToolset v145 (VS 18), as the script
+writes. gl's file list is every .h and .cpp in
 gl/port/ and gl/port/stubs/, so adding a file there needs only a rerun:
 
     python3 tools/linux/genproj.py . gl
 
-gl_tests.vcxproj is hand-written (it compiles sources from other
-directories); the script only lists it in gl.sln.
+gl_tests.vcxproj and report_tests.vcxproj are hand-written (they compile
+sources from other directories); the script only lists them in gl.sln.
 """
 import sys, pathlib
 
@@ -38,9 +39,10 @@ PROJECTS = [
                   "include\\legacy_headers_begin.h", "include\\legacy_headers_end.h",
                   "include\\Code4.h", "include\\Data4.h", "include\\Field4.h",
                   "include\\Date4.h", "include\\Relate4set.h", "include\\Errors.h",
-                  "include\\Schema.h", "src\\Internal.h", "src\\QueryExpr.h"],
+                  "include\\Schema.h", "include\\Query.h", "src\\Internal.h", "src\\QueryExpr.h"],
          sources=["src\\Internal.cpp", "src\\Schema.cpp", "src\\Code4.cpp", "src\\Data4.cpp",
-                  "src\\Field4.cpp", "src\\Field4_win32.cpp", "src\\Date4.cpp", "src\\Relate4set.cpp", "src\\QueryExpr.cpp"],
+                  "src\\Field4.cpp", "src\\Field4_win32.cpp", "src\\Date4.cpp", "src\\Relate4set.cpp", "src\\QueryExpr.cpp",
+                  "src\\Query.cpp"],
          refs=[], extra="sqlite"),
     dict(name="win32fx", dir="win32fx", n=2, type="StaticLibrary", sub=None,
          headers=["include\\win32fx.h", "include\\Window.h", "include\\Dialog.h", "include\\MsgMap.h",
@@ -67,7 +69,8 @@ PROJECTS = [
          headers=["TestDb.h"], sources=["..\\cb4sqlite\\test\\parse_smoke.cpp", "m0_smoke_test.cpp",
                   "test_code4_schema.cpp", "test_field4.cpp", "test_field4_win32.cpp",
                   "test_data4.cpp", "test_relate4set.cpp", "test_legacy_headers.cpp",
-                  "test_dbf2sqlite.cpp", "test_queryexpr.cpp", "test_transaction.cpp", "test_backup.cpp"],
+                  "test_dbf2sqlite.cpp", "test_queryexpr.cpp", "test_transaction.cpp", "test_backup.cpp",
+                  "test_query.cpp"],
          refs=["cb4sqlite", "dbf2sqlite_core"], extra="catch2"),
     dict(name="gl", dir="gl", n=6, type="Application", sub="Windows",
          headers=gl_files("*.h") + ["res\\resource.h"],
@@ -76,6 +79,14 @@ PROJECTS = [
          res=["res\\gl.rc"], manifest="res\\manifest.xml"),
     # Hand-written .vcxproj (it compiles sources from gl\port and cb4sqlite_tests): only listed in gl.sln.
     dict(name="gl_tests", dir="gl_tests", n=7, hand=True),
+    # The report library (spec #3 4). The Windows-only sources under src\win32 come in S3-M1.
+    dict(name="report", dir="report", n=8, type="StaticLibrary", sub=None,
+         headers=["include\\report\\Report.h", "include\\report\\Format.h", "include\\report\\Layout.h",
+                  "include\\report\\TextRender.h"],
+         sources=["src\\Format.cpp", "src\\Layout.cpp", "src\\TextRender.cpp"],
+         refs=[], extra=None),
+    # Hand-written, as gl_tests (Catch2 from cb4sqlite_tests\vendor).
+    dict(name="report_tests", dir="report_tests", n=9, hand=True),
 ]
 BYNAME = {p["name"]: p for p in PROJECTS}
 
@@ -137,7 +148,7 @@ def vcxproj(p):
         cfg.append(f"""  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{c}|x64'" Label="Configuration">
     <ConfigurationType>{p['type']}</ConfigurationType>
     <UseDebugLibraries>{'true' if c == 'Debug' else 'false'}</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>{wpo}
   </PropertyGroup>""")
     out = [f"""<?xml version="1.0" encoding="utf-8"?>
@@ -234,7 +245,7 @@ def write(path, text):
     # Visual Studio's native line ending for .sln/.vcxproj is CRLF.
     path.write_bytes(text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
 
-unknown = ONLY - set(BYNAME)
+unknown = ONLY - set(BYNAME) - {"gl.sln"}
 if unknown:
     sys.exit("unknown project(s): " + ", ".join(sorted(unknown)))
 for p in PROJECTS:
@@ -244,6 +255,6 @@ for p in PROJECTS:
         continue
     if not ONLY or p["name"] in ONLY:
         write(ROOT / p["dir"] / f"{p['name']}.vcxproj", vcxproj(p))
-if not ONLY:
+if not ONLY or "gl.sln" in ONLY:
     write(ROOT / "gl.sln", "﻿" + sln())
 print("ok")

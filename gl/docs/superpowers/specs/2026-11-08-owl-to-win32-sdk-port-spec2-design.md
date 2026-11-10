@@ -89,20 +89,32 @@ The port keeps the original's period control. Periods are opened and closed in *
 - **Afterwards:** if every voucher posted, it shows string 8115 and closes. Otherwise it redraws the list.
 - **Picking a row** posts just that voucher (`SSGetData` on column 1, `gl_postb.cpp:328`).
 
+*Corrected in S2-M4* (read from the whole of `gl_postb.cpp`):
+- The list shows only open vouchers (`"1"`), although OK also posts adjustments (`"3"`). Picking an adjustment gave 8116.
+- **Normal voucher.** It is balanced when the header's debit and credit text, converted to `double`, compare equal. If a line's account isn't found, message 3081 is shown, but the line's `curr_bal` change still goes to whichever `glaccts` record is current, and the line is still marked posted and copied to `gl_dist`. `gl_dist.type` is left blank, and `gl_dist.reference` is the line's reference, not the header's.
+- **Adjustment** (`PostAdjustment`): it adds each line's debit minus credit to `openbal`, then sets `curr_bal` to `openbal` plus `period1`–`period12`. The header's mode becomes **`"2"`**, not `"0"`. It writes no `gl_dist` rows and leaves the lines' mode alone. An out-of-balance adjustment is skipped without a message, and still counts as posted for 8115.
+- A voucher without lines is left open, without a message.
+- The port's corrections are D12.
+
 ### 2.5 Recover (1015) and Cancel (1043)
 
 - **Recover** reverses a posted voucher. It subtracts each line back out of `period<N>` (`SetPeriodAmount`) and deletes the voucher's `gl_dist` rows, then `pack`s.
 - **Cancel** deletes an open voucher's header and lines (`gl_btcan.cpp`, `gl_delrq.cpp`).
 
-The port pins down two things during S2-M4:
-
-- whether Recover also reverses `curr_bal`;
-- what Recover leaves in `gl_btch` / `gl_btchd`: reopened (`mode` `"1"`) or removed.
+*Settled in S2-M4* (read from the whole of `gl_postr.cpp`, `gl_btcan.cpp` and `gl_delrq.cpp`):
+- **Recover** lists the posted vouchers (`"0"`; not posted adjustments, `"2"`). A double-click recovers at once, without a question. For each line it subtracts debit minus credit from `period<N>` **and from `curr_bal`**, and sets the header's mode back to **`"1"`**: the voucher is reopened, and its header and lines stay. The lines keep mode `"0"`. Then it deletes **every** `gl_dist` row with the voucher's number, AR and AP rows included (the `batchno` tag has no filter), and packs. A line whose account isn't found is skipped, but its `gl_dist` row is still deleted.
+- **Cancel** is `gl_btcan.cpp`; `gl_delrq.cpp` is an older copy that isn't in `gl.ide`. It lists open vouchers (`"1"`), asks 8099, and deletes the header and lines. It already replaced 1043's wrong caption at run time with string 6143.
+- The port's corrections are D12.
 
 ### 2.6 Transaction Inquiry (1029) and Budget Data (1017)
 
 - **Transaction Inquiry** lists the lines of one account and dept, using the query `ACCOUNT = '<account>' .AND. DEPT = '<dept>' .AND. MODE = '0'` (`gl_trans.cpp:193`).
 - **Budget Data** shows `budget1`–`budget12` of one account in a 12-row grid whose amount column is editable. On save it reads the column back with `SSGetData` (`gl_budgt.cpp:39`).
+
+*Corrected in S2-M5:*
+- **Budget Data** is `TGLBudget` in **`gl_accts.cpp`**, a subclass of the Chart of Accounts (`TGLAcctsAdd`) on dialog 1017. `gl_budgt.cpp` (`TGLAcctBudget`, dialog `GL_ACCTBUDGET`) and `gl_budgi.cpp` aren't in `gl.ide`; the budget inquiry report, 10073, is `PrintReport("budgt")`, Spec #3. The grid has four columns: period, budget (editable), current year (`period<N>`) and previous year (`previous<N>`). OK asks 8098 and assigns `budget1`–`budget12` (read back from column 2, `gl_accts.cpp:529`) without writing the record. Every other button is the Chart of Accounts'.
+- **Transaction Inquiry** shows the opening balance (`openbal`) on row 1 and the lines from row 4, then a blank row and "Account Balance" (opening balance plus debits minus credits). Each balance goes in Debit when positive, else in Credit without its sign. Set Data (4076) or a pick in the account list fills it; Search (2000) shows and hides the list.
+- The port's corrections are D13.
 
 ### 2.7 Year end (1068)
 
@@ -111,6 +123,12 @@ After confirming with string 8111, `GLYearEnd` (`gl_postb.cpp`) does three thing
 1. For every account whose type isn't `B`, it adds `curr_bal` to a running total and sets `curr_bal` to zero.
 2. For every account, it copies `period1`–`period12` into `previous1`–`previous12`, then sets the periods to zero.
 3. It adds the total to `curr_bal` of every account whose type **isn't** `R`. This is the defect D2 corrects.
+
+*Confirmed in S2-M6:*
+- Step 1 includes the Retained Earnings account itself, which isn't type `B`. Its balance joins the total and comes back in step 3, so its new balance is its old one plus the year's income and expenses.
+- Accounts with a blank or other type count as non-`B`, as before.
+- Year end leaves `openbal`, `gl_btchd` and `gl_dist` alone, as before; see §12 Q6.
+- It said nothing afterwards. The port reports the Retained Earnings account's new balance.
 
 ---
 
@@ -122,27 +140,35 @@ New code goes in `gl/port/`, following Spec #1's split: portable logic separate 
 |---|---|---|---|
 | General Ledger Voucher (10076), toolbar `ID_GLBATCH`; `ID_BATCHENT` (1007) | 1013 | `VoucherEntry.h/.cpp`, `VoucherLists.h/.cpp` | `gl_btche.cpp` |
 | Prior Period Entry (8081) | 1013 | `VoucherEntry.cpp` (a mode) | `gl_prior.cpp` |
-| Post Voucher > General Ledger (10121), toolbar `ID_GLPOST` | 1061 | `PostVouchers.h/.cpp` | `gl_postb.cpp` |
-| Recover General Ledger Voucher (10122) | 1015 | `RecoverVoucher.h/.cpp` | `gl_postr.cpp` |
-| Cancel Voucher > General Ledger (3054) | 1043 | `CancelVoucher.h/.cpp` | `gl_btcan.cpp`, `gl_delrq.cpp` |
+| Post Voucher > General Ledger (10121), toolbar `ID_GLPOST` | 1061 | `VoucherPosting.h/.cpp` | `gl_postb.cpp` |
+| Recover General Ledger Voucher (10122) | 1015 | `VoucherPosting.cpp` | `gl_postr.cpp` |
+| Cancel Voucher > General Ledger (3054) | 1043 | `VoucherPosting.cpp` | `gl_btcan.cpp` (`gl_delrq.cpp` isn't built) |
 | General Ledger Voucher Inquiry (10072) | 1029 | `TransactionInquiry.h/.cpp` | `gl_trans.cpp` |
-| Budget Data (10074) | 1017 | `BudgetData.h/.cpp` | `gl_budgt.cpp` |
+| Budget Data (10074) | 1017 | `ChartOfAccounts.cpp` (a mode, as `TGLBudget` subclasses `TGLAcctsAdd`) | `gl_accts.cpp` (`gl_budgt.cpp` isn't built) |
 | Department Codes (10061) | 1023 | `MasterData.h/.cpp` | `gl_deptc.cpp` |
 | Medical Reps (6042) | 1006 | `MasterData.cpp` | `gl_medrp.cpp` |
 | Product Codes (6005) | 1007 | `MasterData.cpp` | `gl_prods.cpp` |
 | Doctor Codes (6040) | 1040 | `MasterData.cpp` | `gl_drcod.cpp` |
-| Year End Consolidation (1068) | message box | `YearEnd.h/.cpp` | `gl_postb.cpp` |
-| Backup (1072), Restore (1074) | common file dialogs | `Backup.h/.cpp` | `gl.cpp` |
+| Year End Consolidation (1068) | message box | `YearEnd.h/.cpp` (the operation is `Vouchers.cpp` `YearEnd`) | `gl_postb.cpp` |
+| Backup (1072), Restore (1074), Reindex (3047) | common file dialogs, message box | `Backup.h/.cpp`, with the file work in the portable `CompanyFiles.h/.cpp` | `gl.cpp`, `gl_index.cpp` |
 
 The portable core is **`Vouchers.h/.cpp`**, built like `Accounts.cpp`: no Win32. It holds append and replace, post, post-adjustment, recover, cancel and year end as functions over the table classes. Each dialog collects input and calls them.
 
-**Resources.** `gl/res/tools/prune_rc.py` gains the dialogs 1006, 1007, 1013, 1015, 1017, 1023, 1029, 1040, 1043 and 1061, plus whatever bitmaps the tool box and buttons use. `/checkres` covers them. The message strings are already in `gl/res/gl.rc`, because Spec #1 kept the whole string table.
+**Resources.** `gl/res/tools/prune_rc.py` gains the dialogs 1006, 1007, 1013, 1015, 1017, 1023, 1029, 1040, 1043 and 1061, plus whatever bitmaps the tool box and buttons use. *S2-M4:* `gl_new.rc` has no complete 1061 (its copy has no closing brace and no Close button), so `prune_rc.py` takes a dialog that `gl_new.rc` lacks from `gl.rc`, and says so. `/checkres` covers them. The message strings are already in `gl/res/gl.rc`, because Spec #1 kept the whole string table.
 
 **Captions (D3).** Three captions in the original were copied from other dialogs. The port corrects them:
 
 - 1061 "Post Accounts Receivable Voucher" becomes "Post General Ledger Voucher";
-- 1043 "Cancel Accounts Payable Journal" becomes "Cancel General Ledger Voucher";
-- 1017 "General Ledger Account Maintenance - Add" becomes "General Ledger Budget Data".
+- 1043 "Cancel Accounts Payable Journal" becomes "Cancel General Ledger Voucher" (*S2-M4:* the original already did this at run time, with string 6143);
+- 1017 "General Ledger Account Maintenance - Add" becomes "General Ledger Budget Data" (*S2-M5:* the original already replaced it at run time with string 8097, "General Ledger - Budget Update", which the port uses).
+
+*Added in S2-M2:* list headers and prompts copied from other screens, corrected the same way:
+
+- the Department Code list's headers "Acct" / "Dept" / "Description", over its two fields, become "Dept" / "Description";
+- the Medical Reps list's third header, string 8127 ("The invoice has already been cleared…"), becomes 6044 "Description", as on the Doctor list;
+- the Product list's headers "Code" / "Description" / "Description" become "Code" / "Name" / "Description";
+- the Product Codes update prompt 8102 ("The current asset has already been added…") becomes 8122 ("Record has already been added…");
+- the Doctor Codes delete prompt 8113 ("…delete the current Medical Representative?") becomes 6052 ("Delete the record?").
 
 Any further wrong caption found during porting is added to this list.
 
@@ -246,6 +272,8 @@ This covers `gl_trans.cpp` and `gl_acctl.cpp` (`ACCOUNT <> ' '`), so it also clo
 - It writes `<path>.part`, then moves it over `path` (replacing an existing file), so a failure leaves neither file behind.
 - Paths are UTF-8, and a `std::wstring_view` overload is provided on Windows.
 
+*Added in S2-M6:* `Code4::checkDatabase(path, tables)` opens a file **read-only** and checks that it is an SQLite database, that `PRAGMA quick_check` passes and that it has the named tables. Restore needs it because `Code4::open` creates the meta tables in any file it opens, which would change the file being checked.
+
 ### 5.4 Table headers
 
 `include/db_dist.h` came from the older `ar/` snapshot (Spec #1 §10 Q9). Its `Tgldist` opens **`ar_jsum`** and has no `medrep`, `drcode` or `prod` fields, but GL posting writes exactly those to `gl_dist`. Spec #2:
@@ -283,15 +311,19 @@ No change. It already migrates every dBase table in `--src`, so the per-spec re-
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | Posting, posting a single picked voucher, recovery and year end each run in **one transaction** (§5.2). On any error, nothing is written and the error is shown at the dispatch boundary (Spec #1 §7.2). | The original wrote row by row, so a crash halfway left the books half-posted. With SQLite this protection costs almost nothing, and it is the only change here that protects data. |
+| D1 | Posting, posting a single picked voucher, recovery, cancel (*added in S2-M4*) and year end each run in **one transaction** (§5.2). On any error, nothing is written and the error is shown at the dispatch boundary (Spec #1 §7.2). | The original wrote row by row, so a crash halfway left the books half-posted. With SQLite this protection costs almost nothing, and it is the only change here that protects data. |
 | D2 | Year end adds the total to the **Retained Earnings** account (`type == "R"`), not to every other account. It **refuses** unless exactly one account has type `R`, and names the accounts it found. | The original's `strcmp(type, "R") != 0` contradicts its own purpose (§2.7). The real data has two type-R accounts, 340000 Retained Earnings and 101000 Petty Cash, which is clearly a data error, so the corrected test would credit both. Every `previous1`–`previous12` in the real data is zero, so the original's year end never ran on this company and nothing depends on its behaviour. The Spec #1 Chart of Accounts can correct 101000's type. |
 | D3 | Wrong dialog captions are corrected (§3). | They name other modules and would mislead users. |
 | D4 | Month close (1069, `gl_closm.cpp`) is **not ported**. | The deployed original had already retired it: no menu item or button sends 1069, its period-advance code is commented out, `CopyINI` is empty, and it would write an uninitialized buffer to `GL.INI [PERIOD] DATE`. Periods are closed in Company Profile > Periods (§2.2). The real `GL_DISTB`, its archive table, has no rows. |
-| D5 | Backup writes the database to a file chosen in a Save As dialog, using `Code4::backupTo`. The default name is `<database name>-<yyyymmdd>.db`. Restore picks a file, checks that it opens as a company database (`glaccts` and `_cb_fields` exist), confirms with string 1074, then closes the database. It saves the current file as `<name>.bak` and copies the chosen file over it. Then it reopens the database and refreshes the module bar. | The original ran external DOS programs, `savegl.pif` and `restore.pif`. With one `.db` file, a copy does the same job. |
+| D5 | Backup writes the database to a file chosen in a Save As dialog, using `Code4::backupTo`. The default name is `<database name>-<yyyymmdd>.db`. Restore picks a file, checks that it opens as a company database (`glaccts` and `_cb_fields` exist), confirms (*S2-M6:* with a new question naming the file and the `.bak`, because string 1074 is the menu's help line, "Restore the current databases to the GL directory."), then closes the database. It saves the current file as `<name>.bak` and copies the chosen file over it. Then it reopens the database and refreshes the module bar. | The original ran external DOS programs, `savegl.pif` and `restore.pif`. With one `.db` file, a copy does the same job. |
 | D6 | Reindex shows a message instead of rebuilding. | There are no `.mdx` files after migration, and SQLite maintains its own indexes. |
 | D7 | Maintain External Vouchers stays a stub. | Its handler only opens dialog 1058, and nothing shows what that dialog was for. |
 | D8 | Budget Data edits in the grid (§4.2) rather than in 12 separate fields. | It keeps the original layout, and AP needs grid editing anyway. |
 | D9 | **Menu Access (1160)** starts from the edited level's own menu code (its `accessl` record, or the first record if it has none, as login resolves it), and only OK saves. Editing no longer changes the session. **Reset** (1159, string 8152) applies the selected level's code to the session and re-grays the frame menu. | The original edited the global `szMsg`, the logged-in user's string, so 1160 showed the session's menus rather than the selected level's. Its `Menus()` then saved that string even after Close, and Reset wrote `szMsg` into the level, the reverse of what 8152 says. |
+| D10 | The master-data screens (S2-M2) stop losing data. Department Codes' Delete removes the department typed, not whatever record was current. Medical Reps and Doctor Codes no longer write `balance` from control 6039, which neither template has. Medical Reps reads territory from its own control, 1076, not 6038. Product Codes no longer writes `flotsize` from the missing control 6007, and refuses a blank code on Add/Mod (string 4072), as its Delete did. | Each one silently changed or lost saved data on every save: balances and lot sizes reset to 0, territories saved blank, and the wrong department deleted. |
+| D11 | **Voucher Entry (S2-M3)** saves what it shows. The voucher description goes to `gl_btch.reference`, not the missing `descript`. A new voucher gets the number displayed, not 1 when `gl_btch` is empty. Totals come from the voucher's own lines. Add/Mod replaces the line with the typed number, or appends one. Editing keeps the voucher's mode. Picking a line selects its medical rep, product and doctor. The account check requires that account and dept, not a prefix. IDOK is Add/Mod instead of closing the dialog without the save question. | Each of these silently saved something other than what was on the screen: a lost description, a voucher renumbered to 1, totals copied from another voucher, an edit dropped, an adjustment turned into a normal voucher, codes taken from the previous line, or a line posted to the wrong account. |
+| D12 | **Post, Recover and Cancel (S2-M4)** stop corrupting the books. A voucher balances when its **lines** do, to the cent, not when the header's totals compare equal as `double`s (R3). A voucher with a line whose account and dept aren't in `glaccts` is **refused whole**, with 3081 naming the account, by Post and by Recover. An out-of-balance adjustment is refused with 8116 instead of being skipped silently. Recover **asks first**, blanks the lines' mode again, and deletes only the voucher's **GL** rows from `gl_dist`, not AR or AP rows with the same number. Post and Cancel list adjustment vouchers as well as open ones, and picking an adjustment in Post posts it as one. | The original sent a missing account's `curr_bal` change to whichever account was current, while still marking the line posted. Recover deleted other modules' postings, and left recovered lines marked posted, which Transaction Inquiry would still show. A stale header total could post an unbalanced voucher. A double-click reversed a posting with no way back. |
+| D13 | **Transaction Inquiry and Budget Data (S2-M5)** show and save the account asked for. Transaction Inquiry looks up exactly the account and dept typed, and lists exactly their posted lines; 3081 if there is no such account. Budget Data writes the budgets as soon as OK is confirmed, into the account the grid shows. | Transaction Inquiry read only 3 characters of the account and dept (`sizeof(char*)`), so the opening balance and description came from another account, and its dBase left-match query listed every dept's lines for a blank dept. Budget Data's OK only assigned the fields: they reached the table when the record moved or the tables closed, and went to whatever record was current by then. |
 
 ---
 
@@ -376,8 +408,8 @@ These follow the style of Spec #1 §6.7 and are signed off in `2026-11-08-spec2-
 |---|---|---|
 | R1 | `gl_btche.cpp` is the largest screen ported so far (1,387 lines): four windows, a tool box and several modes. The OWL lifecycle (Spec #1 risk P6) bites harder with four windows. | Port the portable logic first (`Vouchers.cpp` plus the harness). Port the windows one at a time. `/stress` covers voucher entry. |
 | R2 | The dBase string comparison rules (§5.1) differ from SQL's. A wrong rule silently lists the wrong rows. | Tests pin each rule. Verify against `e4expr.h` before implementing. |
-| R3 | Accounting arithmetic in `double`, as in the original, which compares debit and credit totals with `==`. | Keep `double` for fidelity. Compare totals after rounding to the field's decimals (2), and record the comparison in §11 once verified. |
-| R4 | Recover's exact effects (§2.5) aren't fully pinned down. | S2-M4 reads the whole of `gl_postr.cpp` and records the result before porting. |
+| R3 | Accounting arithmetic in `double`, as in the original, which compares debit and credit totals with `==`. | Keep `double` for fidelity. Compare totals after rounding to the field's decimals (2), and record the comparison in §11 once verified. *Settled in S2-M4:* posting sums the lines in whole cents and compares those; each balance change is applied in cents and stored with 2 decimals (D12). |
+| R4 | Recover's exact effects (§2.5) aren't fully pinned down. | S2-M4 reads the whole of `gl_postr.cpp` and records the result before porting. *Done:* §2.5. |
 | R5 | Rollback leaves stale record buffers (§5.2). | The re-read rule, plus a harness test that a failed post followed by a retry gives correct totals. |
 
 ---
@@ -401,9 +433,9 @@ Corrections found while porting are recorded under each milestone here, as Spec 
 
 ## 12. Still open
 
-1. **Recover's effect on `curr_bal` and on the voucher tables** (§2.5, R4). Settle in S2-M4.
-2. **The adjustment-voucher rules** (`PostAdjustment`), in particular which balance fields it changes and how adjustments differ from prior-period entries. Settle in S2-M3/M4 from `gl_postb.cpp` and `gl_prior.cpp`.
-3. **How voucher entry chooses the date** and whether it checks the date against the period. Settle in S2-M3.
+1. ~~**Recover's effect on `curr_bal` and on the voucher tables** (§2.5, R4).~~ *Settled in S2-M4:* Recover reverses `curr_bal` as well as `period<N>`, and reopens the voucher (mode `"1"`), keeping its header and lines (§2.5).
+2. ~~**The adjustment-voucher rules** (`PostAdjustment`), in particular which balance fields it changes and how adjustments differ from prior-period entries.~~ *Partly settled in S2-M3:* they are the same thing. Prior Period Entry (`TGLPrior`) is Voucher Entry writing mode `"3"`, which posting treats as an adjustment (`Tglbtch::Adjustment`). *Settled in S2-M4:* `PostAdjustment` changes `openbal`, then recomputes `curr_bal` as `openbal` plus the 12 period columns, and marks the voucher `"2"` (§2.4).
+3. ~~**How voucher entry chooses the date** and whether it checks the date against the period.~~ *Settled in S2-M3:* the user enters it in the `tbDate` control. Add only requires one (string 8090) and never compares it with the period. The port keeps that.
 4. ~~**What the `SSSetBool` options change** in each grid. Settle in S2-M0 and map each one to a ListView style, or record that it is ignored.~~ *Resolved in S2-M0:*
 
    | Option | Where | Port |
@@ -417,3 +449,8 @@ Corrections found while porting are recorded under each milestone here, as Spec 
    | `SSB_ARROWSEXITEDITMODE` TRUE | recover, delete | Up and Down end an edit |
    | `SSB_AUTOSIZE`, `SSB_ALLOWUSERRESIZE` FALSE, `SSB_NOBEEP`, `SSB_ALLOWUSERFORMULAS` | 1160, 1011, line list / budget | ignored. The port's header lets the user resize columns. |
 5. **The dBase comparison rules against real CodeBase 4** (§5.1). They follow `dbf2sqlite`'s FOR-condition translation, not CodeBase's own source or documentation, which aren't in the tree. Confirm them if either turns up, or with the original 16-bit build on the real data, for example by comparing the account list's rows under a `GL.INI [GLACCTS] QUERY`.
+6. **Year end and the opening balance.** Year end leaves `openbal` alone and doesn't clear the posted lines, as the original did. Two things then disagree after a year end:
+   - Transaction Inquiry's balance (`openbal` plus every posted line, from every year);
+   - posting an adjustment, which sets `curr_bal` to `openbal` plus the 12 period columns, now zero, and so drops the earlier years' activity of a balance-sheet account.
+
+   The real data's year end has never run (D2), so nothing depends on it yet. Settle before the first real year end: probably year end should set `openbal` to the closing `curr_bal`, and the inquiry should list one year's lines.

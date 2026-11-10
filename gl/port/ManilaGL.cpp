@@ -5,6 +5,12 @@
 
 #include "Company.h"
 #include "ChartOfAccounts.h"
+#include "MasterData.h"
+#include "VoucherEntry.h"
+#include "VoucherPosting.h"
+#include "TransactionInquiry.h"
+#include "Backup.h"
+#include "YearEnd.h"
 #include "CompanyProfile.h"
 #include "Globals.h"
 #include "Login.h"
@@ -221,6 +227,52 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_ACCTDEL:                       // TGlWindow::GLAcctDel: GLSUB > Delete Accounts
         RunDeleteAccounts(hwnd());
+        return true;
+    case ID_DEPTCODES:                     // TGlWindow::GLDeptCodes: Accounts > Department Codes, GLSUB
+        RunDepartmentCodes(hwnd());
+        return true;
+    case ID_MEDREPS:                       // TManilaGL::GLMedicalReps
+        RunMedicalReps(hwnd());
+        return true;
+    case ID_DOCTOR:                        // TManilaGL::GLDoctor
+        RunDoctorCodes(hwnd());
+        return true;
+    case ID_PRODCODE:                      // TManilaGL::GLProductCode
+        RunProductCodes(hwnd());
+        return true;
+    case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
+    case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
+        RunVoucherEntry(hwnd());
+        return true;
+    case CM_PRIOR:                         // TGlWindow::GLPrior: Transactions > Prior Period Entry
+        RunPriorPeriodEntry(hwnd());
+        return true;
+    case ID_GLTRANSINQ:                    // TGlWindow::GLTransInquiry: General Ledger Voucher Inquiry
+        RunTransactionInquiry(hwnd());
+        return true;
+    case ID_ACCTBUDGET:                    // TGlWindow::GLAcctBudget: Budget Data
+        RunBudgetData(hwnd());
+        return true;
+    case ID_YEAREND:                       // TGlWindow::GLYearEnd: Year End Consolidation
+        RunYearEnd(hwnd());
+        return true;
+    case ID_BACKUP:                        // TGlWindow::GLBackup: Backup Databases
+        RunBackup(hwnd());
+        return true;
+    case ID_RESTORE:                       // TGlWindow::GLRestore: Restore Databases
+        if (RunRestore(hwnd())) RefreshStatus();   // the restored company's name and period
+        return true;
+    case ID_REINDEX:                       // TGlWindow::GLReindex: Reindex Databases
+        RunReindex(hwnd());
+        return true;
+    case ID_GLPOSTBATCH:                   // TGlWindow::GLPostBatch: Post Voucher > General Ledger, GLSUB, toolbar
+        RunPostVouchers(hwnd());
+        return true;
+    case ID_GLREPBATCH:                    // TGlWindow::GLRepBatch: Recover General Ledger Voucher
+        RunRecoverVoucher(hwnd());
+        return true;
+    case ID_BATCHDELETE:                   // TGlWindow::GLDeleteBatch: Cancel Voucher > General Ledger
+        RunCancelVoucher(hwnd());
         return true;
     case ID_ABOUT: {                       // TGlWindow::CMAbout
         fx::Dialog about;

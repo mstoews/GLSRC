@@ -52,6 +52,9 @@
   <!--
     Vendored shapelib DBF reader (spec 10 Q3 fallback; MIT licence option). See VENDORED.md.
     Compiled as C; exempt from /W4 /WX. Only the .dbf API is used.
+    C4996 (CRT "use the _s version") and C4005 (WIN32_LEAN_AND_MEAN/NOMINMAX also set
+    by common.props) are disabled: the flagged calls are bounds-checked upstream, and
+    leaving the vendored source unedited keeps it easy to update.
   -->
   <ItemGroup>
     <ClInclude Include="vendor\shapelib\shapefil.h" />
@@ -61,12 +64,14 @@
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
       <SDLCheck>false</SDLCheck>
+      <DisableSpecificWarnings>4996;4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <ClCompile Include="vendor\shapelib\safileio.c">
       <CompileAs>CompileAsC</CompileAs>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
       <SDLCheck>false</SDLCheck>
+      <DisableSpecificWarnings>4996;4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

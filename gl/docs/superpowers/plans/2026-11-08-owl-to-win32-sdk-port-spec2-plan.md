@@ -151,6 +151,22 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** Department Codes, Medical Reps, Product Codes and Doctor Codes add, modify and delete records. Spec §8 #1.
 
+> **As built (2026-11-09).**
+> - **What the originals are.** Each screen is a modal dialog with a `TListWindow` list window beside it, the same machinery as the Chart of Accounts' account list.
+>   - The lists' `GL.INI` sections are `GLDEPT`, `GL_MEDRP`, `GL_DRCOD` and `GL_ITEMM`, the windows' class names. `TDeptList`'s declaration isn't in the tree, and `GLDEPT` follows the others.
+>   - Medical Reps, Doctor Codes and Product Codes have New / Top / Bottom / Next / Previous, a list button (1074), Delete and Add/Mod. Department Codes has only Add, Delete, Search and Close; its Modify handler had no button.
+>   - `gl_prods.cpp` opens `gl_itemm` through `Tprods` (`db_itemm.h`).
+> - **`gl/port/TableList.h/.cpp`** is the generic port of `TListWindow`: the section, table, tag, caption, headers and a pick callback are parameters. `AccountList` is now a thin `TableList` on `glaccts`, with its public API and behaviour unchanged.
+> - **`gl/port/MasterTables.h/.cpp`** has the table classes and record operations, without Win32. The classes open fields by name from the real layouts, not from the recovered headers (spec §5.4): `RepTable` for `gl_medrp` / `gl_drcod`, `ProductTable`, `DepartmentTable`. It also has `SeekCode` (whole-code match), `SaveRecord` (append or confirmed update) and `DeleteRecord`.
+> - **`gl/port/MasterData.h/.cpp`** has the four dialogs, wired to `ID_DEPTCODES`, `ID_MEDREPS`, `ID_DOCTOR` and `ID_PRODCODE`. Medical Reps and Doctor Codes share one class.
+> - **Corrections:**
+>   - wrong headers and prompts (spec D3, added list);
+>   - five data-losing defects (spec D10);
+>   - Next / Previous stop at the ends instead of showing a blank record;
+>   - Department Codes redraws its list after Add/Mod, as the other screens did.
+> - **Resources:** `prune_rc.py` adds 1006, 1007, 1023 and 1040. Before the change, the tool still reproduced the committed `gl.rc` byte for byte. `/checkres` creates the four dialogs. `/stress` opens each one 25 times after the 100 Chart of Accounts cycles.
+> - **Tests:** `gl_tests/test_master.cpp` has 6 cases. `gl_tests` now has 14 cases and 249 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** `gl_deptc.cpp`, `gl_medrp.cpp`, `gl_prods.cpp` and `gl_drcod.cpp` in full. Record each screen's buttons, its navigation (these dialogs have top / bottom / next / previous buttons; 1010 didn't) and its delete rule. Note what `gl_prods.cpp` opens, since it names no table class.
@@ -169,6 +185,32 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 ## Milestone 3 — Voucher core and Voucher Entry
 
 **Goal:** vouchers can be created, edited and deleted. Spec §8 #2–#4.
+
+> **As built (2026-11-09).**
+> - **Read findings (task 1):**
+>   - **Modes:** `gl_btch.mode` is `"1"` open, `"0"` posted, `"3"` adjustment. Prior Period Entry is the same dialog writing `"3"` (spec §12 Q2).
+>   - **Date:** the user types it, and Add only requires one (spec §12 Q3).
+>   - **Voucher description:** it is `gl_btch.reference`.
+>   - **Line numbers:** `CurrentBatch` renumbers the lines in display order (debit lines, then credit, then both) and writes the numbers back.
+>   - **Windows:** the line list is `TGLDistList` (`GL.INI [GL_DISTLIST]`). The voucher list is a `TListWindow` on `gl_btch` (`[GL_BTCH]`). The tool box duplicates ten of the dialog's buttons, and the Show check box toggles it while narrowing the dialog.
+>   - **Combo boxes:** medical reps load in `rpname` order, doctors in `drcode` order, products in `ffulln` order, each with a blank entry.
+> - **`gl/port/Vouchers.h/.cpp`:** the portable core.
+>   - Table classes from the real layouts: `VoucherHeaders`, `VoucherLines`.
+>   - Operations: `NextVoucherNumber`, `SeekVoucher`, `LoadVoucher` (`CurrentBatch`), `SaveLine` (`Add`), `DeleteLine`, `DeleteVoucher` (`RollBack`), `UpdateTotals`, `OpenPeriods` (`::SetPeriods`).
+>   - `gl_tests/test_vouchers.cpp` has 8 cases.
+> - **`gl/port/VoucherLists.h/.cpp`:** `LineList` and `ToolBox`.
+> - **`gl/port/VoucherEntry.h/.cpp`:** the dialog. It is wired to `ID_MODBATCH` (menu, GLSUB, toolbar), `ID_BATCHENT` and `CM_PRIOR`.
+> - **`TableList::Create` and `AccountList::Create`** take a `show` flag: voucher entry creates its account and voucher lists hidden, as the original did.
+> - **Corrections:**
+>   - spec D11;
+>   - Prior Period Entry checks the mode before touching a voucher, as `TGLPrior::CurrentBatch` did;
+>   - Add/Mod asks for a period when none is open (the original saved period 0).
+> - **Not ported:** Print, the voucher slip report, is the Spec #3 stub.
+> - **Resources and checks:**
+>   - `prune_rc.py` adds 1013, and `windres` compiles the result;
+>   - `/checkres` creates 1013;
+>   - `/stress` opens Voucher Entry 25 times, alternating with Prior Period Entry.
+> - **Tests:** `gl_tests` has 22 cases and 342 assertions, all passing on Linux under ASan/UBSan.
 
 ### Tasks
 
@@ -204,6 +246,23 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** the cycle completes. Spec §8 #5–#8.
 
+> **As built (2026-11-09).**
+> - **Read findings (task 1),** recorded in spec §2.4 and §2.5:
+>   - **Recover** (spec §12 Q1) reverses `period<N>` and `curr_bal`, sets the header back to `"1"` and keeps the header and lines. It deletes every `gl_dist` row with the voucher's number, including AR and AP rows.
+>   - **Adjustments** change `openbal`, recompute `curr_bal` as `openbal` plus the periods, and become mode `"2"`, with no `gl_dist` rows.
+>   - **R3:** the original compared the header totals as `double`s.
+>   - **Cancel** is `gl_btcan.cpp`; `gl_delrq.cpp` isn't built.
+>   - **1061** has no complete copy in `gl_new.rc`, so `prune_rc.py` takes it from `gl.rc`.
+> - **`Vouchers.h/.cpp`:**
+>   - `ListVouchers`, `PostAll`, `PostVoucher`, `RecoverVoucher`, `CancelVoucher`. Each opens its own tables and runs in one `cb4sqlite::Transaction`. Cancel was added to D1, as this task asked.
+>   - `PostResult` lists the posted vouchers and the refused ones with the reason (out of balance, or the unknown account).
+>   - `SetPostFault(n)` / `PostFault`: the `/failpost` fault, thrown after the nth line written in `PostAll` or `PostVoucher`.
+>   - Mode `"2"` counts as posted everywhere (`IsPostedMode`), so Voucher Entry no longer opens a posted adjustment.
+> - **`gl/port/VoucherPosting.h/.cpp`** (one file, not three: the dialogs share a list base class): Post (1061), Recover (1015), Cancel (1043). Each refills its grid from a fresh `gl_btch` after every action, which also covers the re-read after a rollback. The 1061 caption is set in `OnInitDialog` (D3).
+> - **Corrections:** spec D12.
+> - **Wiring:** 10121 (`ID_GLPOSTBATCH`, also the toolbar's `ID_GLPOST` and GLSUB), 10122, 3054. `/checkres` creates the three dialogs and checks their grids; `/stress` opens each 25 times.
+> - **Tests:** `gl_tests/test_posting.cpp` has 10 cases. `gl_tests` has 32 cases and 513 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** all of `gl_postb.cpp` (`Ok`, `PostGLSlip`, `PostAdjustment`, `UpdateGL`, the single-voucher pick), `gl_postr.cpp`, `gl_btcan.cpp` and `gl_delrq.cpp`. Settle spec §12 Q1 (Recover and `curr_bal`; what remains in `gl_btch`) and spec risk R3 (the debit/credit comparison).
@@ -228,6 +287,18 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 
 **Goal:** spec §8 #9–#10.
 
+> **As built (2026-11-09).**
+> - **Read findings (task 1),** recorded in spec §2.6:
+>   - Budget Data is `TGLBudget` in `gl_accts.cpp`, the Chart of Accounts on 1017 with a grid. `gl_budgt.cpp` and `gl_budgi.cpp` aren't built; 10073 is a Spec #3 report.
+>   - Its field-number reads (33–44, 8–19, 21–32) are `budget`, `period` and `previous` 1–12 in the real layout.
+>   - Transaction Inquiry's Search is 2000 (`gl_accts.h`'s `ID_SEARCH`).
+> - **Portable code:** `AccountTransactions` (`Vouchers.h`); `ReadBudget`, `SaveBudget` and `ParseAmount` (`Accounts.h`). `gl_tests/test_inquiry.cpp` has 4 cases.
+> - **`gl/port/TransactionInquiry.h/.cpp`:** dialog 1029 with the account list.
+> - **Budget Data** is a third mode of `ChartOfAccounts.cpp` (`RunBudgetData`), not a `BudgetData.cpp`: it inherits every button but OK. The budget column is edited in the grid (D8). The caption is string 8097, as the original set it.
+> - **Corrections:** spec D13.
+> - **Wiring:** 10072 (`ID_GLTRANSINQ`), 10074 (`ID_ACCTBUDGET`). `prune_rc.py` adds 1029 and 1017. `/checkres` creates both and checks their grids. `/stress` opens Transaction Inquiry 25 times, and the Chart of Accounts' 100 now include Budget Data.
+> - **Tests:** `gl_tests` has 36 cases and 565 assertions, all passing on Linux under ASan/UBSan.
+
 ### Tasks
 
 1. **Read** `gl_trans.cpp` and `gl_budgt.cpp`, plus `gl_budgi.cpp` to rule it in or out: it may be the budget inquiry report, 10073, which belongs to Spec #3.
@@ -246,6 +317,20 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 ## Milestone 6 — Year End, Backup and Restore, Reindex
 
 **Goal:** spec §8 #11–#12, plus D6.
+
+> **As built (2026-11-09).**
+> - **Read findings:**
+>   - **Backup and Restore** (`gl.cpp`) asked strings 1073 and 1074 and ran `savegl.pif` / `restore.pif`. String 1074 is the menu's help line, not a question, so Restore asks its own question (spec D5).
+>   - **Reindex** opened dialog 1065 (`gl_index.cpp`), which rebuilt each `.mdx`.
+>   - **Year end** is as spec §2.7 says. The Retained Earnings account's own balance goes through the total. `openbal` is untouched, which leaves an open question (spec §12 Q6).
+> - **`Vouchers.cpp` `YearEnd`:** D2, in one transaction. It refuses, changing nothing, unless exactly one account has type `R`, and returns the type-R accounts it found.
+> - **`cb4sqlite`:** `Code4::checkDatabase`, a read-only check (spec §5.3). `Code4::open` would have written the meta tables into the file being checked.
+> - **`gl/port/CompanyFiles.h/.cpp`** (portable): `BackupFileName`, `CheckRestoreFile` and `RestoreDatabase`. The restore checks the file, closes, renames the current file to `.bak`, copies the chosen file and reopens; any failure after the close puts the `.bak` back and reopens.
+> - **`gl/port/Backup.h/.cpp`:** the Save As and Open dialogs, the messages, and Reindex's message (D6).
+> - **`gl/port/YearEnd.h/.cpp`:** asks string 8111. On refusal it names the type-R accounts and points to the Chart of Accounts.
+> - **Wiring:** 1068, 1072, 1074 (which refreshes the module bar afterwards) and 3047.
+> - **Tests:** `gl_tests/test_yearend.cpp` has 5 cases: two, zero and one `R` accounts; the books still balancing; the periods rolling over; a backup then restore; and refusing a text file, an SQLite file without the company tables, a damaged copy and the open file itself, with the company left open. `gl_tests` has 41 cases and 630 assertions, and `cb4sqlite_tests` 69 cases and 1,374 assertions, all passing on Linux under ASan/UBSan.
+> - **Tooling:** `build_tests.sh --run` puts the tests' temporary databases in `x64/linux-asan/tmp`, not `/tmp`. On this machine the root disk stalled an `fsync` in `/tmp` for over ten minutes.
 
 ### Tasks
 
@@ -279,6 +364,10 @@ S is less than a day, M is 1–3 days, L is 3–5 days, for one engineer.
 ## Milestone 7 — Acceptance walkthrough and sign-off
 
 **Goal:** all 14 spec §8 criteria signed off.
+
+> **Status (2026-11-09).** Task 2 is done: `gl/docs/superpowers/specs/2026-11-08-spec2-acceptance.md`, with every check worked out against the fixture (the expected rows, balances and messages), run in order on one copy of `dev.db`. Tasks 1, 3 and 4 need Windows and a witness.
+>
+> Writing it found that the Spec #1 sheet's three `sqlite3` checks used a column `accounts`, which doesn't exist (the table's column is `ACCOUNT`; `accounts` is the tag), so they would fail with "no such column". They are corrected to `account`.
 
 ### Tasks
 
