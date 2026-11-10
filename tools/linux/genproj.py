@@ -5,9 +5,9 @@ Usage: genproj.py <repo-root> [project ...] [gl.sln]
 
 With no project names it writes every .vcxproj and gl.sln. With names it
 writes only those projects' .vcxproj files, and gl.sln only if "gl.sln" is
-one of the names, so a project changed
-by hand in Visual Studio (cb4sqlite.vcxproj is currently retargeted to
-PlatformToolset v145) is left alone. gl's file list is every .h and .cpp in
+one of the names, so a project changed by hand in Visual Studio is left
+alone. Every project uses PlatformToolset v145 (VS 18), as the script
+writes. gl's file list is every .h and .cpp in
 gl/port/ and gl/port/stubs/, so adding a file there needs only a rerun:
 
     python3 tools/linux/genproj.py . gl
@@ -148,7 +148,7 @@ def vcxproj(p):
         cfg.append(f"""  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='{c}|x64'" Label="Configuration">
     <ConfigurationType>{p['type']}</ConfigurationType>
     <UseDebugLibraries>{'true' if c == 'Debug' else 'false'}</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>{wpo}
   </PropertyGroup>""")
     out = [f"""<?xml version="1.0" encoding="utf-8"?>

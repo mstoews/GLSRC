@@ -29,7 +29,8 @@ python3 tools/linux/genproj.py .               # every project and gl.sln
 - **gl:** the file list is every `.h` and `.cpp` in `gl/port/` and `gl/port/stubs/`.
 - **Other projects:** their file lists are written out in the script, so a new file there means editing the list.
 - **Hand-written projects:** `gl_tests` and `report_tests` compile sources from other directories, so the script only lists them in `gl.sln`. Edit their `.vcxproj` files directly.
-- **Naming projects:** when you give project names, only those `.vcxproj` files are written. That matters because `cb4sqlite.vcxproj` was retargeted to PlatformToolset v145 in Visual Studio, while the script writes v143, so a bare run would change it. Check `git diff` after running it.
+- **Naming projects:** when you give project names, only those `.vcxproj` files are written, so a project edited by hand in Visual Studio is left alone. Check `git diff` after running it.
+- **Toolset:** every project uses PlatformToolset v145 (Visual Studio 18), and the script writes v145.
 
 ## Sanitizer builds of the tests
 
