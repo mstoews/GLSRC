@@ -68,6 +68,14 @@ std::string LayoutDescription(const std::vector<LayoutLine>& lines);
 // A formula's terms: (+1 or -1, line number). nullopt if it doesn't parse.
 std::optional<std::vector<std::pair<int, int>>> ParseFormula(const std::string& formula);
 
+// The Statement Layout screen's ranges text (spec #3 6.4, S3-M4):
+// "410000-419999; 420000-429999", a single account "999000" for from = to.
+// Separators are ';' or ','; spaces are ignored. "" gives no ranges.
+// nullopt if a part isn't "a" or "a-b" (CheckLayout then checks the digits).
+std::optional<std::vector<AccountRange>> ParseRanges(const std::string& text);
+// The reverse: "410000-419999; 999000".
+std::string FormatRanges(const std::vector<AccountRange>& ranges);
+
 // True if the account (trimmed) lies in one of the ranges.
 bool AccountInRanges(const std::string& account, const std::vector<AccountRange>& ranges);
 

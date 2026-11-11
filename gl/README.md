@@ -184,7 +184,12 @@ Spec #3 replaced the Crystal Reports runtime with the port's own report engine. 
 
 A report with options asks for them first and keeps them until the program exits. The reports read the books and change nothing.
 
-**The financial statements' lines** come from a statement layout kept in the company database (`gl_fsline`, `gl_fsrange`), created with a default grouping by account number the first time a statement runs. Accounts on no line print as "Unclassified accounts", and the statements say which. The Statement Layout screen for editing it comes in S3-M4. (The menu's "Statement of retained earnings" is now "Cash flow statement"; "Manufacturing statement" is gone.)
+**The financial statements' lines** come from a statement layout kept in the company database (`gl_fsline`, `gl_fsrange`), created with a default grouping by account number the first time a statement runs. Accounts on no line print as "Unclassified accounts", and the statements say which. **Accounts > Statement Layout** edits it, one statement at a time.
+- **Editing lines:** pick a line in the grid and change its fields (kind, caption, sign, indent, a total's formula, an account line's ranges such as `410000-419999; 420000-429999`), then Apply. Add, Insert before and Delete change the lines themselves.
+- **Checking and trying it out:** Check lists errors and warnings (an account on no line, or on two). Preview runs the statement from your changes before you save.
+- **Saving:** Save refuses errors and asks about warnings. Reset to default puts the default layout back.
+
+Line numbers are what totals refer to, so they are never renumbered. Statement Layout is greyed for users who can't open the Chart of Accounts. (The menu's "Statement of retained earnings" is now "Cash flow statement"; "Manufacturing statement" is gone.)
 
 ### The preview
 

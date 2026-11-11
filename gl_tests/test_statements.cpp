@@ -455,3 +455,57 @@ TEST_CASE("F5 at an earlier period, and an unreconciled difference", "[statement
     CHECK(row(r, "Unreconciled difference") == nullptr);
     CHECK(amount(r, "Cash at end of period", 2) == 25000);   // 101000 only
 }
+
+TEST_CASE("ParseRanges and FormatRanges (the layout screen's ranges text)", "[layout]")
+{
+    const auto two = ParseRanges("410000-419999; 420000-429999");
+    REQUIRE(two);
+    REQUIRE(two->size() == 2);
+    CHECK((*two)[0].from == "410000");
+    CHECK((*two)[0].to == "419999");
+    CHECK((*two)[1].from == "420000");
+    CHECK(FormatRanges(*two) == "410000-419999; 420000-429999");
+
+    const auto one = ParseRanges(" 999000 , 151000 - 159999 ");
+    REQUIRE(one);
+    REQUIRE(one->size() == 2);
+    CHECK((*one)[0].from == "999000");
+    CHECK((*one)[0].to == "999000");
+    CHECK((*one)[1].to == "159999");
+    CHECK(FormatRanges(*one) == "999000; 151000-159999");
+
+    CHECK(ParseRanges("")->empty());
+    CHECK(ParseRanges(" ; ")->empty());
+    CHECK_FALSE(ParseRanges("410000-"));
+    CHECK_FALSE(ParseRanges("-419999"));
+    CHECK_FALSE(ParseRanges("1-2-3"));
+    // Digits are CheckLayout's business, not the parser's.
+    CHECK(ParseRanges("41000x-419999"));
+}
+
+TEST_CASE("A statement from a layout that isn't saved (the screen's Preview)", "[layout][statements]")
+{
+    FixtureDb db;
+    const ReportContext ctx = LoadReportContext(db.code, "20261111");
+    EnsureLayoutTables(db.code);
+    StatementOptions opt;
+    opt.layout = LoadLayout(db.code, kBalanceSheet);
+    // Move 999000 Suspense from Unclassified onto line 90 "Other assets", in the
+    // copy only: the Spec #3 sheet's #8 does the same in the screen.
+    for (LayoutLine& l : *opt.layout)
+        if (l.lineNo == 90) l.ranges.push_back({"999000", "999000"});
+    const rpt::Report preview = BalanceSheet(db.code, ctx, opt);
+    CHECK(preview.footerNote == "Balance Sheet - Layout: not saved (preview)");
+    CHECK(amount(preview, "Other assets", 1) == 10000);   // 999000's 100.00 debit
+    CHECK(amount(preview, "Total assets", 1) == 7496000);
+    CHECK(amount(preview, "Total liabilities and equity", 1) == 7496000);   // still balances
+    CHECK(std::none_of(preview.rows.begin(), preview.rows.end(), [](const rpt::Row& r) {
+        return !r.cells.empty() && r.cells[0].text == "Unclassified accounts";
+    }));
+    // The saved layout is unchanged.
+    const rpt::Report saved = BalanceSheet(db.code, ctx, {});
+    CHECK(saved.footerNote == "Balance Sheet - Layout: default");
+    CHECK(std::any_of(saved.rows.begin(), saved.rows.end(), [](const rpt::Row& r) {
+        return !r.cells.empty() && r.cells[0].text == "Unclassified accounts";
+    }));
+}

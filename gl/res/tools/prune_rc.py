@@ -57,6 +57,8 @@ MENU_EDITS = [
     # Print and the toolbar keep 3068, which prints the active preview first.
     ('MANILA', 'set_id', '3068', 'CM_REPORT_LIST', '"&Custom Report..."'),
     ('GLSUB', 'set_id', '3068', 'CM_REPORT_LIST', '"&Custom Report..."'),
+    # Spec #3 6.4 (S3-M4): Accounts > Statement Layout, after the Chart of Accounts Report.
+    ('MANILA', 'insert_after', '10071', '"Statement &Layout...", CM_STATEMENT_LAYOUT'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)

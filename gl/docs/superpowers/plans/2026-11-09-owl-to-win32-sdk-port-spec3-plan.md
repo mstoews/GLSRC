@@ -155,6 +155,32 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 
 ## Milestone 4 — The Statement Layout screen
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).** Built after Spec #4, once the finance team had accepted the statements as they are (spec §14 Q3, Q7).
+> - **Dialog** (task 1): `IDD_STMT_LAYOUT` in `port.rc` (420 × 270 units).
+>   - Controls: a statement combo; a `tbSpread` grid (No., Kind, Caption indented, Sign, Formula, Ranges); a " Line " box with No., Kind, Sign, Indent, Caption, Formula and Ranges.
+>   - Buttons: Add, Insert before, Delete, Apply; then Check, Preview, Reset to default, Save, Close.
+>   - The IDs are in `PortIds.h` (`IDC_SL_*` 20140–20156).
+> - **`gl/port/reports/StatementLayoutDialog.{h,cpp}`** (task 2):
+>   - **Editing** works on a copy, in line order. Kind sets which fields are enabled (Sign and Ranges for A/O/E, Formula for T). Apply, and Enter, replace the selected line; Add appends; Insert before goes before the selected line.
+>   - **A blank No.** gets 10 past the last line, or halfway to the previous one; if there is no gap, it asks for a number. Nothing renumbers.
+>   - **Check** lists errors, then warnings.
+>   - **Preview** builds the statement from the copy (new `StatementOptions::layout`; footer "Layout: not saved (preview)") in `ShowPreviewWindow`.
+>   - **Reset to default** asks, then `ResetLayout`.
+>   - **Save** refuses errors, asks on warnings, then `SaveLayout` with a "yyyy-mm-dd hh:mm" stamp.
+>   - **Close** and changing the statement ask about unsaved changes (Yes saves, No discards, Cancel stays). The caption shows "(not saved)".
+> - **`StatementLayout.h`** gains `ParseRanges` / `FormatRanges`.
+> - **Menu** (task 3): Accounts > Statement Layout... (`CM_STATEMENT_LAYOUT` 20502), after the Chart of Accounts Report, through a `prune_rc.py` `insert_after` edit.
+>   - **Access:** `WM_INITMENUPOPUP` gives it the Chart of Accounts item's state (spec §6.4).
+>   - **The fixture** was regenerated: ACCESSM gains it as row 9 (106 rows), and ACCESSL's codes grow by one.
+> - **`/stress`** has a "layout" step (`StressStatementLayout`); **`/checkres`** loads `IDD_STMT_LAYOUT` (task 4).
+> - **Tests:** `ParseRanges` / `FormatRanges`, and a Balance Sheet from an unsaved layout (999000 moved off Unclassified in the copy; the saved layout untouched). `gl_tests`: 114 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Driven in the app:
+>   - **The lines:** IS 23, BS 26. Line 90 gets 999000 and is applied ("(not saved)"); Check: no problems.
+>   - **Preview** opens over the screen. **Save** writes 999000 with a time stamp.
+>   - **A total referring to line 70** is refused with the reason.
+>   - **Insert before line 20 with a blank No.** gives line 15.
+>   - **Close** asks; No discards. **Reset** restores the default, with a blank stamp.
+
 ### Tasks
 
 1. **Dialog** in `port.rc` (spec §6.4): statement picker, grid, the line's fields, Add / Insert before / Delete / Apply, Check, Preview, Reset to default, Save, Close.
