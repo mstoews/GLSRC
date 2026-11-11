@@ -12,12 +12,14 @@
 
 #include "Accounts.h"       // TrimText
 #include "MasterTables.h"   // SeekCode
+#include "Vouchers.h"
 
 #include "report/Format.h"  // rpt::ToCents
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 
 namespace {
 
@@ -223,9 +225,11 @@ bool SaveAssetType(cb4sqlite::Code4& code, const AssetType& t)
     return added;
 }
 
-bool SaveAsset(cb4sqlite::Code4& code, const Asset& a)
+namespace {
+
+// SaveAsset without a transaction of its own, for the run's.
+bool writeAsset(cb4sqlite::Code4& code, const Asset& a)
 {
-    cb4sqlite::Transaction tx(code);
     Data4 d(&code, "gl_fa");
     d.SetIndex("facode");
     Field4 facode(d, "facode"), fatype(d, "fatype"), descript(d, "descript"), reference(d, "reference"),
@@ -254,6 +258,15 @@ bool SaveAsset(cb4sqlite::Code4& code, const Asset& a)
     mode.assign(a.mode.c_str());
     if (added) d.append(); else d.flush();
     d.close();
+    return added;
+}
+
+} // namespace
+
+bool SaveAsset(cb4sqlite::Code4& code, const Asset& a)
+{
+    cb4sqlite::Transaction tx(code);
+    const bool added = writeAsset(code, a);
     tx.commit();
     return added;
 }
@@ -382,4 +395,175 @@ std::int64_t StartOfYearBookValue(cb4sqlite::Code4& code, const Asset& a, const 
     for (const DepreciationRow& r : LoadDepreciation(code, a.code))
         if (r.yearEnd == yearEnd) thisYear += r.amount;
     return a.cost - (a.accumulated - thisYear);
+}
+
+// ---- the run --------------------------------------------------------------
+
+namespace {
+
+std::string periodEnd(cb4sqlite::Code4& code, int period)
+{
+    if (!hasTable(code, "gl_pds")) return {};
+    cb4sqlite::Query q(code, "SELECT periode FROM gl_pds WHERE period = ?1 ORDER BY _rowid LIMIT 1");
+    q.bindInt(1, period);
+    return q.next() ? q.text(0) : std::string();
+}
+
+bool voucherExists(cb4sqlite::Code4& code, long batchno)
+{
+    cb4sqlite::Query q(code, "SELECT count(*) FROM gl_btch WHERE _deleted = 0 AND batchno = ?1");
+    q.bindInt(1, batchno);
+    return q.next() && q.integer(0) > 0;
+}
+
+double toDouble(std::int64_t cents) { return static_cast<double>(cents) / 100.0; }
+
+} // namespace
+
+RunPlan PlanRun(cb4sqlite::Code4& code, int period)
+{
+    RunPlan plan;
+    plan.period = period;
+    plan.periodEnd = periodEnd(code, period);
+    plan.yearEnd = FiscalYearEnd(code);
+
+    // D5: this period of this year already has a run whose voucher still
+    // exists, or one booked without a voucher. Rows whose voucher has gone
+    // without UndoRun are ignored.
+    {
+        cb4sqlite::Query q(code, "SELECT DISTINCT batchno FROM gl_fadep WHERE _deleted = 0 AND year_end = ?1 "
+                                 "AND period = ?2 ORDER BY batchno");
+        q.bindText(1, plan.yearEnd);
+        q.bindInt(2, period);
+        std::vector<long> runs;
+        while (q.next()) runs.push_back(static_cast<long>(q.integer(0)));
+        for (long b : runs)
+            if (b == 0 || voucherExists(code, b)) {
+                plan.alreadyRun = true;
+                plan.existingVoucher = b;
+                break;
+            }
+    }
+
+    for (const Asset& a : LoadAssets(code)) {
+        if (a.disposed()) {
+            plan.skipped.push_back({a, SkipReason::Disposed});
+            continue;
+        }
+        const std::optional<AssetType> type = FindAssetType(code, a.type);
+        if (!type) {
+            plan.skipped.push_back({a, SkipReason::NoType});
+            continue;
+        }
+        if (!ValidateAccount(code, type->expense.account, type->expense.dept) ||
+            !ValidateAccount(code, type->accum.account, type->accum.dept)) {
+            plan.skipped.push_back({a, SkipReason::BadAccount});
+            continue;
+        }
+        if (!plan.periodEnd.empty() && !a.datePurchased.empty() && a.datePurchased > plan.periodEnd) {
+            plan.skipped.push_back({a, SkipReason::NotYetBought});
+            continue;
+        }
+        const std::int64_t start = StartOfYearBookValue(code, a, plan.yearEnd);
+        const std::int64_t due = DueAmount(a, start);
+        if (due <= 0) {
+            plan.skipped.push_back({a, SkipReason::FullyDepreciated});
+            continue;
+        }
+        plan.due.push_back({a, *type, due, MonthlyAmount(a, start)});
+        plan.total += due;
+    }
+    return plan;
+}
+
+RunResult RunDepreciation(cb4sqlite::Code4& code, int period, long iniBatchno)
+{
+    RunResult result;
+    const RunPlan plan = PlanRun(code, period);
+    if (plan.alreadyRun) {
+        result.status = RunStatus::AlreadyRun;
+        result.batchno = plan.existingVoucher;
+        return result;
+    }
+    if (plan.periodEnd.empty()) {
+        result.status = RunStatus::NoPeriodEnd;
+        return result;
+    }
+    if (plan.due.empty()) return result;   // NothingDue
+
+    cb4sqlite::Transaction tx(code);
+    VoucherHeaders h(code);
+    VoucherLines l(code);
+    if (!h.isValid() || !l.isValid()) throw std::runtime_error("gl: a voucher table is missing");
+    VoucherHeader header;
+    header.mode = voucher_mode::kOpen;
+    header.description = "Monthly Depreciation Voucher";   // string 8118
+    header.date = plan.periodEnd;                           // D10
+    header.period = period;
+    long number = 0;
+    int line = 0;
+    for (const RunItem& item : plan.due) {
+        VoucherLine v;
+        v.period = period;
+        v.date = plan.periodEnd;
+        v.reference = TrimText(item.asset.code);
+        v.line = ++line;   // Dr the expense
+        v.account = item.type.expense.account;
+        v.dept = item.type.expense.dept;
+        v.descript = item.type.expense.descript;
+        v.debit = toDouble(item.amount);
+        v.credit = 0;
+        number = SaveLine(h, l, number, header, v, iniBatchno);
+        v.line = ++line;   // Cr the accumulated depreciation
+        v.account = item.type.accum.account;
+        v.dept = item.type.accum.dept;
+        v.descript = item.type.accum.descript;
+        v.debit = 0;
+        v.credit = toDouble(item.amount);
+        number = SaveLine(h, l, number, header, v, iniBatchno);
+
+        Asset a = item.asset;
+        a.accumulated += item.amount;
+        a.monthsUsed += 1;
+        a.monthly = item.monthly;
+        writeAsset(code, a);
+        AppendDepreciation(code, {a.code, plan.yearEnd, period, number, item.amount});
+    }
+    h.close();
+    l.close();
+    tx.commit();
+    result.status = RunStatus::Created;
+    result.batchno = number;
+    result.assets = static_cast<int>(plan.due.size());
+    result.total = plan.total;
+    return result;
+}
+
+int UndoRun(cb4sqlite::Code4& code, long batchno)
+{
+    if (!hasTable(code, "gl_fadep")) return 0;
+    std::vector<DepreciationRow> rows;
+    {
+        cb4sqlite::Query q(code, "SELECT facode, year_end, period, batchno, amount FROM gl_fadep "
+                                 "WHERE _deleted = 0 AND batchno = ?1 ORDER BY _rowid");
+        q.bindInt(1, batchno);
+        while (q.next())
+            rows.push_back({q.text(0), q.text(1), static_cast<int>(q.integer(2)), static_cast<long>(q.integer(3)),
+                            rpt::ToCents(q.number(4))});
+    }
+    if (rows.empty()) return 0;
+    for (const DepreciationRow& r : rows) {
+        std::optional<Asset> a = FindAsset(code, r.facode);
+        if (!a) continue;
+        a->accumulated = std::max<std::int64_t>(0, a->accumulated - r.amount);
+        a->monthsUsed = std::max(0, a->monthsUsed - 1);
+        writeAsset(code, *a);
+    }
+    Data4 d(&code, "gl_fadep");
+    Field4 b(d, "batchno");
+    for (d.top(); !d.eof(); d.skip())
+        if (!d.deleted() && static_cast<long>(b.num()) == batchno) d.deleteRec();
+    d.pack();
+    d.close();
+    return static_cast<int>(rows.size());
 }

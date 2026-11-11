@@ -149,7 +149,16 @@ The dialog shows the current period (Spec #2's lowest open period) and, once the
 4. Sets the header's totals (`UpdateTotals`).
 5. For each asset: adds the amount to `ACCUM_DEP` and 1 to months used, and appends a `gl_fadep` row (§5.3).
 
-Nothing due: a message, and no voucher. An asset whose type is missing is listed in a message before OK and skipped (8120).
+Nothing due: a message, and no voucher. Before OK, the dialog lists the assets it will skip, with the reason; they get no lines:
+- disposed;
+- fully depreciated;
+- bought after the period's end (D8);
+- whose type is missing (8120);
+- whose type's expense or accumulated-depreciation account isn't in the chart. Posting would refuse the whole voucher.
+
+*(As built, S4-M3: the last two reasons were added. The fixture's E005, of type XX, is skipped for its account.)*
+
+**The fiscal year** is identified by period 12's end date in `gl_pds`. Year end doesn't change the period dates; the user sets the new year's dates in Company Profile > Periods (1028), as in the original. Until they do, `gl_fadep` rows of the new year share the old year's end date: D5's guard would then see last year's run for the same period, and the declining method's start-of-year value would be last year's (R5).
 
 The voucher is then posted like any other (Transactions > Post Voucher). Posting checks that the accounts exist (Spec #2), so a type pointing at a deleted account is refused there.
 
@@ -335,6 +344,7 @@ On a fresh copy of the fixture, as `ADMIN`:
 | R2 | Medium | The finance team expects other conventions: methods, first-month rule, disposal entry. | Q2, Q3, Q5, Q6 settled before the plan's run milestone. All are in `Assets.cpp`, in one place each. |
 | R3 | Medium | Cancel Voucher (Spec #2 code) gains a fixed-asset side effect. | The undo is in `Assets.cpp`, called in Cancel's transaction; tests cover cancelling an ordinary voucher too. |
 | R4 | Low | The dialogs' reused field IDs (Disposal) need code-side relabelling. | Done in `OnInitDialog`; `/checkres` loads all four templates. |
+| R5 | Medium | The new year's period dates aren't set after year end, so the run sees last year's history (§4.2). | The run's "already run" message names the voucher; the acceptance sheet and README say to set the dates first. A check in the run, for a period whose end date is before the last run's, could follow (S4-M5). |
 
 ---
 

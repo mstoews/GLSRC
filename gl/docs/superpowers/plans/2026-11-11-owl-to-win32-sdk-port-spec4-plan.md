@@ -184,6 +184,34 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 3 — Create Voucher (4003) and the Cancel hook
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.3 holds. Spec #2's `SaveLine` creates a voucher numbered `NextVoucherNumber` when asked for one that doesn't exist, and doesn't open a transaction itself, so the run uses it. **cb4sqlite transactions don't nest**, so `SaveAsset` is now `writeAsset` (no transaction) wrapped in one, and the run calls `writeAsset`.
+> - **`Assets.h`** (task 2):
+>   - **`PlanRun`** lists the assets due (amount, and the monthly amount for `CURR_DEP`) and those skipped, with the reason: disposed; fully depreciated; type missing; **type's expense or accumulated account not in the chart**; or **bought after the period's end** (D8). The last two are new, and the design is updated.
+>   - **`alreadyRun`** is set when the period has a `gl_fadep` row whose voucher exists, or one with `BATCHNO` 0 (the fixture's period 6).
+>   - **`RunDepreciation`** works in one transaction: one open voucher ("Monthly Depreciation Voucher", the period's end date, lines Dr expense / Cr accumulated per asset, numbered 1, 2, …, the asset code as the reference), then each asset's `ACCUM_DEP`, `LIFELEFT` and `CURR_DEP`, and a `gl_fadep` row each.
+>   - **`UndoRun`** puts the assets back and deletes and packs the rows. It returns 0 without `gl_fadep`.
+> - **The Cancel hook** (task 3): `CancelVoucher` calls `UndoRun(code, number)` inside its transaction. One line in `Vouchers.cpp`; `Vouchers.h`'s comment says so.
+> - **`gl/port/DepreciationRun.{h,cpp}`** on 4003 (task 4):
+>   - **Fields:** the current period (the lowest open one), read-only, and in 4095 what OK will do ("2 assets due: 600.00. 2 skipped.", or "Period 7 has been run: voucher 104.").
+>   - **OK** asks (8110), listing the assets and the skips, then runs and reports the voucher. After a refusal, it names the voucher to cancel. The caption is spelled right.
+> - **Wire** (task 5): 6003 (`ID_FASLIP`); `/checkres` loads 4003; `/stress` opens it too.
+> - **Tests** (task 6), 5 cases:
+>   - the plan for period 7 (E001 500.00, E002 100.00, E004 disposed, E005 bad account; an E008 of a missing type; an E009 bought after the period);
+>   - the run (voucher 104, dated 2026-10-31, 4 lines, 600.00 each way; E001 7,000.00 and 14 months; E002 200.00 and 2; the history row), and a second run refused;
+>   - cancelling an ordinary voucher (101: the assets untouched), then the run's voucher (undone), then running again;
+>   - posting (161000 7,200.00 Cr, 761000 1,200.00 Dr, matching the register; a posted voucher can't be cancelled);
+>   - period 13 without an end date; a year end plus the new year's dates, then E002's first run at 96.00; nothing due.
+>
+>   `gl_tests`: 107 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Driven in the app:
+>   - Create Voucher shows "2 assets due: 600.00. 2 skipped.", asks with the list, creates voucher 104 and closes.
+>   - Opened again: "Period 7 has been run: voucher 104.", and OK says to cancel it first.
+>   - Cancel Voucher lists 4 vouchers; End, Enter, Yes cancels 104.
+>   - Create Voucher again: due again, created as 104.
+>   - The database then holds E001 7,000.00 / 14, E002 200.00 / 2, one history row per asset per period, and voucher 104 open, 600.00 each way.
+> - **Q2, Q5, Q6** are still the spec's assumptions: declining balance, the period-end date, depreciation from the first run after purchase. **Found:** the run depends on the new year's period dates being set after year end (design §4.2, R5).
+
 **Goal:** a month's depreciation becomes one open voucher, which can be posted or undone.
 
 ### Tasks

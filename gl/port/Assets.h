@@ -147,3 +147,70 @@ void AppendDepreciation(cb4sqlite::Code4& code, const DepreciationRow& row);
 // method (D3). An asset bought this year (nothing accumulated before) gives
 // its cost.
 std::int64_t StartOfYearBookValue(cb4sqlite::Code4& code, const Asset& a, const std::string& yearEnd);
+
+// ---- the run: Create Voucher (spec #4 4.2, 4.3; plan S4-M3) ------------------
+
+struct RunItem {
+    Asset asset;
+    AssetType type;
+    std::int64_t amount = 0;    // this month's depreciation
+    std::int64_t monthly = 0;   // the monthly amount, written to CURR_DEP
+};
+
+enum class SkipReason {
+    Disposed,
+    FullyDepreciated,   // nothing left above the salvage value
+    NoType,             // the type isn't in gl_fatyp (string 8120)
+    BadAccount,         // the type's expense or accumulated-depreciation account isn't in the chart:
+                        // posting would refuse the whole voucher
+    NotYetBought,       // purchased after the period's end (D8)
+};
+
+struct RunSkip {
+    Asset asset;
+    SkipReason reason = SkipReason::Disposed;
+};
+
+// What a run for `period` would do, changing nothing: the dialog shows it
+// before OK. `alreadyRun` is set when the period of this fiscal year already
+// has a run (D5): a gl_fadep row whose voucher still exists, or one booked
+// without a voucher (batchno 0); `existingVoucher` is then its voucher.
+struct RunPlan {
+    int period = 0;
+    std::string periodEnd;   // yyyymmdd: gl_pds.periode, the voucher's date (D10); "" if unset
+    std::string yearEnd;     // FiscalYearEnd
+    std::vector<RunItem> due;
+    std::vector<RunSkip> skipped;
+    std::int64_t total = 0;
+    bool alreadyRun = false;
+    long existingVoucher = 0;
+};
+RunPlan PlanRun(cb4sqlite::Code4& code, int period);
+
+enum class RunStatus {
+    Created,      // the voucher was written
+    NothingDue,   // no asset is due: no voucher
+    AlreadyRun,   // D5: the period has a run (RunResult::batchno is its voucher)
+    NoPeriodEnd,  // the period has no end date in gl_pds
+};
+struct RunResult {
+    RunStatus status = RunStatus::NothingDue;
+    long batchno = 0;
+    int assets = 0;
+    std::int64_t total = 0;
+};
+
+// TGLCreateDeprSlip::Ok, fixed (spec #4 4.2), in one transaction: one open
+// voucher (mode 1) numbered NextVoucherNumber(iniBatchno), "Monthly
+// Depreciation Voucher", dated the period's end, with two lines per asset
+// due (Dr the type's expense account, Cr its accumulated-depreciation
+// account, the asset code as the reference), numbered 1, 2, 3, ...; then
+// each asset's ACCUM_DEP, months used and CURR_DEP, and a gl_fadep row.
+RunResult RunDepreciation(cb4sqlite::Code4& code, int period, long iniBatchno);
+
+// Undoes a run (spec #4 4.3): for each gl_fadep row of voucher `batchno`, the
+// asset's accumulated depreciation goes down by the amount and its months
+// used by 1, and the row is deleted. No transaction of its own: Cancel
+// Voucher calls it inside its own. Returns the number of assets restored (0
+// for an ordinary voucher, or a company without gl_fadep).
+int UndoRun(cb4sqlite::Code4& code, long batchno);
