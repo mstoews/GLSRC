@@ -337,7 +337,7 @@ On a fresh copy of the fixture, as `ADMIN`:
 
 ---
 
-## 13. Milestones (plan to be written: `2026-11-11-owl-to-win32-sdk-port-spec4-plan.md`)
+## 13. Milestones (plan: `2026-11-11-owl-to-win32-sdk-port-spec4-plan.md`)
 
 | Milestone | Content | After |
 |---|---|---|
@@ -353,9 +353,9 @@ On a fresh copy of the fixture, as `ADMIN`:
 
 ## 14. Still open
 
-Questions for the finance team (and the user), with the spec's assumption until they answer:
+Questions for the finance team (and the user), with the spec's assumption until they answer. Q1 is settled.
 
-- **Q1 Is Fixed Assets wanted?** It was never used in production (§2.5). If the company keeps its register elsewhere, Spec #4 could shrink to the screens and reports as they were, or be dropped. *Assumed: wanted, with the cycle fixed (D1).*
+- **Q1 Is Fixed Assets wanted?** It was never used in production (§2.5). If the company keeps its register elsewhere, Spec #4 could shrink to the screens and reports as they were, or be dropped. **Settled (2026-11-11, the user): wanted, with the cycle fixed (D1).**
 - **Q2 Declining method:** true declining balance (D3), or the original's fixed rate on cost? *Assumed: D3.*
 - **Q3 Disposal entry:** should Disposal post the entry, and to which proceeds and gain/loss accounts? That would mean two new accounts per type or company-wide. *Assumed: no (D7).*
 - **Q4 The five records in the real `GL_FA`** (F001–F003, TEST, TEST1): delete them before go-live? *Assumed: yes, by the finance team, with Delete (§6.3), before the first run.*
