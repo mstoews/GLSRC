@@ -50,6 +50,7 @@
     <ClInclude Include="port\Company.h" />
     <ClInclude Include="port\CompanyFiles.h" />
     <ClInclude Include="port\CompanyProfile.h" />
+    <ClInclude Include="port\FixedAssetTypes.h" />
     <ClInclude Include="port\Globals.h" />
     <ClInclude Include="port\Ini.h" />
     <ClInclude Include="port\LegacyIds.h" />
@@ -95,6 +96,7 @@
     <ClCompile Include="port\Company.cpp" />
     <ClCompile Include="port\CompanyFiles.cpp" />
     <ClCompile Include="port\CompanyProfile.cpp" />
+    <ClCompile Include="port\FixedAssetTypes.cpp" />
     <ClCompile Include="port\Ini.cpp" />
     <ClCompile Include="port\Login.cpp" />
     <ClCompile Include="port\MainDialog.cpp" />

@@ -69,6 +69,8 @@ const DialogCase kDialogs[] = {
     {1017, L"Budget Data (TGLBudget)", true},
     // Spec #3 S3-M7.
     {1022, L"Report list (TGLCustomReport, D9)", true},
+    // Spec #4 S4-M1.
+    {4002, L"Asset Types (TGLTypes)", false},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

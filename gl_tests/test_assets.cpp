@@ -234,6 +234,24 @@ TEST_CASE("Saving types, assets and history", "[assets]")
     CHECK(rows[0].yearEnd == "20270331");
 }
 
+TEST_CASE("Deleting a type: refused while an asset uses it (D9)", "[assets]")
+{
+    FixtureDb db;
+    std::string usedBy;
+    CHECK(DeleteAssetType(db.code, "EQ", &usedBy) == DeleteTypeResult::InUse);
+    CHECK(usedBy == "E001");
+    CHECK(DeleteAssetType(db.code, "XX ", &usedBy) == DeleteTypeResult::InUse);
+    CHECK(usedBy == "E005");
+    CHECK(DeleteAssetType(db.code, "ZZ") == DeleteTypeResult::NotFound);
+
+    AssetType fu{"FU", "Furniture", {"151000", "", ""}, {"761000", "", ""}, {"161000", "", ""}};
+    SaveAssetType(db.code, fu);
+    CHECK(DeleteAssetType(db.code, "FU") == DeleteTypeResult::Deleted);
+    CHECK_FALSE(FindAssetType(db.code, "FU"));
+    CHECK(LoadAssetTypes(db.code).size() == 2);
+    CHECK(FindAssetType(db.code, "EQ")->accum.account == "161000");   // the others are untouched
+}
+
 TEST_CASE("A company without the tables gets them; a blank ACCUM_DEP is filled", "[assets]")
 {
     EmptyDb db;

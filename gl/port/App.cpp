@@ -39,6 +39,7 @@
 #include "win32fx.h"
 
 #include "ChartOfAccounts.h"
+#include "FixedAssetTypes.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
@@ -138,19 +139,21 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
         const int posting = stressStep([] { return StressVoucherPosting(25); });
         const int inquiry = stressStep([] { return StressTransactionInquiry(25); });
         const int reports = stressStep([] { return StressReports(25); });
-        const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0 || reports < 0)
-                               ? -1
-                               : accounts + master + vouchers + posting + inquiry + reports;
+        const int assets = stressStep([] { return StressFixedAssets(25); });
+        const int growth =
+            (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0 || reports < 0 || assets < 0)
+                ? -1
+                : accounts + master + vouchers + posting + inquiry + reports + assets;
         cb.close();
         if (args.find(L"/quiet") == std::wstring::npos)
             MessageBoxW(nullptr,
                         fx::Format(L"Chart of Accounts opened and closed 100 times, and Department, Medical Rep, "
                                    L"Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel, Transaction "
-                                   L"Inquiry and the sample report's preview 25 times each.\n"
+                                   L"Inquiry, every report's preview and the Fixed Assets screens 25 times each.\n"
                                    L"GDI + USER objects: %+d.\n\n"
                                    L"Per step (-1: could not run): Chart of Accounts %+d, master data %+d, "
-                                   L"voucher entry %+d, posting %+d, inquiry %+d, reports %+d.",
-                                   growth, accounts, master, vouchers, posting, inquiry, reports).c_str(),
+                                   L"voucher entry %+d, posting %+d, inquiry %+d, reports %+d, fixed assets %+d.",
+                                   growth, accounts, master, vouchers, posting, inquiry, reports, assets).c_str(),
                         szApp, MB_OK | (growth == 0 ? MB_ICONINFORMATION : MB_ICONEXCLAMATION));
         return growth;
     }

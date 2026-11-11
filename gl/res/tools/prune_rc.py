@@ -33,7 +33,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '2057', '1158', '1159', '1160',
            '1006', '1007', '1023', '1040', '1013',
            '1061', '1015', '1043', '1029', '1017',
-           '1022']   # Spec #3 S3-M7: the report list (D9)
+           '1022',   # Spec #3 S3-M7: the report list (D9)
+           '4002']   # Spec #4 S4-M1: Asset Types
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made

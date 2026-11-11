@@ -5,6 +5,7 @@
 
 #include "Company.h"
 #include "ChartOfAccounts.h"
+#include "FixedAssetTypes.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
@@ -244,6 +245,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_PRODCODE:                      // TManilaGL::GLProductCode
         RunProductCodes(hwnd());
+        return true;
+    case ID_FATYPE:                        // TManilaGL::GLFixedTypes: Fixed Assets > Asset Types (spec #4)
+        RunAssetTypes(hwnd());
         return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)

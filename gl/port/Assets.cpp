@@ -258,6 +258,26 @@ bool SaveAsset(cb4sqlite::Code4& code, const Asset& a)
     return added;
 }
 
+DeleteTypeResult DeleteAssetType(cb4sqlite::Code4& code, const std::string& type, std::string* usedBy)
+{
+    const std::string want = TrimText(type);
+    {
+        cb4sqlite::Query q(code, "SELECT facode FROM gl_fa WHERE _deleted = 0 AND trim(fatype) = ?1 "
+                                 "ORDER BY facode, _rowid LIMIT 1");
+        q.bindText(1, want);
+        if (q.next()) {
+            if (usedBy) *usedBy = q.text(0);
+            return DeleteTypeResult::InUse;
+        }
+    }
+    Data4 d(&code, "gl_fatyp");
+    d.SetIndex("fatype");
+    Field4 fatype(d, "fatype");
+    const bool deleted = DeleteRecord(d, fatype, want);
+    d.close();
+    return deleted ? DeleteTypeResult::Deleted : DeleteTypeResult::NotFound;
+}
+
 bool ValidateAccount(cb4sqlite::Code4& code, const std::string& account, const std::string& dept)
 {
     const std::string acct = TrimText(account);
