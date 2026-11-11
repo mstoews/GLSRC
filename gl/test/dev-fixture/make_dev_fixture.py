@@ -43,9 +43,14 @@ dbf, mdx = mf.dbf, mf.mdx
 
 def manila_items():
     """[(popup, text, id)] for every command in MANILA, in menu order. A
-    nested popup's items carry the nested popup's name (as Reset did)."""
+    nested popup's items carry the nested popup's name (as Reset did).
+    An item's ID is a number, or one of the port's symbols from
+    gl/port/PortIds.h (Spec #3 S3-M7: Custom Report is CM_REPORT_LIST)."""
     with open(os.path.join(ROOT, "gl", "res", "gl.rc"), encoding="utf-16") as f:
         text = f.read()
+    with open(os.path.join(ROOT, "gl", "port", "PortIds.h"), encoding="utf-8") as f:
+        port_ids = {m.group(1): int(m.group(2))
+                    for m in re.finditer(r"^#define\s+(\w+)\s+(\d+)", f.read(), re.M)}
     start = text.index("\nMANILA MENU")
     lines = text[start:].splitlines()[2:]
     items, stack, depth = [], [], 0
@@ -64,9 +69,13 @@ def manila_items():
                 break
             stack.pop()
             continue
-        m = re.match(r'MENUITEM "(.*)", (\d+)', s)
+        m = re.match(r'MENUITEM "(.*)", (\w+)', s)
         if m:
-            items.append((stack[-1], m.group(1).replace("&", ""), int(m.group(2))))
+            ident = m.group(2)
+            if not ident.isdigit() and ident not in port_ids:
+                sys.exit(f"MANILA item {m.group(1)!r}: unknown ID {ident}")
+            items.append((stack[-1], m.group(1).replace("&", ""),
+                          int(ident) if ident.isdigit() else port_ids[ident]))
     return items
 
 
@@ -301,6 +310,58 @@ def vouchers(d):
     mdx(os.path.join(d, "GL_DISTB.MDX"), "GL_DISTB", dist_tags)
 
 
+def fixed_assets(d):
+    """Spec #4 9: GL_FA, GL_FATYP and the port's GL_FADEP.
+
+    Layouts and tags copy the real GL_FA and GL_FATYP (checked 2026-11-11);
+    GL_FADEP is the port's history table (spec #4 5.3). The register agrees
+    with the Spec #3 accounts: type EQ's assets cost 35,000.00 (151000) and
+    have 6,600.00 accumulated (161000), of which period 6's 600.00 (E001
+    500.00, E002 100.00) is in GL_FADEP with no voucher (batchno 0), as it has
+    none in GL_DIST either.
+    """
+    acct = lambda a, desc: (a, None, desc)
+    eq = ("EQ", "Office equipment", None, None) + acct("151000", "OFFICE EQUIPMENT")         + acct("761000", "DEPRECIATION EXPENSE") + acct("161000", "ACCUM. DEPRECIATION - OFFICE EQUIPMENT")
+    # XX names an account that isn't in the chart; the Types screen would refuse it.
+    xx = ("XX", "Bad accounts (test)", None, None) + acct("999999", "MISSING")         + acct("999999", "MISSING") + acct("999999", "MISSING")
+    dbf(os.path.join(d, "GL_FATYP.DBF"),
+        [("FATYPE", "C", 4, 0), ("FADESC", "C", 30, 0), ("FAYEARS", "N", 2, 0), ("FAPERCENT", "N", 2, 0),
+         ("ASSET_ACCT", "C", 7, 0), ("ASSET_DEPT", "C", 4, 0), ("ASSET_DESC", "C", 40, 0),
+         ("EXPEN_ACCT", "C", 7, 0), ("EXPEN_DEPT", "C", 4, 0), ("EXPEN_DESC", "C", 40, 0),
+         ("ACCUM_ACCT", "C", 7, 0), ("ACCUM_DEPT", "C", 4, 0), ("ACCUM_DESC", "C", 40, 0)],
+        [eq, xx], mdx=True)
+    mdx(os.path.join(d, "GL_FATYP.MDX"), "GL_FATYP", [("FATYPE", "fatype", "C", False, False, "")])
+
+    # (code, method, reference, description, date sold, date purchased, months used, life, rate,
+    #  cost, accumulated, monthly, salvage, type, mode)
+    dbf(os.path.join(d, "GL_FA.DBF"),
+        [("FACODE", "C", 10, 0), ("DEP_METH", "C", 10, 0), ("REFERENCE", "C", 40, 0), ("DESCRIPT", "C", 40, 0),
+         ("DATE_SOLD", "D", 8, 0), ("DATE_PUR", "D", 8, 0), ("LIFELEFT", "N", 16, 0), ("LIFETIME", "N", 16, 0),
+         ("PERCENT", "N", 2, 0), ("COST", "N", 16, 2), ("ACCUM_DEP", "N", 16, 2), ("CURR_DEP", "N", 16, 2),
+         ("SALVAGE", "N", 16, 2), ("FATYPE", "C", 4, 0), ("MODE", "C", 1, 0)],
+        [("E001", "Straight", "Head office", "Office furniture", None, "20250401", 13, 60, 0,
+          30000.0, 6500.0, 500.0, 0.0, "EQ", None),
+         ("E002", "Declining", "Sales team", "Laptops", None, "20260615", 1, 36, 24,
+          5000.0, 100.0, 100.0, 0.0, "EQ", None),
+         ("E004", "Straight", "Head office", "Old printer", "20260815", "20230401", 36, 36, 0,
+          1000.0, 1000.0, 27.78, 0.0, "EQ", "D"),
+         ("E005", "Straight", "Training room", "Projector", None, "20260501", 0, 24, 0,
+          2000.0, 0.0, 83.33, 0.0, "XX", None)], mdx=True)
+    mdx(os.path.join(d, "GL_FA.MDX"), "GL_FA", [
+        ("FACODE", "facode", "C", False, False, ""),
+        ("DEP_METH", "dep_meth", "C", False, False, ""),
+    ])
+
+    dbf(os.path.join(d, "GL_FADEP.DBF"),
+        [("FACODE", "C", 10, 0), ("YEAR_END", "D", 8, 0), ("PERIOD", "N", 2, 0), ("BATCHNO", "N", 6, 0),
+         ("AMOUNT", "N", 16, 2)],
+        [("E001", "20270331", 6, 0, 500.0), ("E002", "20270331", 6, 0, 100.0)], mdx=True)
+    mdx(os.path.join(d, "GL_FADEP.MDX"), "GL_FADEP", [
+        ("FACODE", "facode", "C", False, False, ""),
+        ("BATCHNO", "batchno", "N", False, False, ""),
+    ])
+
+
 def main():
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT)
@@ -424,6 +485,7 @@ def main():
     mdx(os.path.join(d, "GLDEPT.MDX"), "GLDEPT", [("DEPART", "depart", "C", False, False, "")])
 
     vouchers(d)
+    fixed_assets(d)
 
     print(f"dev fixture written to {OUT}: {len(items)} accessm rows")
 
