@@ -68,6 +68,9 @@ const WORD kArCommands[] = {
     5045,  // ARBatch          ID_ARBATCH
     8080,  // AccountsReceive  CM_ACCOUNT_RECEIVABLE (an empty handler in gl.cpp)
 };
+// TManilaGL::GLPrePosting; no legacy header names it.
+constexpr WORD kPrePostingReport = 8136;
+
 const WORD kReportingCommands[] = {
     // General Ledger reports
     // 1015, 1016, 1018 (Financial Statements) are ported: S3-M3, F3-F5; 1025 left the menu (D13).
@@ -76,9 +79,9 @@ const WORD kReportingCommands[] = {
     // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
     3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button), without a preview open
     6038, 6039, 6041,         // GLProductList, GLMedRepsList, GLDoctorRpt
-    6074, 6075, 6077, 6078,               // slips, slip summary, accounts, pre-posting
-    8082, 8136,               // GLPrtSlipDetail, GLPrePosting
     // 6080 (trial balance by dept.), 10071, 10073 (chart, budget) are ported: S3-M5.
+    // 6074, 6075, 6078, 8082, 8136 (the voucher reports) are ported: S3-M6;
+    // 6077 (GLAccounts) is on no menu or toolbar and isn't ported (D11).
     // Accounts Payable reports
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
     4091, 4092,
@@ -318,6 +321,21 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_GLBUDGETINQ:                   // Accounts > Budget Report (GL_BUDGT.RPT, D6)
         RunBudgetReport(*this);
+        return true;
+    case ID_SLIP:                          // Reporting > General Ledger > Voucher Slips (GLSLIP.RPT)
+        RunVoucherSlips(*this);
+        return true;
+    case CM_SLIPDETAIL:                    // ... > Voucher Detail (GLBTCHD.RPT, D8)
+        RunVoucherDetail(*this);
+        return true;
+    case ID_SLIPSUM:                       // ... > Voucher Summary (GL_BTCHS.RPT)
+        RunVoucherSummary(*this);
+        return true;
+    case ID_PREPOST:                       // ... > Preposting Distribution List (GLPRE.RPT, D4)
+        RunPrepostingDistribution(*this);
+        return true;
+    case kPrePostingReport:                // Transactions > Voucher Reports > GL Pre-Posting Report (D5)
+        RunPrePostingReport(*this);
         return true;
     default:
         break;

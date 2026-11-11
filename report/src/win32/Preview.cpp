@@ -489,6 +489,84 @@ HWND OpenPreview(win32fx::MdiFrame& frame, Report report, Rebuild rebuild)
     return h;
 }
 
+namespace {
+
+// ShowPreviewWindow's frame: not the main window (no WM_QUIT when destroyed);
+// it closes when its one preview goes.
+class StandalonePreviewFrame : public win32fx::MdiFrame {
+public:
+    HWND owner = nullptr;
+    bool ownerWasEnabled = true;
+
+    void OnMdiChildActivate(HWND child) override
+    {
+        if (!child && hwnd()) PostMessageW(hwnd(), WM_CLOSE, 0, 0);
+    }
+
+protected:
+    bool OnDestroy() override { return true; }
+    bool OnMessage(UINT msg, WPARAM, LPARAM, LRESULT&) override
+    {
+        // Re-enable the owner before this window goes, so Windows activates
+        // it rather than another program's window.
+        if (msg == WM_CLOSE && owner) {
+            EnableWindow(owner, ownerWasEnabled ? TRUE : FALSE);
+            SetActiveWindow(owner);
+        }
+        return false;
+    }
+};
+
+} // namespace
+
+bool ShowPreviewWindow(HWND owner, Report report)
+{
+    StandalonePreviewFrame frame;
+    // "Preview - [<title>]": the maximized preview adds its own title.
+    if (!frame.CreateFrame(GetModuleHandleW(nullptr), L"rptPreviewFrame", L"Preview", nullptr, -1)) return false;
+    if (owner) SetWindowLongPtrW(frame.hwnd(), GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
+
+    // 80 % of the owner's monitor, centred on it.
+    MONITORINFO mi{};
+    mi.cbSize = sizeof mi;
+    GetMonitorInfoW(MonitorFromWindow(owner ? owner : frame.hwnd(), MONITOR_DEFAULTTONEAREST), &mi);
+    const RECT& wa = mi.rcWork;
+    const int w = (wa.right - wa.left) * 4 / 5, h = (wa.bottom - wa.top) * 4 / 5;
+    SetWindowPos(frame.hwnd(), nullptr, wa.left + ((wa.right - wa.left) - w) / 2, wa.top + ((wa.bottom - wa.top) - h) / 2,
+                 w, h, SWP_NOZORDER);
+    HWND child = OpenPreview(frame, std::move(report));
+    if (!child) {
+        DestroyWindow(frame.hwnd());
+        return false;
+    }
+    ShowWindow(frame.hwnd(), SW_SHOW);
+    SendMessageW(frame.mdiClient(), WM_MDIMAXIMIZE, reinterpret_cast<WPARAM>(child), 0);
+    SetFocus(child);
+
+    const bool ownerWasEnabled = owner && IsWindowEnabled(owner);
+    frame.owner = owner;
+    frame.ownerWasEnabled = ownerWasEnabled;
+    if (owner) EnableWindow(owner, FALSE);
+    MSG msg;
+    while (frame.hwnd() && IsWindow(frame.hwnd())) {
+        const BOOL got = GetMessageW(&msg, nullptr, 0, 0);
+        if (got <= 0) {   // WM_QUIT: put it back for the main loop
+            if (got == 0) PostQuitMessage(static_cast<int>(msg.wParam));
+            break;
+        }
+        if (!TranslateMDISysAccel(frame.mdiClient(), &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    if (owner) {
+        EnableWindow(owner, ownerWasEnabled ? TRUE : FALSE);
+        SetActiveWindow(owner);
+    }
+    if (frame.hwnd()) DestroyWindow(frame.hwnd());
+    return true;
+}
+
 bool IsPreview(HWND hwnd) noexcept { return previewFrom(hwnd) != nullptr; }
 
 bool PrintActivePreview(win32fx::MdiFrame& frame)

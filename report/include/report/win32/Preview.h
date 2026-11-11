@@ -36,6 +36,13 @@ using Rebuild = std::function<std::optional<Report>(HWND owner)>;
 // Opens a preview of `report` in `frame`. Null if the window couldn't be created.
 HWND OpenPreview(win32fx::MdiFrame& frame, Report report, Rebuild rebuild = {});
 
+// A preview for a modal dialog (spec #3 D7, Voucher Entry's Print), where an
+// MDI child of the main frame couldn't be used: a frame window of its own,
+// owned by `owner`, holding one maximized preview. `owner` is disabled while
+// it is open, and the call returns when it is closed (its Close button, or
+// the window's). False if it couldn't be created.
+bool ShowPreviewWindow(HWND owner, Report report);
+
 // True if `hwnd` is a preview window.
 bool IsPreview(HWND hwnd) noexcept;
 

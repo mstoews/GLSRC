@@ -19,8 +19,10 @@
 //   - IDOK (the tool box's OK button, and Enter) is Add/Mod. The original had
 //     no IDOK handler, so OWL's TDialog::Ok closed the dialog without the
 //     save-or-discard question.
-//   - Print (ID_PRINT) printed the voucher slip with Crystal Reports; it is
-//     the Spec #3 "not yet ported" stub.
+//   - Print (ID_PRINT) printed the voucher slip with Crystal Reports, but
+//     selected voucher 548 through a misnamed formula and went straight to
+//     the printer. It now previews the voucher's slip (spec #3 D7) in a
+//     window over this dialog; a voucher not yet saved gets a message.
 //   - The windows are destroyed with the dialog, each saving its position
 //     (the original's Cancel called their SavePosition, then cb.closeAll()).
 //
@@ -35,9 +37,12 @@
 #include "TableList.h"
 #include "VoucherLists.h"
 #include "Vouchers.h"
+#include "reports/RunReport.h"
+#include "reports/VoucherReports.h"
 #include "stubs/Stubs.h"
 
 #include "cb4sqlite.h"
+#include "report/win32/Preview.h"
 
 #include <cstdlib>
 #include <memory>
@@ -111,6 +116,7 @@ private:
     void ToggleToolBox();          // TGLBatchEntry::ShowToolBox
     void ToggleVoucherList();      // TGLBatchEntry::ViewBatch
     bool EnterError(int id);       // TMainDialog::szEnterError
+    void PrintSlip();              // Print (ID_PRINT), spec #3 D7
     long Number() const;
 
     bool prior_;
@@ -208,7 +214,7 @@ bool VoucherEntry::OnCommand(WORD id, WORD code, HWND ctl)
     case kAccountsList: accountList_.Seek(GetField(kAccount)); return true;   // ViewAccts
     case kVoucherList: ToggleVoucherList(); return true;
     case kShow: ToggleToolBox(); return true;
-    case kPrint: ReportingStubs::Show(hwnd(), L"Voucher slip"); return true;
+    case kPrint: PrintSlip(); return true;
     case ID_ACCTLIST:   // the account list chose an account (TAccountList::HandleListBox)
         SetFocus(GetDlgItem(hwnd(), kCheque));
         return true;
@@ -319,6 +325,28 @@ long VoucherEntry::Number() const
     LONG n = 0;
     IntGetDlgItemValue(hwnd(), kBatchNo, &n);
     return n;
+}
+
+void VoucherEntry::PrintSlip()
+{
+    // D7: the voucher shown, as a slip, previewed over this dialog. The
+    // original printed voucher 548 (its formula named the wrong field).
+    const long number = Number();
+    if (!SeekVoucher(*headers_, number)) {
+        MessageBoxW(hwnd(),
+                    fx::Format(L"Voucher %ld isn't saved yet. Add a line (Add/Mod) to save it, then print its slip.",
+                               number)
+                        .c_str(),
+                    szApp, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    try {
+        if (!rpt::win32::ShowPreviewWindow(hwnd(), VoucherSlip(cb, CurrentReportContext(), number)))
+            MessageBoxW(hwnd(), L"The slip's preview could not be opened.", szApp, MB_OK | MB_ICONSTOP);
+    } catch (const std::exception& e) {
+        MessageBoxW(hwnd(), (L"The slip could not be prepared:\n\n" + fx::Utf8ToWide(e.what())).c_str(), szApp,
+                    MB_OK | MB_ICONSTOP);
+    }
 }
 
 bool VoucherEntry::EnterError(int id)

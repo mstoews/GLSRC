@@ -180,6 +180,22 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 
 ## Milestone 6 — Original voucher reports
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): `GLSLIP.RPT` and `GL_SLIPS.RPT` ("General Ledger Batch Entry Slip"): Slip Number, Date of Entry, Slip Description (`gl_btch.REFERENCE`), Period; lines No., Account, Dept, Account Description, Cheque Number, Debit, Credit; "Total Batch Entry". `GL_SLIPS.RPT` selects `{@Batch No}`, which the code never set (D7). `GLBTCHD.RPT` groups lines by voucher, adding Date, Dr. Code, Med Rep. and Prd., with Debit/Credit totals and a Difference only when debits exceed credits. `GL_BTCHS.RPT` sums each voucher's lines; its Difference isn't on the layout. `GLPRE.RPT` links `glaccts` to `gl_btchd` by account and dept, with the current balance, the lines, Count and `CURR_BAL + Σdebit − Σcredit`.
+> - **`VoucherReports.{h,cpp}`** (task 2), portable, reading `gl_btch` and `gl_btchd` (deleted rows skipped):
+>   - 6074 uses slip mode, one slip per voucher of every mode, with Cheque and Status added to the slip fields;
+>   - 8082: D8 prints the signed difference, debits less credits, only when it isn't zero;
+>   - 6075;
+>   - 6078: only the unposted lines (D4), listing only accounts that have some. The original listed every account; with nothing to post, a note says so;
+>   - 8136: 8082's layout over modes 1 and 3, each with its status (D5);
+>   - `VoucherSlip` for D7.
+>
+>   Every line shows its period (D17). `VoucherStatus` names the modes, including 9, closed year.
+> - **Voucher Entry Print** (task 3): `VoucherEntry::PrintSlip`. An unsaved voucher gets a message. A saved one opens a preview in a new library window, `rpt::win32::ShowPreviewWindow`: a frame of its own owned by the modal dialog, which it disables until it closes. (An MDI child of the main frame can't be used behind a modal dialog.)
+> - **Tests** (task 4): `gl_tests/test_reports_vouchers.cpp`, 8 cases: slips, detail and 102's difference, a credit excess after deleting a line (the deleted line is left out), summary, 6078 and 8136 without voucher 100, the single slip and a missing one, the statuses. `gl_tests`: 89 cases.
+> - **Wire** (task 5): 6074, 8082, 6075, 6078 and 8136 (`kPrePostingReport`: no legacy name) are wired. They, and 6077 (D11), are off `kReportingCommands`. `/stress` opens all five.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass; the five printed to PDF from the fixture. Voucher Entry's Print was driven both on an unsaved voucher (104: the message) and on a saved one (101: the slip preview over the disabled dialog, which is enabled again when the preview closes).
+
 1. **Read** `GLSLIP.RPT`, `GL_SLIPS.RPT`, `GLBTCHD.RPT`, `GL_BTCHS.RPT`, `GLPRE.RPT`, `ap_repts.cpp:55-65`, `ap_btche.cpp:1082-1126`, `gl_btche.cpp:239-243`.
 2. **`VoucherReports.{h,cpp}`**: slips (slip mode), detail (D8), summary, 6078 (D4), 8136 (D5), the single-voucher slip (D7).
 3. **Voucher Entry Print** in `VoucherEntry.cpp`.
