@@ -123,6 +123,12 @@ DIR=D:\GL\company.db
 - **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
 - **Maintenance > Backup Databases** saves a copy of the company database to a file you choose, by default `<name>-<yyyymmdd>.db` beside it. **Restore Databases** replaces the company database with a backup you choose, after checking it is one and asking. The replaced file is kept as `<name>.db.bak`. If anything goes wrong, the original is put back.
 - **Maintenance > Year End Consolidation** moves the income and expense balances into the Retained Earnings account and the period amounts into the previous-year columns. Since Spec #3 (D16) it also makes the closing balances the new opening balances, moves the year's posted lines to the archive (`gl_distb`), and closes the year's posted vouchers (mode 9), so Transaction Inquiry and Recover show only the new year. It runs only when exactly one account has type R; otherwise it names the type-R accounts so you can correct them in the Chart of Accounts. **Reindex Databases** explains that an SQLite company database needs no reindexing.
+- **Fixed Assets > Asset Types** (4002): a type names the GL accounts for an asset's cost, its depreciation expense and its accumulated depreciation.
+  - **Add** checks that each account (and dept) is in the chart, and modifies an existing type after asking.
+  - **Delete** is refused while an asset uses the type.
+  - Typing a type and pressing Enter shows it; **Types** shows the list.
+
+  The rest of Fixed Assets comes with Spec #4's next milestones.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**
@@ -167,8 +173,8 @@ Each preview has Print, First / Previous / Next / Last, the page number, Zoom (f
 
 ## Checks
 
-- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`) and the report list (1022). Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then every report's preview (the sample report, the finance set and the original reports) 25 times, paging through each at every zoom, on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
+- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`), the report list (1022) and the Fixed Assets dialogs. Add `/quiet` to get the failure count as the exit code instead of a message box.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then every report's preview (the sample report, the finance set and the original reports) 25 times, paging through each at every zoom, then the Fixed Assets screens 25 times, on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
 - **`gl.exe /samplereport`** opens the report engine's test report after startup: the chart of accounts grouped by type, with subtotals, a total and a wrapped note. Its options repeat the list (to make pages), drop zero balances, or turn the page to landscape. Use it to check the preview, Printer Setup and printing, e.g. to *Microsoft Print to PDF*.
 - **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.

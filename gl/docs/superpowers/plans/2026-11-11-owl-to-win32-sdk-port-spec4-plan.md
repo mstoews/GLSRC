@@ -91,6 +91,27 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 1 — Asset Types (4002)
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.2 and §2.4 #9 hold. Two further findings:
+>   - `TGLTypes::Ok` checked the accounts, then returned silently on a blank type.
+>   - `TAssetTypesList` showed `FAYEARS` under a "Description" header, with the screen's caption (string 6061) as the second header.
+> - **`prune_rc.py`** (task 2): 4002 added to `DIALOGS`; `gl.rc` regenerated (the template verbatim).
+> - **`gl/port/FixedAssetTypes.{h,cpp}`** (task 3), the Spec #2 master-data pattern:
+>   - **Add** asks for the type and description (8101), then checks each account and dept (6056–6058, with the focus on the bad one). It modifies an existing type after asking (8108), then clears.
+>   - **Delete** asks (8109), then calls `Assets.h`'s new `DeleteAssetType`. That function refuses a type in use, naming the first asset; otherwise it deletes and packs.
+>   - **Enter in the type field** shows the type, or moves on to the description for a new one. Enter elsewhere is Add. (Enter and the Add button both send `IDOK`, so the focus decides.)
+>   - **Types** opens the list (`GL.INI [GL_FATYP]`; Code, Description).
+>   - **New, Top / Bottom / Next / Previous**: Next and Previous stop at the ends, and continue from a type shown by Enter or the list.
+> - **Wire** (task 4): 6036 (`ID_FATYPE`) in `ManilaGL.cpp`. `/checkres` loads 4002. `/stress` has a new "fixed assets" step, `StressFixedAssets`, which the later screens join.
+> - **Tests** (task 5): `DeleteAssetType` (in use, naming E001 and E005; not found; deleted, leaving the others). `gl_tests`: 101 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Driven in the app on the fixture:
+>   - FU with expense account 999999: "Invalid Expense Account";
+>   - FU with good accounts: added and cleared;
+>   - FU typed and Enter: shown;
+>   - Delete EQ: refused, naming E001;
+>   - Top: EQ; Next: FU, then XX, stopping at XX;
+>   - Delete FU: deleted.
+
 **Goal:** types can be maintained, with their accounts checked.
 
 ### Tasks

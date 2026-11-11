@@ -72,6 +72,13 @@ std::optional<Asset> FindAsset(cb4sqlite::Code4& code, const std::string& facode
 bool SaveAssetType(cb4sqlite::Code4& code, const AssetType& t);
 bool SaveAsset(cb4sqlite::Code4& code, const Asset& a);
 
+// TGLTypes::Delete, refusing a type an asset uses (spec #4 D9; the original
+// deleted it and left its assets pointing at nothing). The record is deleted
+// and the table packed, as the original and Spec #2's DeleteRecord do.
+// `usedBy` gets the first asset (in code order) that uses the type.
+enum class DeleteTypeResult { Deleted, NotFound, InUse };
+DeleteTypeResult DeleteAssetType(cb4sqlite::Code4& code, const std::string& type, std::string* usedBy = nullptr);
+
 // TGLTypes::Ok / TGLFixedAssets::Ok's ValidateGL: the account, with that dept
 // (blank for none), is in glaccts and not deleted.
 bool ValidateAccount(cb4sqlite::Code4& code, const std::string& account, const std::string& dept);
