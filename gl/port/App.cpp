@@ -53,6 +53,7 @@
 
 #include "cb4sqlite.h"
 
+#include <algorithm>
 #include <cwchar>
 #include <string>
 
@@ -90,6 +91,22 @@ int fail(const std::wstring& text)
     return 1;
 }
 
+// One /stress step's GDI + USER growth (-1: could not run). Growth is
+// measured a second time and the smaller reading kept: now and then Windows
+// creates one USER object of its own in the process, at a moment of its
+// choosing (seen 0.4 to 4 s in, in whichever step was running, once per
+// process, never a GDI object and never more than +1; 2026-11-11), which
+// no warm-up can absorb. A leak in the step shows in both readings; that
+// object can appear in only one.
+template <typename Step>
+int stressStep(Step step)
+{
+    const int first = step();
+    if (first <= 0) return first;
+    const int second = step();
+    return second < 0 ? second : (std::min)(first, second);
+}
+
 } // namespace
 
 int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine, _In_ int show)
@@ -115,12 +132,12 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
         SetPostFault(static_cast<int>(std::wcstol(args.c_str() + at + 9, nullptr, 10)));   // "/failpost <n>"; 0: off
 
     if (args.find(L"/stress") != std::wstring::npos) {
-        const int accounts = StressChartOfAccounts(100);
-        const int master = StressMasterData(25);
-        const int vouchers = StressVoucherEntry(25);
-        const int posting = StressVoucherPosting(25);
-        const int inquiry = StressTransactionInquiry(25);
-        const int reports = StressReports(25);
+        const int accounts = stressStep([] { return StressChartOfAccounts(100); });
+        const int master = stressStep([] { return StressMasterData(25); });
+        const int vouchers = stressStep([] { return StressVoucherEntry(25); });
+        const int posting = stressStep([] { return StressVoucherPosting(25); });
+        const int inquiry = stressStep([] { return StressTransactionInquiry(25); });
+        const int reports = stressStep([] { return StressReports(25); });
         const int growth = (accounts < 0 || master < 0 || vouchers < 0 || posting < 0 || inquiry < 0 || reports < 0)
                                ? -1
                                : accounts + master + vouchers + posting + inquiry + reports;
