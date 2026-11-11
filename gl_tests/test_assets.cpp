@@ -532,3 +532,43 @@ TEST_CASE("No period end, nothing due, and a new fiscal year's declining amount"
     CHECK(none.status == RunStatus::NothingDue);
     CHECK(none.batchno == 0);
 }
+
+// ---- Disposal (spec #4 6.3, D7; plan S4-M4) ------------------------------------
+
+TEST_CASE("Disposal: E002 after the period-7 run, sold at a loss", "[assets][disposal]")
+{
+    FixtureDb db;
+    REQUIRE(RunDepreciation(db.code, 7, 0).status == RunStatus::Created);
+    const Asset e002 = *FindAsset(db.code, "E002");
+    CHECK(BookValue(e002) == 480000);
+    CHECK(GainOnSale(e002, 400000) == -80000);   // a loss of 800.00
+    CHECK(GainOnSale(e002, 500000) == 20000);    // or a gain of 200.00
+
+    CHECK(DisposeAsset(db.code, "E002", "20261031") == DisposeResult::Disposed);
+    const Asset after = *FindAsset(db.code, "E002");
+    CHECK(after.disposed());
+    CHECK(after.dateSold == "20261031");
+    CHECK(after.accumulated == 20000);   // the rest of the record is kept
+    CHECK(after.cost == 500000);
+    CHECK(DisposeAsset(db.code, "E002", "20261031") == DisposeResult::AlreadyDisposed);
+    CHECK(DisposeAsset(db.code, "E999", "20261031") == DisposeResult::NotFound);
+
+    // The next period's run skips it.
+    const RunPlan eight = PlanRun(db.code, 8);
+    REQUIRE(eight.due.size() == 1);
+    CHECK(eight.due[0].asset.code == "E001");
+    CHECK(std::any_of(eight.skipped.begin(), eight.skipped.end(), [](const RunSkip& s) {
+        return s.asset.code == "E002" && s.reason == SkipReason::Disposed;
+    }));
+}
+
+TEST_CASE("Disposal's Delete: only an asset the run hasn't depreciated", "[assets][disposal]")
+{
+    FixtureDb db;
+    CHECK(DeleteAsset(db.code, "E001") == DeleteAssetResult::HasHistory);
+    CHECK(DeleteAsset(db.code, "E999") == DeleteAssetResult::NotFound);
+    CHECK(DeleteAsset(db.code, "E005") == DeleteAssetResult::Deleted);   // never depreciated
+    CHECK_FALSE(FindAsset(db.code, "E005"));
+    CHECK(LoadAssets(db.code).size() == 3);
+    CHECK(FindAsset(db.code, "E001")->accumulated == 650000);   // the others are untouched
+}

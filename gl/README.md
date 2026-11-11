@@ -142,7 +142,12 @@ DIR=D:\GL\company.db
   - **One run per period:** a second run is refused, naming the voucher.
   - **After year end**, set the new year's period dates (Company Profile > Periods) before the first run.
 
-  Disposal comes with Spec #4's next milestone.
+- **Fixed Assets > Disposal** (1001): marks an asset sold or scrapped.
+  - **Enter** a code to show the asset, with its cost, accumulated depreciation and book value. **Type the sale price** to see the gain or loss.
+  - **Dispose** records the date and keeps the asset in the register, marked disposed; the monthly run skips it from then on. Nothing is posted: the message lists the entry to make in Voucher Entry.
+  - **Delete** removes an asset entered by mistake, if it has never been depreciated.
+
+  The fixed-asset reports come with Spec #4's next milestone.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

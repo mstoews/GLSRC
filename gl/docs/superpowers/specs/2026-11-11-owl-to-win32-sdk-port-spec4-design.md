@@ -236,6 +236,8 @@ The screens follow the Spec #2 master-data pattern (Medical Reps, Product Codes)
 - **Dispose** (the original's Delete button) asks (8107), then sets `DATE_SOLD` and `MODE` "D". Nothing is posted (D7, Q3); a message reminds the user to record the entry in Voucher Entry, giving the amounts.
 - **Delete** (a new button) removes an asset entered by mistake. Only an asset with no `gl_fadep` rows can be deleted.
 
+*(As built, S4-M4: the template has no fields for cost, accumulated depreciation and book value, nor room for Delete. The dialog is made 22 units taller in code, with a summary line (`IDC_FA_SUMMARY`) and a Delete button (`IDC_FA_DELETE`, in `PortIds.h`) under the box. The code field and Sale Price, read-only in the template, are made editable. "Rmd" is relabelled "Used". The message after Dispose lists the entry's lines: Dr accumulated depreciation, Dr proceeds, Dr loss or Cr gain, Cr asset cost.)*
+
 ### 6.4 Create Voucher (4003)
 
 As §4.2. The caption's "Deprecation" becomes "Depreciation".

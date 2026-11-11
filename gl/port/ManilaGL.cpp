@@ -8,6 +8,7 @@
 #include "FixedAssetTypes.h"
 #include "FixedAssets.h"
 #include "DepreciationRun.h"
+#include "FixedAssetDisposal.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
@@ -256,6 +257,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_FASLIP:                        // TManilaGL::GLFixedSlip: Fixed Assets > Create Voucher
         RunCreateDepreciationVoucher(hwnd());
+        return true;
+    case ID_DISPOSAL:                      // TManilaGL::GLFixedDisposal: Fixed Assets > Disposal
+        RunAssetDisposal(hwnd());
         return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
