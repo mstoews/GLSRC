@@ -21,6 +21,7 @@
 #include "PortIds.h"
 #include "reports/ReportList.h"
 #include "reports/RunReport.h"
+#include "reports/StatementLayoutDialog.h"
 #include "stubs/Stubs.h"
 
 #include "report/win32/Preview.h"
@@ -319,6 +320,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case CM_REPORT_LIST:                   // Reporting > Custom Report, GLSUB (D9; 3068 in the original)
         RunReportList();
         return true;
+    case CM_STATEMENT_LAYOUT:              // Accounts > Statement Layout (spec #3 6.4)
+        RunStatementLayout(hwnd());
+        return true;
     case CM_SAMPLE_REPORT:                 // the report engine's test report (gl.exe /samplereport)
         RunSampleReport(*this);
         return true;
@@ -417,9 +421,15 @@ void ManilaGL::NotPorted(WORD id)
 bool ManilaGL::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT&)
 {
     switch (msg) {
-    case WM_INITMENUPOPUP:   // TManilaGL::WMInitMenuPopup
-        ApplyMenuAccess(GetMenu(hwnd()));
+    case WM_INITMENUPOPUP: {   // TManilaGL::WMInitMenuPopup
+        HMENU menu = GetMenu(hwnd());
+        ApplyMenuAccess(menu);
+        // Statement Layout is behind the Chart of Accounts' access (spec #3 6.4).
+        if (menu)
+            EnableMenuItem(menu, CM_STATEMENT_LAYOUT,
+                           MF_BYCOMMAND | ((GetMenuState(menu, ID_ACCTADD, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
         return false;        // DefFrameProc too
+    }
     case WM_MENUSELECT:
         MenuHelp(wp, lp);
         return false;

@@ -22,6 +22,7 @@
 #define IDD_SAMPLE_OPTIONS      20000   // Sample Report options (S3-M1: the engine's test report)
 #define IDD_TB_OPTIONS          20001   // Trial Balance / Distribution Trial Balance options (S3-M2)
 #define IDD_STMT_OPTIONS        20002   // Income Statement / Balance Sheet / Cash Flow options (S3-M3)
+#define IDD_STMT_LAYOUT         20003   // Accounts > Statement Layout (S3-M4)
 
 // ---- controls --------------------------------------------------------------
 
@@ -44,12 +45,31 @@
 #define IDC_ST_ACCOUNTS         20125   // show the accounts under each line
 #define IDC_ST_ZEROS            20126   // show zero lines
 
+#define IDC_SL_STATEMENT        20140   // Statement Layout (S3-M4): the statement picker
+#define IDC_SL_GRID             20141   //   the lines (a tbSpread)
+#define IDC_SL_LINENO           20142   //   the selected line's fields
+#define IDC_SL_KIND             20143
+#define IDC_SL_SIGN             20144
+#define IDC_SL_INDENT           20145
+#define IDC_SL_CAPTION          20146
+#define IDC_SL_FORMULA          20147
+#define IDC_SL_RANGES           20148
+#define IDC_SL_ADD              20149   //   the line buttons
+#define IDC_SL_INSERT           20150
+#define IDC_SL_DELETE           20151
+#define IDC_SL_APPLY            20152
+#define IDC_SL_CHECK            20153   //   the layout buttons
+#define IDC_SL_PREVIEW          20154
+#define IDC_SL_RESET            20155
+#define IDC_SL_SAVE             20156
+
 #define IDC_FA_SUMMARY          20130   // Disposal (1001): cost, accumulated depreciation, book value (S4-M4)
 #define IDC_FA_DELETE           20131   // Disposal (1001): Delete, for an asset never depreciated
 
 // ---- commands --------------------------------------------------------------
 
 #define CM_SAMPLE_REPORT        20500   // gl.exe /samplereport, and /stress
+#define CM_STATEMENT_LAYOUT     20502   // Accounts > Statement Layout (spec #3 6.4, S3-M4)
 #define CM_REPORT_LIST          20501   // Reporting > Custom Report, GLSUB > Custom Report: the report list (D9, S3-M7)
 
 #endif // GL_PORT_PORTIDS_H

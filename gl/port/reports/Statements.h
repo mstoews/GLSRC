@@ -27,10 +27,13 @@
 #pragma once
 
 #include "ReportContext.h"
+#include "StatementLayout.h"
 
 #include "report/Report.h"
 
+#include <optional>
 #include <string>
+#include <vector>
 
 struct StatementOptions {
     int period = 0;              // 0: the current period
@@ -39,6 +42,9 @@ struct StatementOptions {
     bool compareBudget = false;  // F3
     bool showAccounts = false;   // each account line's accounts beneath it
     bool showZeroLines = false;  // account lines that are zero in every column
+    // The Statement Layout screen's Preview (S3-M4): this layout instead of the
+    // saved one; the footer then says it isn't saved.
+    std::optional<std::vector<LayoutLine>> layout;
 };
 
 rpt::Report IncomeStatement(cb4sqlite::Code4& code, const ReportContext& ctx, const StatementOptions& opt);

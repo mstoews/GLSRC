@@ -192,7 +192,7 @@ rpt::Report build(cb4sqlite::Code4& code, const ReportContext& ctx, const Statem
                   const std::vector<Col>& cols, std::vector<std::string> subtitles, rpt::Orientation orientation)
 {
     EnsureLayoutTables(code);
-    const std::vector<LayoutLine> layout = LoadLayout(code, st.code);
+    const std::vector<LayoutLine> layout = opt.layout ? *opt.layout : LoadLayout(code, st.code);
     const std::vector<AccountBalances> all = LoadBalances(code);
     std::vector<const AccountBalances*> accounts;
     for (const AccountBalances& a : all)
@@ -206,7 +206,7 @@ rpt::Report build(cb4sqlite::Code4& code, const ReportContext& ctx, const Statem
     r.printedOn = ctx.printedOn;
     r.title = st.title;
     r.subtitles = std::move(subtitles);
-    r.footerNote = st.title + " - " + LayoutDescription(layout);
+    r.footerNote = st.title + " - " + (opt.layout ? std::string("Layout: not saved (preview)") : LayoutDescription(layout));
     r.orientation = orientation;
     r.negatives = rpt::NegativeStyle::Parentheses;
     r.columns.push_back({"", n > 3 ? 3.4 : 4.0});

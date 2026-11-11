@@ -81,6 +81,7 @@ const DialogCase kDialogs[] = {
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
     {IDD_STMT_OPTIONS, L"Financial statement options (port.rc, S3-M3)", false},
+    {IDD_STMT_LAYOUT, L"Statement Layout (port.rc, S3-M4)", false},   // its grid is IDC_SL_GRID, not ID_DISTLIST
 };
 
 void checkDialogs(HINSTANCE inst, Report& r)

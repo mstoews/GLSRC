@@ -364,6 +364,47 @@ std::optional<std::vector<std::pair<int, int>>> ParseFormula(const std::string& 
     return terms;
 }
 
+std::optional<std::vector<AccountRange>> ParseRanges(const std::string& text)
+{
+    std::vector<AccountRange> out;
+    std::string part;
+    auto flush = [&]() -> bool {
+        std::string p;
+        for (char c : part)
+            if (c != ' ' && c != '\t') p += c;
+        part.clear();
+        if (p.empty()) return true;
+        const size_t dash = p.find('-');
+        if (dash == std::string::npos) {
+            out.push_back({p, p});
+            return true;
+        }
+        const std::string from = p.substr(0, dash), to = p.substr(dash + 1);
+        if (from.empty() || to.empty() || to.find('-') != std::string::npos) return false;
+        out.push_back({from, to});
+        return true;
+    };
+    for (char c : text) {
+        if (c == ';' || c == ',') {
+            if (!flush()) return std::nullopt;
+        } else {
+            part += c;
+        }
+    }
+    if (!flush()) return std::nullopt;
+    return out;
+}
+
+std::string FormatRanges(const std::vector<AccountRange>& ranges)
+{
+    std::string s;
+    for (const AccountRange& r : ranges) {
+        if (!s.empty()) s += "; ";
+        s += r.from == r.to ? r.from : r.from + "-" + r.to;
+    }
+    return s;
+}
+
 bool AccountInRanges(const std::string& account, const std::vector<AccountRange>& ranges)
 {
     for (const AccountRange& r : ranges)

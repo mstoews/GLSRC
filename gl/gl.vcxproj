@@ -84,6 +84,7 @@
     <ClInclude Include="port\reports\RunReport.h" />
     <ClInclude Include="port\reports\SampleReport.h" />
     <ClInclude Include="port\reports\StatementLayout.h" />
+    <ClInclude Include="port\reports\StatementLayoutDialog.h" />
     <ClInclude Include="port\reports\Statements.h" />
     <ClInclude Include="port\reports\TrialBalances.h" />
     <ClInclude Include="port\reports\VoucherReports.h" />
@@ -128,6 +129,7 @@
     <ClCompile Include="port\reports\RunReport.cpp" />
     <ClCompile Include="port\reports\SampleReport.cpp" />
     <ClCompile Include="port\reports\StatementLayout.cpp" />
+    <ClCompile Include="port\reports\StatementLayoutDialog.cpp" />
     <ClCompile Include="port\reports\Statements.cpp" />
     <ClCompile Include="port\reports\TrialBalances.cpp" />
     <ClCompile Include="port\reports\VoucherReports.cpp" />

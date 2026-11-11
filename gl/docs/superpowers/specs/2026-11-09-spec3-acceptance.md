@@ -4,7 +4,7 @@ The record of plan Milestone 8 (`gl/docs/superpowers/plans/2026-11-09-owl-to-win
 
 Fill in every blank (`____`) and set each **Result** to `PASS`, `FAIL`, `PASS with known gap` or `BLOCKED`. A `FAIL` needs a triage line in [Gaps and triage](#gaps-and-triage): either fixed in Spec #3, or filed against a later spec.
 
-**Not built yet:** #8 needs the Statement Layout screen (S3-M4). The finance team's review it waited for is done (2026-11-11), but the screen isn't built yet. Mark #8 `BLOCKED` until it lands, then walk it through. Everything else can be signed off now.
+Every criterion can be signed off now: S3-M4, the Statement Layout screen #8 needs, is built (2026-11-11).
 
 The reports only read the books, except the year end in #9 and the layout edits in #8. Run #1–#7 and #10–#12 on one copy of `dev.db`, run #8 and #9 each on a fresh copy, and keep an untouched copy so the walkthrough can be repeated.
 
@@ -42,7 +42,7 @@ Run `gl\test\dev-fixture\setup.cmd` for each configuration first (`Debug`, then 
 | Check | Debug | Release | Notes |
 |---|---|---|---|
 | `x64\<Config>\cb4sqlite_tests.exe` (77 test cases pass) | ____ | ____ | |
-| `x64\<Config>\gl_tests.exe` (93 test cases pass) | ____ | ____ | |
+| `x64\<Config>\gl_tests.exe` (93 test cases pass at S3-M7; 114 with Spec #4 and S3-M4) | ____ | ____ | |
 | `x64\<Config>\report_tests.exe` (17 test cases pass) | ____ | ____ | |
 | `gl.exe /checkres /quiet` (now also the port's dialogs in `port.rc`, 20000–20002, the report list 1022, and Custom Report's own command) | ____ | ____ | |
 | `gl.exe /stress /quiet` (now also every report's preview, paged at each zoom) | ____ | ____ | |
@@ -170,12 +170,24 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 
 **Result:** ____ **Notes:** ____
 
-### 8. Statement Layout — **BLOCKED until S3-M4**
+### 8. Statement Layout (on a fresh copy of `dev.db`)
 
-- [ ] **Accounts > Statement Layout...**: move an account range from one line to another, Preview, Save; the statement changes.
-- [ ] Remove a range: Check warns, and the statement shows "Unclassified accounts" and still balances.
-- [ ] A formula referring to a later or missing line can't be saved.
-- [ ] Reset to default restores the default; the footer reads "Layout: default" again.
+- [ ] **Accounts > Statement Layout...**: the Income Statement's 23 lines show, the first being line 10 "Revenue". Pick **Balance Sheet**: 26 lines.
+- [ ] **Check**: one warning, that 999000 is on no line.
+- [ ] Select line 90 "Other assets". Set **Ranges** to `170000-199999; 999000`, then **Apply**. The caption reads "Statement Layout (not saved)". **Check**: "No problems found."
+- [ ] **Preview**: a Balance Sheet in a window over the screen.
+  - Other assets 100.00 (999000's debit); total assets 74,960.00;
+  - no "Unclassified accounts" line;
+  - total liabilities and equity 74,960.00;
+  - the footer reads "Balance Sheet - Layout: not saved (preview)".
+
+  Close it.
+- [ ] **Save.** `sqlite3 dev.db "select trim(acct_from) from gl_fsrange where trim(statement)='BS' and lineno=90"` returns 170000 and 999000. Reporting > Financial Statements > **Balance sheet** shows the same figures, with the footer "Balance Sheet - Layout: modified <today's date and time>".
+- [ ] Select line 60 "Total current assets". Set **Formula** to `20+30+40+50+70`, **Apply**, then **Save**. It is refused: "Line 60 (Total current assets): its formula refers to line 70, which isn't an earlier line."
+- [ ] Select line 20. Clear **No.**, set **Kind** to Heading and **Caption** to "Current assets", then **Insert before**. A line 15 appears; the screen doesn't renumber lines, since totals refer to them.
+- [ ] **Close**: it asks to save. Answer **No**; reopen: line 15 isn't there.
+- [ ] **Reset to default**, **Yes**: line 90's ranges are back to `170000-199999`, and the Balance Sheet's footer reads "Layout: default" again.
+- [ ] Clerk (`CLERK` / `clerk`): Statement Layout is greyed exactly when Chart of Accounts is.
 
 (The layout's evaluation, checks, save and reset are already covered by `gl_tests`, `test_statements.cpp`.)
 
@@ -242,7 +254,7 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 | G3 | Only *Microsoft Print to PDF* was used in development. | No real printer on the build machine. | Check #1's real-printer step on the test machine. |
 | G4 | On Windows 11 the Print dialog is the system print window, run by `explorer.exe`. *Microsoft Print to PDF* asks for the file name in its own Save dialog. | Windows behaviour; `PrintDlgW` is used as the spec says. | None. |
 | G5 | The Linux ASan/UBSan build of the Spec #3 sources hasn't been run since S3-M1. | No Linux machine in this round. | Run `tools/linux/build_tests.sh --run`. |
-| G6 | #8 is blocked. | S3-M4 isn't built yet (no longer waiting on the finance review). | Walk it through when S3-M4 lands. |
+| G6 | ~~#8 is blocked.~~ | S3-M4 is built (2026-11-11). | None. |
 
 ## Gaps and triage
 
@@ -263,13 +275,13 @@ Add one row for each `FAIL` or unexpected behaviour found during the walkthrough
 | 5. F3 Income Statement | ____ |
 | 6. F4 Balance Sheet | ____ |
 | 7. F5 Cash Flow Statement | ____ |
-| 8. Statement Layout | ____ (BLOCKED until S3-M4) |
+| 8. Statement Layout | ____ |
 | 9. Year end | ____ |
 | 10. Original reports | ____ |
 | 11. File > Print | ____ |
 | 12. Regression and resources | ____ |
 
-All criteria pass, or pass with the known gaps recorded above. #8 is signed off separately once S3-M4 lands:
+All criteria pass, or pass with the known gaps recorded above:
 
 - Tester: ____ Date: ____
 - Witness: ____ Date: ____

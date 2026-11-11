@@ -415,6 +415,16 @@ Accounts > **Statement Layout…** (new command), behind the same access check a
 
 Editing happens in the controls beneath the grid, as the Chart of Accounts screen does, so `fx::Grid` needs no text editing.
 
+*As built (S3-M4):*
+- **The screen:** `gl/port/reports/StatementLayoutDialog.{h,cpp}` on `IDD_STMT_LAYOUT` (`port.rc`).
+- **Ranges** are typed as `410000-419999; 420000-429999`, or one account for from = to (`ParseRanges` / `FormatRanges`).
+- **Line numbers:** a blank No. is chosen, 10 after the last line, or halfway to the previous one for Insert before. Nothing renumbers lines, since formulas refer to them.
+- **Enter** in a field applies.
+- **Preview** passes the edited copy through the new `StatementOptions::layout`, in a preview window over the screen (`ShowPreviewWindow`). Its footer reads "Layout: not saved (preview)".
+- **Reset to default** writes the default at once, after asking, so the footer says "Layout: default" again.
+- **Save** stamps every line with the date and time.
+- **The menu item** follows the Chart of Accounts item's access state; it is also a row of its own in the menu-access table.
+
 ### 6.5 Layout checks
 
 Run by **Check**, by **Save** (which refuses errors and warns on warnings) and, for warnings, by each statement run (as a `Note`):
