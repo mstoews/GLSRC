@@ -17,6 +17,7 @@
 
 #include "Accounts.h"   // TrimText
 #include "Assets.h"
+#include "Vouchers.h"
 
 #include <algorithm>
 #include <numeric>
@@ -317,4 +318,217 @@ TEST_CASE("A company without the tables gets them; a blank ACCUM_DEP is filled",
     CHECK(FindAsset(db.code, "F001")->accumulated == 208125 * 8);   // 16,650.00
     CHECK(FindAsset(db.code, "F002")->accumulated == 9990000);             // capped at cost - salvage
     CHECK(EnsureAssetTables(db.code) == 0);
+}
+
+// ---- the run (spec #4 4.2, 4.3; plan S4-M3) -----------------------------------
+
+namespace {
+
+struct LineRow {
+    int journal;
+    std::string account, dept, reference, period, date;
+    double debit, credit;
+};
+
+std::vector<LineRow> voucherLines(Code4& code, long batchno)
+{
+    std::vector<LineRow> out;
+    cb4sqlite::Query q(code, "SELECT journal, trim(account), trim(coalesce(dept,'')), trim(reference), trim(period), "
+                             "date, debit, credit FROM gl_btchd WHERE _deleted = 0 AND batchno = ?1 ORDER BY journal");
+    q.bindInt(1, batchno);
+    while (q.next())
+        out.push_back({static_cast<int>(q.integer(0)), q.text(1), q.text(2), q.text(3), q.text(4), q.text(5),
+                       q.number(6), q.number(7)});
+    return out;
+}
+
+// Sets gl_pds's end dates a year on, as Company Profile > Periods does for a new year.
+void nextYearPeriods(Code4& code)
+{
+    Data4 pds(&code, "gl_pds");
+    Field4 periode(pds, "periode");
+    for (pds.top(); !pds.eof(); pds.skip()) {
+        std::string d = TrimText(periode.str());
+        d = std::to_string(std::stoi(d.substr(0, 4)) + 1) + d.substr(4);
+        periode.assign(d.c_str());
+        pds.flush();
+    }
+    pds.close();
+}
+
+} // namespace
+
+TEST_CASE("PlanRun: the assets due in period 7, and those skipped", "[assets][run]")
+{
+    FixtureDb db;
+    const RunPlan plan = PlanRun(db.code, 7);
+    CHECK(plan.periodEnd == "20261031");
+    CHECK(plan.yearEnd == "20270331");
+    CHECK_FALSE(plan.alreadyRun);
+    REQUIRE(plan.due.size() == 2);
+    CHECK(plan.due[0].asset.code == "E001");
+    CHECK(plan.due[0].amount == 50000);
+    CHECK(plan.due[1].asset.code == "E002");
+    CHECK(plan.due[1].amount == 10000);
+    CHECK(plan.total == 60000);
+    REQUIRE(plan.skipped.size() == 2);
+    CHECK(plan.skipped[0].asset.code == "E004");
+    CHECK(plan.skipped[0].reason == SkipReason::Disposed);
+    CHECK(plan.skipped[1].asset.code == "E005");
+    CHECK(plan.skipped[1].reason == SkipReason::BadAccount);   // XX: 999999 isn't in the chart
+
+    // A type that doesn't exist (string 8120).
+    {
+        Asset orphan = *FindAsset(db.code, "E005");
+        orphan.code = "E008";
+        orphan.type = "ZZ";
+        SaveAsset(db.code, orphan);
+        const RunPlan p = PlanRun(db.code, 7);
+        CHECK(p.skipped.back().asset.code == "E008");
+        CHECK(p.skipped.back().reason == SkipReason::NoType);
+    }
+
+    // Period 6 has the fixture's run, booked without a voucher (D5).
+    const RunPlan six = PlanRun(db.code, 6);
+    CHECK(six.alreadyRun);
+    CHECK(six.existingVoucher == 0);
+
+    // An asset bought after the period's end isn't due yet (D8).
+    Asset later = *FindAsset(db.code, "E001");
+    later.code = "E009";
+    later.datePurchased = "20261115";
+    later.accumulated = 0;
+    later.monthsUsed = 0;
+    SaveAsset(db.code, later);
+    const RunPlan withLater = PlanRun(db.code, 7);
+    CHECK(withLater.due.size() == 2);
+    CHECK(withLater.skipped.back().asset.code == "E009");
+    CHECK(withLater.skipped.back().reason == SkipReason::NotYetBought);
+}
+
+TEST_CASE("RunDepreciation: one voucher, two lines per asset, the assets moved", "[assets][run]")
+{
+    FixtureDb db;
+    const RunResult r = RunDepreciation(db.code, 7, 0);
+    REQUIRE(r.status == RunStatus::Created);
+    CHECK(r.batchno == 104);   // NextVoucherNumber: after 100-103
+    CHECK(r.assets == 2);
+    CHECK(r.total == 60000);
+
+    VoucherHeaders h(db.code);
+    REQUIRE(SeekVoucher(h, r.batchno));
+    const VoucherHeader header = ReadHeader(h);
+    h.close();
+    CHECK(header.mode == "1");
+    CHECK(header.description == "Monthly Depreciation Voucher");
+    CHECK(header.date == "20261031");   // D10
+    CHECK(header.period == 7);
+    CHECK(header.debit == 600.0);
+    CHECK(header.credit == 600.0);
+    CHECK(header.lines == 4);
+
+    const auto lines = voucherLines(db.code, r.batchno);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[0].journal == 1);
+    CHECK(lines[0].account == "761000");
+    CHECK(lines[0].debit == 500.0);
+    CHECK(lines[0].reference == "E001");
+    CHECK(lines[0].date == "20261031");
+    CHECK(lines[0].period == "7");
+    CHECK(lines[1].account == "161000");
+    CHECK(lines[1].credit == 500.0);
+    CHECK(lines[2].reference == "E002");
+    CHECK(lines[2].debit == 100.0);
+    CHECK(lines[3].journal == 4);
+    CHECK(lines[3].credit == 100.0);
+
+    const Asset e001 = *FindAsset(db.code, "E001"), e002 = *FindAsset(db.code, "E002");
+    CHECK(e001.accumulated == 700000);
+    CHECK(e001.monthsUsed == 14);
+    CHECK(e002.accumulated == 20000);
+    CHECK(e002.monthsUsed == 2);
+    CHECK(FindAsset(db.code, "E005")->accumulated == 0);
+    const auto history = LoadDepreciation(db.code, "E001");
+    REQUIRE(history.size() == 2);
+    CHECK(history[1].period == 7);
+    CHECK(history[1].batchno == 104);
+    CHECK(history[1].amount == 50000);
+
+    // D5: the period can't be run twice.
+    const RunResult again = RunDepreciation(db.code, 7, 0);
+    CHECK(again.status == RunStatus::AlreadyRun);
+    CHECK(again.batchno == 104);
+    CHECK(FindAsset(db.code, "E001")->accumulated == 700000);
+}
+
+TEST_CASE("Cancelling the run's voucher undoes it; an ordinary voucher's doesn't touch the assets", "[assets][run]")
+{
+    FixtureDb db;
+    REQUIRE(CancelVoucher(db.code, 101) == CancelResult::Cancelled);   // an ordinary voucher
+    CHECK(FindAsset(db.code, "E001")->accumulated == 650000);
+    CHECK(LoadDepreciation(db.code, "E001").size() == 1);
+
+    const RunResult r = RunDepreciation(db.code, 7, 0);
+    REQUIRE(r.status == RunStatus::Created);
+    REQUIRE(CancelVoucher(db.code, r.batchno) == CancelResult::Cancelled);
+    const Asset e001 = *FindAsset(db.code, "E001"), e002 = *FindAsset(db.code, "E002");
+    CHECK(e001.accumulated == 650000);
+    CHECK(e001.monthsUsed == 13);
+    CHECK(e002.accumulated == 10000);
+    CHECK(e002.monthsUsed == 1);
+    CHECK(LoadDepreciation(db.code, "E001").size() == 1);   // period 6 only
+    CHECK(voucherLines(db.code, r.batchno).empty());
+
+    // The period can be run again.
+    const RunResult again = RunDepreciation(db.code, 7, 0);
+    CHECK(again.status == RunStatus::Created);
+    CHECK(FindAsset(db.code, "E001")->accumulated == 700000);
+}
+
+TEST_CASE("Posting the run's voucher: the ledger matches the register", "[assets][run]")
+{
+    FixtureDb db;
+    const RunResult r = RunDepreciation(db.code, 7, 0);
+    REQUIRE(r.status == RunStatus::Created);
+    REQUIRE(PostVoucher(db.code, r.batchno).posted == std::vector<long>{r.batchno});
+    CHECK(balance(db.code, "161000") == -7200.0);
+    CHECK(balance(db.code, "761000") == 1200.0);
+    std::int64_t accum = 0;
+    for (const Asset& a : LoadAssets(db.code))
+        if (a.type == "EQ" && !a.disposed()) accum += a.accumulated;
+    CHECK(accum == 720000);
+    // A posted voucher can't be cancelled, so the run stands.
+    CHECK(CancelVoucher(db.code, r.batchno) == CancelResult::Posted);
+    CHECK(FindAsset(db.code, "E001")->accumulated == 700000);
+}
+
+TEST_CASE("No period end, nothing due, and a new fiscal year's declining amount", "[assets][run]")
+{
+    FixtureDb db;
+    CHECK(RunDepreciation(db.code, 13, 0).status == RunStatus::NoPeriodEnd);
+
+    const RunResult r = RunDepreciation(db.code, 7, 0);
+    REQUIRE(r.status == RunStatus::Created);
+    REQUIRE(PostVoucher(db.code, r.batchno).posted == std::vector<long>{r.batchno});
+    REQUIRE(YearEnd(db.code).closed);
+    nextYearPeriods(db.code);   // the new year's dates, as Company Profile > Periods sets them
+    CHECK(FiscalYearEnd(db.code) == "20280331");
+
+    // E002: (5,000.00 - 200.00 depreciated last year) x 24 % / 12 = 96.00.
+    const RunPlan plan = PlanRun(db.code, 1);
+    CHECK_FALSE(plan.alreadyRun);
+    const auto e002 =
+        std::find_if(plan.due.begin(), plan.due.end(), [](const RunItem& i) { return i.asset.code == "E002"; });
+    REQUIRE(e002 != plan.due.end());
+    CHECK(e002->amount == 9600);
+    CHECK(e002->monthly == 9600);
+
+    // With every asset disposed, nothing is due and no voucher is written.
+    for (Asset a : LoadAssets(db.code)) {
+        a.mode = "D";
+        SaveAsset(db.code, a);
+    }
+    const RunResult none = RunDepreciation(db.code, 1, 0);
+    CHECK(none.status == RunStatus::NothingDue);
+    CHECK(none.batchno == 0);
 }

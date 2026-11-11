@@ -38,6 +38,7 @@
 #include "Vouchers.h"
 
 #include "Accounts.h"   // TrimText, AccountsTable, SeekAccount
+#include "Assets.h"     // UndoRun: cancelling a depreciation voucher (spec #4 4.3)
 #include "Company.h"    // UpdateUserTime
 #include "db_gl_dist.h"
 #include "db_gl_distb.h"   // year end's archive (spec #3 D16)
@@ -593,6 +594,7 @@ CancelResult CancelVoucher(Code4& code, long number)
     if (IsPostedMode(TrimText(h.mode.str()))) return CancelResult::Posted;
     cb4sqlite::Transaction tx(code);
     DeleteVoucher(h, l, number);
+    UndoRun(code, number);   // a depreciation voucher: its assets go back (spec #4 4.3); otherwise nothing
     tx.commit();
     return CancelResult::Cancelled;
 }

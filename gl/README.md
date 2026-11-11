@@ -135,7 +135,14 @@ DIR=D:\GL\company.db
   - **Lookup:** typing a code and pressing Enter shows the asset; Assets and Types show the lists.
   - **Disposed assets:** an asset that has been disposed of can't be changed.
 
-  Create Voucher and Disposal come with Spec #4's next milestones.
+- **Fixed Assets > Create Voucher** (4003): the month's depreciation, for the current period.
+  - **Before OK**, the dialog says how many assets are due and the total. OK lists them, with the assets it will skip and why: disposed, fully depreciated, bought after the period, or a type that's missing or points at an account not in the chart.
+  - **OK** writes one open voucher, dated the period's end, with two lines per asset (Dr depreciation expense, Cr accumulated depreciation). It moves each asset's accumulated depreciation and months used on.
+  - **Post** the voucher with Transactions > Post Voucher. **To undo a run**, cancel its voucher (Transactions > Cancel Voucher): the assets go back.
+  - **One run per period:** a second run is refused, naming the voucher.
+  - **After year end**, set the new year's period dates (Company Profile > Periods) before the first run.
+
+  Disposal comes with Spec #4's next milestone.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

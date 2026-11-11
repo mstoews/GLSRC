@@ -226,7 +226,8 @@ RecoverResult RecoverVoucher(Code4& code, long number, std::string* account = nu
 enum class CancelResult { Cancelled, NotFound, Posted };
 
 // TGLCancelBatch::SelectSlip, in one transaction: removes an unposted
-// voucher's header and lines.
+// voucher's header and lines. A depreciation voucher's assets go back to
+// their values before the run (Assets.h UndoRun, spec #4 4.3).
 CancelResult CancelVoucher(Code4& code, long number);
 
 // ---- Transaction Inquiry (plan S2-M5) -------------------------------------
