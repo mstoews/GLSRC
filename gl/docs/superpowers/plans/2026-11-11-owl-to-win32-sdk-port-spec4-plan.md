@@ -247,6 +247,30 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 4 — Disposal (1001)
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.4 #5 holds. The template's 6031 ("Sale Price") is Add/Modify's cost and 6037 ("Gain/Loss on Sale") its monthly amount. The code (6019) and 6031 are read-only (`ES_STATIC`), and there are no fields for cost, accumulated depreciation or book value.
+> - **`prune_rc.py`** (task 2): 1001 added.
+> - **`gl/port/FixedAssetDisposal.{h,cpp}`** (task 3):
+>   - **Fields:** Enter on the code shows the asset (and "There is no fixed asset X" otherwise). The fields show life, months used (the "Rmd" label becomes "Used", widened) and salvage. Sale Price is typed (made editable); Gain/Loss is computed as you type. Date Disposed defaults to today.
+>   - **The dialog grows 22 units in code**: a summary line ("Cost … Accumulated depreciation … Book value …") and a Delete button, IDs `IDC_FA_SUMMARY` and `IDC_FA_DELETE` in `PortIds.h`.
+>   - **Dispose** (ID 1, relabelled) asks (8107), disposes, and lists the Voucher Entry lines to make.
+>   - **Delete** removes only a never-depreciated asset.
+>   - A disposed asset shows "- disposed <date>" in the caption and can't be disposed of again.
+>   - Enter in Sale Price or Date Disposed moves on; it doesn't dispose.
+> - **`Assets.h`** (task 4): `GainOnSale`, `DisposeAsset` (`NotFound` / `AlreadyDisposed`), `DeleteAsset` (`HasHistory`, else delete and pack).
+> - **Wire** (task 5): 6035 (`ID_DISPOSAL`); `/checkres` loads 1001; `/stress` opens it.
+> - **Tests** (task 6), 2 cases:
+>   - E002 after the period-7 run: book value 4,800.00, a loss of 800.00 at 4,000.00 and a gain of 200.00 at 5,000.00. Disposed with its date, the rest of the record kept; refused a second time. Period 8's plan skips it.
+>   - Deleting E001 is refused (history); deleting E005 works and leaves the others.
+>
+>   `gl_tests`: 109 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Driven in the app, after the period-7 run:
+>   - E002: cost 5,000.00, accumulated 200.00, book value 4,800.00. Sale 4,000.00: −800.00.
+>   - Dispose: the entry (Dr 161000 200.00, Dr proceeds 4,000.00, Dr loss 800.00, Cr 151000 5,000.00); the caption shows 10/31/2026; disposing again is refused.
+>   - Delete E001: refused, "use Dispose". Delete E005: deleted.
+>   - A screenshot checked the added line and button.
+> - **Q3** is still the spec's assumption: nothing is posted.
+
 **Goal:** an asset can be marked disposed, with its gain or loss shown; an asset entered by mistake can be deleted.
 
 ### Tasks

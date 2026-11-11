@@ -397,6 +397,33 @@ std::int64_t StartOfYearBookValue(cb4sqlite::Code4& code, const Asset& a, const 
     return a.cost - (a.accumulated - thisYear);
 }
 
+// ---- Disposal -------------------------------------------------------------
+
+std::int64_t GainOnSale(const Asset& a, std::int64_t salePrice) { return salePrice - BookValue(a); }
+
+DisposeResult DisposeAsset(cb4sqlite::Code4& code, const std::string& facode, const std::string& dateSold)
+{
+    std::optional<Asset> a = FindAsset(code, facode);
+    if (!a) return DisposeResult::NotFound;
+    if (a->disposed()) return DisposeResult::AlreadyDisposed;
+    a->dateSold = dateSold;
+    a->mode = "D";
+    SaveAsset(code, *a);
+    return DisposeResult::Disposed;
+}
+
+DeleteAssetResult DeleteAsset(cb4sqlite::Code4& code, const std::string& facode)
+{
+    if (!FindAsset(code, facode)) return DeleteAssetResult::NotFound;
+    if (HasDepreciation(code, facode)) return DeleteAssetResult::HasHistory;
+    Data4 d(&code, "gl_fa");
+    d.SetIndex("facode");
+    Field4 f(d, "facode");
+    const bool deleted = DeleteRecord(d, f, TrimText(facode));
+    d.close();
+    return deleted ? DeleteAssetResult::Deleted : DeleteAssetResult::NotFound;
+}
+
 // ---- the run --------------------------------------------------------------
 
 namespace {

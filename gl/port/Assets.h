@@ -148,6 +148,24 @@ void AppendDepreciation(cb4sqlite::Code4& code, const DepreciationRow& row);
 // its cost.
 std::int64_t StartOfYearBookValue(cb4sqlite::Code4& code, const Asset& a, const std::string& yearEnd);
 
+// ---- Disposal (spec #4 6.3, D7; plan S4-M4) -----------------------------------
+
+// The sale price less the book value: a gain if positive, a loss if negative.
+std::int64_t GainOnSale(const Asset& a, std::int64_t salePrice);
+
+enum class DisposeResult { Disposed, NotFound, AlreadyDisposed };
+
+// Disposal's Dispose (the original TGLFixedDelete::Ok deleted the record):
+// sets DATE_SOLD to `dateSold` (yyyymmdd) and MODE to "D". Nothing is
+// posted (D7): the screen gives the entry to make in Voucher Entry.
+DisposeResult DisposeAsset(cb4sqlite::Code4& code, const std::string& facode, const std::string& dateSold);
+
+enum class DeleteAssetResult { Deleted, NotFound, HasHistory };
+
+// Disposal's Delete, for an asset entered by mistake: deletes and packs it,
+// unless the run has depreciated it (it has gl_fadep rows).
+DeleteAssetResult DeleteAsset(cb4sqlite::Code4& code, const std::string& facode);
+
 // ---- the run: Create Voucher (spec #4 4.2, 4.3; plan S4-M3) ------------------
 
 struct RunItem {

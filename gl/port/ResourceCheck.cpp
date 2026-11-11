@@ -75,6 +75,8 @@ const DialogCase kDialogs[] = {
     {4004, L"Fixed Assets Add/Modify (TGLFixedAssets)", false},
     // Spec #4 S4-M3.
     {4003, L"Create Voucher (TGLCreateDeprSlip)", false},
+    // Spec #4 S4-M4.
+    {1001, L"Disposal (TGLFixedDelete)", false},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

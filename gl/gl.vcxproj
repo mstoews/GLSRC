@@ -51,6 +51,7 @@
     <ClInclude Include="port\CompanyFiles.h" />
     <ClInclude Include="port\CompanyProfile.h" />
     <ClInclude Include="port\DepreciationRun.h" />
+    <ClInclude Include="port\FixedAssetDisposal.h" />
     <ClInclude Include="port\FixedAssetTypes.h" />
     <ClInclude Include="port\FixedAssets.h" />
     <ClInclude Include="port\Globals.h" />
@@ -99,6 +100,7 @@
     <ClCompile Include="port\CompanyFiles.cpp" />
     <ClCompile Include="port\CompanyProfile.cpp" />
     <ClCompile Include="port\DepreciationRun.cpp" />
+    <ClCompile Include="port\FixedAssetDisposal.cpp" />
     <ClCompile Include="port\FixedAssetTypes.cpp" />
     <ClCompile Include="port\FixedAssets.cpp" />
     <ClCompile Include="port\Ini.cpp" />

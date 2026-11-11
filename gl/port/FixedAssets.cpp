@@ -34,6 +34,7 @@
 #include "Accounts.h"   // TrimText
 #include "Assets.h"
 #include "DepreciationRun.h"
+#include "FixedAssetDisposal.h"
 #include "FixedAssetTypes.h"
 #include "Globals.h"
 #include "MainDialog.h"
@@ -461,7 +462,7 @@ int StressFixedAssets(int times)
     };
     auto openAll = [] {
         return RunAssetTypes(nullptr, true) != -1 && RunFixedAssets(nullptr, true) != -1 &&
-               RunCreateDepreciationVoucher(nullptr, true) != -1;
+               RunCreateDepreciationVoucher(nullptr, true) != -1 && RunAssetDisposal(nullptr, true) != -1;
     };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();

@@ -44,6 +44,9 @@
 #define IDC_ST_ACCOUNTS         20125   // show the accounts under each line
 #define IDC_ST_ZEROS            20126   // show zero lines
 
+#define IDC_FA_SUMMARY          20130   // Disposal (1001): cost, accumulated depreciation, book value (S4-M4)
+#define IDC_FA_DELETE           20131   // Disposal (1001): Delete, for an asset never depreciated
+
 // ---- commands --------------------------------------------------------------
 
 #define CM_SAMPLE_REPORT        20500   // gl.exe /samplereport, and /stress
