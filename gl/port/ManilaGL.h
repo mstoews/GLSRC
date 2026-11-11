@@ -53,6 +53,7 @@ private:
     void MenuHelp(WPARAM wp, LPARAM lp);       // TGlWindow::WMMenuSelect
     void PopUpMenu(POINT screen);              // TGlWindow::PopUpMenu
     void NotPorted(WORD id);
+    void RunReportList();                      // TGLCustomReport: dialog 1022 (spec #3 D9)
     std::wstring MenuText(WORD id) const;
 
     static LRESULT CALLBACK ClientProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref);

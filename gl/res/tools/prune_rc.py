@@ -32,7 +32,8 @@ CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035',
            '2057', '1158', '1159', '1160',
            '1006', '1007', '1023', '1040', '1013',
-           '1061', '1015', '1043', '1029', '1017']
+           '1061', '1015', '1043', '1029', '1017',
+           '1022']   # Spec #3 S3-M7: the report list (D9)
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -42,11 +43,16 @@ MENUS = ['MANILA', 'GLE', 'GLSUB']
 #   (menu, 'rename', id, '"&New text"')         replaces the item's text
 #   (menu, 'remove', id)                        drops the item
 #   (menu, 'insert_after', id, '"&Text", ID')   adds MENUITEM "&Text", ID after it
+#   (menu, 'set_id', id, 'NEW_ID', '"&Text"')   gives the item with that ID and text a new ID
 # Items the port adds take IDs from gl/port/PortIds.h, which gl.rc #includes.
 MENU_EDITS = [
     # Spec #3 D13 (S3-M3): Financial Statements runs F3, F4 and F5.
     ('MANILA', 'rename', '1018', '"&Cash flow statement..."'),
     ('MANILA', 'remove', '1025'),
+    # Spec #3 D9 (S3-M7): Custom Report always opens the report list; File >
+    # Print and the toolbar keep 3068, which prints the active preview first.
+    ('MANILA', 'set_id', '3068', 'CM_REPORT_LIST', '"&Custom Report..."'),
+    ('GLSUB', 'set_id', '3068', 'CM_REPORT_LIST', '"&Custom Report..."'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
@@ -291,7 +297,8 @@ def apply_menu_edits(r):
             continue
         op, target = edit[1], edit[2]
         hits = [i for i, l in enumerate(lines)
-                if (m := MENU_ITEM.match(l)) and key(m.group(3)) == key(target)]
+                if (m := MENU_ITEM.match(l)) and key(m.group(3)) == key(target)
+                and (op != 'set_id' or m.group(2) == edit[4])]
         if len(hits) != 1:
             sys.exit(f'menu edit {edit}: {len(hits)} items with ID {target} in {r["name"]}')
         i = hits[0]
@@ -300,6 +307,8 @@ def apply_menu_edits(r):
             lines[i] = f'{m.group(1)}MENUITEM {edit[3]}, {m.group(3)}{m.group(4)}'
         elif op == 'remove':
             del lines[i]
+        elif op == 'set_id':
+            lines[i] = f'{m.group(1)}MENUITEM {m.group(2)}, {edit[3]}{m.group(4)}'
         elif op == 'insert_after':
             lines.insert(i + 1, f'{m.group(1)}MENUITEM {edit[3]}')
         else:

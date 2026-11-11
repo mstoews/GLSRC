@@ -15,15 +15,6 @@ namespace {
 
 using Values = std::vector<std::int64_t>;
 
-// "Current period 7 (Oct 26)".
-std::string currentPeriodLine(const ReportContext& ctx)
-{
-    std::string s = "Current period " + std::to_string(ctx.currentPeriod);
-    const FiscalPeriod* fp = ctx.period(ctx.currentPeriod);
-    if (fp && !fp->description.empty()) s += " (" + fp->description + ")";
-    return s;
-}
-
 // The common frame: header, account / dept / description, then `amounts`
 // columns filled by `values`, a total row, and the closing notes.
 rpt::Report listing(cb4sqlite::Code4& code, const ReportContext& ctx, const std::string& title,
@@ -35,7 +26,7 @@ rpt::Report listing(cb4sqlite::Code4& code, const ReportContext& ctx, const std:
     r.company = ctx.company;
     r.printedOn = ctx.printedOn;
     r.title = title;
-    r.subtitles.push_back(currentPeriodLine(ctx));
+    r.subtitles.push_back(CurrentPeriodLine(ctx));
     r.footerNote = footer;
     r.columns = {{"Account", 1.0}, {"Dept", 0.5}, {"Description", 3.2}};
     for (const rpt::Column& c : amounts) r.columns.push_back(c);

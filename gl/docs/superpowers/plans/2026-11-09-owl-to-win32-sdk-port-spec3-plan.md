@@ -204,6 +204,21 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 and M6 need only M1
 
 ## Milestone 7 — Listings, report list, clean-up
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).** Built before S3-M4, which waits for the finance team's review; nothing here depends on it.
+> - **Read** (task 1): the three `.RPT` files' page headings are "Medical Representative Summary Report", "General Ledger Product Codes" and "Doctor Codes Summary Report", and their footers name the file. `GL_DRCDS.RPT`'s report title was copied from 6039 and its table path is `c:\gl\dbf\` (D12). `GL_PRODL.RPT` has no current period. Dialog 1022 is a tbSpread ("No.", "Description") with Add/Mod, Delete, Modify, Print and Close.
+> - **`MasterReports.{h,cpp}`** (task 2), portable: 6039 and 6041 landscape, 6038 portrait, each in code order without deleted records, titled after its page heading, with a count line at the end. A party's second and third address lines print under the first. Widths were set from a PDF of the fixture: two-line headers ("Short / Name", "Credit / Limit") keep codes and phone numbers whole. `CurrentPeriodLine` moved to `ReportContext`, shared with the account reports.
+> - **`ReportList.{h,cpp}`** (task 3) on dialog 1022, added to `prune_rc.py`'s `DIALOGS`: 16 reports (the finance set, then the original reports in menu order). Print, a double-click or Enter returns the row's command, which the frame runs after the dialog closes, as from the menu. Add/Mod, Delete and Modify are hidden, and Print and Close move into their places. `gl_rept` isn't read. **Routing:** 3068 (File > Print, the toolbar) prints the active preview, else opens the list. Custom Report on MANILA and GLSUB gets its own command, `CM_REPORT_LIST` (20501), through a new `set_id` menu edit in `prune_rc.py`, so it opens the list even with a preview open (D9).
+> - **Stubs** (task 4): `kReportingCommands` is gone. The reports left to other specs are `kFixedAssetReports` (1019, 1020: Spec #4), `kApReports` (Spec #5) and `kArReports` (Spec #6). `ReportingStubs::Show` takes the module and the spec, so each message names the right one.
+> - **`/stress`** opens the three listings too; **`/checkres`** loads 1022 (with its grid) and checks that MANILA's and GLSUB's Custom Report is `CM_REPORT_LIST` (task 5).
+> - **README** (task 6): a Reports section covering the reports and their options, the preview, printing, the report list, Printer Setup and printing to PDF. The Statement Layout screen is noted as coming in S3-M4.
+> - **Tests:** `gl_tests/test_reports_master.cpp`, 4 cases: each listing's rows, columns and count, and deleted records left out. `gl_tests`: 93 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. The three listings were printed to PDF. The report list was driven in the app:
+>   - 3068 with no preview opens it (16 rows; only Print and Close showing);
+>   - row 14 then Print opens the Medical Representatives preview;
+>   - `CM_REPORT_LIST` with a preview open opens it, and Close runs nothing;
+>   - 1019's message names Spec #4.
+
+
 1. **Read** `GL_MEDRP.RPT`, `GL_PRODL.RPT`, `GL_DRCDS.RPT`, `gl_rept.cpp`, dialog 1022.
 2. **`MasterReports.{h,cpp}`**: 6039, 6038, 6041 (D12); tests of the row counts; wire them.
 3. **`ReportList.{h,cpp}`** (D9) on dialog 1022 (pruned into `gl.rc`); 3068 routing: active preview, else the list; Reporting > Custom Report and GLSUB open the list.

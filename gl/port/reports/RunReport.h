@@ -66,8 +66,14 @@ void RunVoucherSummary(fx::MdiFrame& frame);
 void RunPrepostingDistribution(fx::MdiFrame& frame);
 void RunPrePostingReport(fx::MdiFrame& frame);
 
+// The master-data listings (MasterReports.h): 6039 Medical Representatives,
+// 6038 Product code summary, 6041 Doctor Codes. No options.
+void RunMedicalRepsListing(fx::MdiFrame& frame);
+void RunProductCodesListing(fx::MdiFrame& frame);
+void RunDoctorCodesListing(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
-// F5), pages through it at every zoom, and closes it. Returns the GDI + USER
+// F5, then every original report), pages through it at every zoom, and closes it. Returns the GDI + USER
 // object growth, or -1 if a preview couldn't be opened.
 int StressReports(int times);

@@ -17,5 +17,7 @@ namespace ArStubs {
 void Show(HWND owner, const wchar_t* item);          // Accounts Receivable (Spec #6)
 }
 namespace ReportingStubs {
-void Show(HWND owner, const wchar_t* item);          // Crystal Reports replacement (Spec #3)
+// The reports Spec #3 leaves to their modules: `module` ("Fixed Assets") and
+// the spec that ports it (4).
+void Show(HWND owner, const wchar_t* item, const wchar_t* module, int spec);
 }

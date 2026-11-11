@@ -15,6 +15,7 @@
 #include "Globals.h"
 #include "Login.h"
 #include "PortIds.h"
+#include "reports/ReportList.h"
 #include "reports/RunReport.h"
 #include "stubs/Stubs.h"
 
@@ -71,22 +72,18 @@ const WORD kArCommands[] = {
 // TManilaGL::GLPrePosting; no legacy header names it.
 constexpr WORD kPrePostingReport = 8136;
 
-const WORD kReportingCommands[] = {
-    // General Ledger reports
-    // 1015, 1016, 1018 (Financial Statements) are ported: S3-M3, F3-F5; 1025 left the menu (D13).
-    1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings
-    // 1075 (GLPrtDistList) and 6076 (trial balance) are ported: S3-M2, F2 and F1.
-    // 2001 (CMDialogPrint, printer setup) is ported: S3-M1.
-    3068,                     // GLCustomReport ID_PRINT (also the toolbar Print button), without a preview open
-    6038, 6039, 6041,         // GLProductList, GLMedRepsList, GLDoctorRpt
-    // 6080 (trial balance by dept.), 10071, 10073 (chart, budget) are ported: S3-M5.
-    // 6074, 6075, 6078, 8082, 8136 (the voucher reports) are ported: S3-M6;
-    // 6077 (GLAccounts) is on no menu or toolbar and isn't ported (D11).
-    // Accounts Payable reports
+// The reports Spec #3 doesn't port (spec #3 1.2): they go with their modules.
+// Every General Ledger report is ported (S3-M1 to S3-M7); 1025 left the menu
+// (D13), and 6077 (GLAccounts), on no menu or toolbar, isn't ported (D11).
+const WORD kFixedAssetReports[] = {
+    1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings (Spec #4)
+};
+const WORD kApReports[] = {
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
     4091, 4092,
     8067, 8068, 8069, 8071, 8072, 8073, 8075, 8076, 8077, 8078,
-    // Accounts Receivable reports
+};
+const WORD kArReports[] = {
     4056, 4057, 4060, 4061, 4063, 4068, 4069, 4070, 4071, 4072, 4073, 4074, 4075, 4076, 8137,
 };
 
@@ -294,7 +291,11 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case ID_PRINT:                         // File > Print, the toolbar Print button (spec #3 D9)
         if (rpt::win32::PrintActivePreview(*this)) return true;
-        break;                             // no preview open: the report list comes in S3-M7
+        RunReportList();                   // no preview active: the report list (1022)
+        return true;
+    case CM_REPORT_LIST:                   // Reporting > Custom Report, GLSUB (D9; 3068 in the original)
+        RunReportList();
+        return true;
     case CM_SAMPLE_REPORT:                 // the report engine's test report (gl.exe /samplereport)
         RunSampleReport(*this);
         return true;
@@ -337,12 +338,27 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case kPrePostingReport:                // Transactions > Voucher Reports > GL Pre-Posting Report (D5)
         RunPrePostingReport(*this);
         return true;
+    case ID_REPLIST:                       // Reporting > General Ledger > Medical Representatives (GL_MEDRP.RPT)
+        RunMedicalRepsListing(*this);
+        return true;
+    case ID_PRODUCTLIST:                   // ... > Product code summary (GL_PRODL.RPT)
+        RunProductCodesListing(*this);
+        return true;
+    case ID_DOCTOR_RPT:                    // ... > Doctor Codes (GL_DRCDS.RPT, D12)
+        RunDoctorCodesListing(*this);
+        return true;
     default:
         break;
     }
     if (ctl || id >= 0xFF00) return false;   // child-window IDs: DefFrameProc
     NotPorted(id);
     return true;
+}
+
+void ManilaGL::RunReportList()
+{
+    // The chosen report runs as its menu item does, once the list has closed.
+    if (const WORD id = ShowReportList(hwnd())) OnCommand(id, 0, nullptr);
 }
 
 std::wstring ManilaGL::MenuText(WORD id) const
@@ -360,8 +376,12 @@ std::wstring ManilaGL::MenuText(WORD id) const
 void ManilaGL::NotPorted(WORD id)
 {
     const std::wstring item = MenuText(id);
-    if (contains(kReportingCommands, id)) {
-        ReportingStubs::Show(hwnd(), item.c_str());
+    if (contains(kFixedAssetReports, id)) {
+        ReportingStubs::Show(hwnd(), item.c_str(), L"Fixed Assets", 4);
+    } else if (contains(kApReports, id)) {
+        ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Payable", 5);
+    } else if (contains(kArReports, id)) {
+        ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Receivable", 6);
     } else if (contains(kApCommands, id)) {
         ApStubs::Show(hwnd(), item.c_str());
     } else if (contains(kArCommands, id)) {

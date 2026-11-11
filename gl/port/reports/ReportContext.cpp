@@ -25,6 +25,14 @@ const FiscalPeriod* ReportContext::period(int number) const
     return nullptr;
 }
 
+std::string CurrentPeriodLine(const ReportContext& ctx)
+{
+    std::string s = "Current period " + std::to_string(ctx.currentPeriod);
+    const FiscalPeriod* fp = ctx.period(ctx.currentPeriod);
+    if (fp && !fp->description.empty()) s += " (" + fp->description + ")";
+    return s;
+}
+
 ReportContext LoadReportContext(cb4sqlite::Code4& code, const std::string& todayYyyymmdd)
 {
     ReportContext ctx;

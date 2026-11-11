@@ -79,7 +79,7 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
 | `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (Specs #1 and #2, and Spec #3 so far)
+## What runs (Specs #1, #2 and #3)
 
 - **Frame:**
   - the MANILA menu and the top toolbar;
@@ -123,22 +123,52 @@ DIR=D:\GL\company.db
 - **Accounts > Budget Data** (1017): the Chart of Accounts screen with a grid of the 12 months. Pick an account (Search, or Set Data on the account typed), edit the Budget column in the grid (Enter, F2 or a double-click edits a cell), then OK saves the 12 amounts.
 - **Maintenance > Backup Databases** saves a copy of the company database to a file you choose, by default `<name>-<yyyymmdd>.db` beside it. **Restore Databases** replaces the company database with a backup you choose, after checking it is one and asking. The replaced file is kept as `<name>.db.bak`. If anything goes wrong, the original is put back.
 - **Maintenance > Year End Consolidation** moves the income and expense balances into the Retained Earnings account and the period amounts into the previous-year columns. Since Spec #3 (D16) it also makes the closing balances the new opening balances, moves the year's posted lines to the archive (`gl_distb`), and closes the year's posted vouchers (mode 9), so Transaction Inquiry and Recover show only the new year. It runs only when exactly one account has type R; otherwise it names the type-R accounts so you can correct them in the Chart of Accounts. **Reindex Databases** explains that an SQLite company database needs no reindexing.
-- **Reporting > General Ledger > Trial Balance** (F1): each account's balance at the end of a period, in Debit or Credit, with the totals. **Distribution List** (F2, the Distribution Trial Balance): for one period or a range, each account's opening balance, debits, credits and closing balance; optionally each account's posted lines beneath it (the original Distribution List). A row marked `*` has movement without posted lines. Both ask for their options first and keep them until the program exits.
-- **Reporting > General Ledger > Trial Balance by Dept.**, **Accounts > Chart of Accounts Report** (also the toolbar's inquiry button) and **Accounts > Budget Report**: the original account listings at the current period, with totals. They have no options.
-- **The voucher reports**: Reporting > General Ledger > **Voucher Slips**, **Voucher Detail**, **Voucher Summary** and **Preposting Distribution List**, and Transactions > Voucher Reports > **General Ledger Pre-Posting Report**. The detail report shows a voucher's difference when its debits and credits differ. The preposting list and the pre-posting report cover only vouchers not yet posted.
-- **Reporting > Financial Statements**: **Income statement** (month and year to date; optionally the prior year, the budget and the variance; all departments or one), **Balance sheet** (end of the period and start of the year), and **Cash flow statement** (month and year to date, from net income, reconciled to cash). Their lines come from a statement layout kept in the company database (`gl_fsline`, `gl_fsrange`), created with a default grouping by account number the first time a statement runs. Accounts on no line print as "Unclassified accounts", and the statements say which. The Statement Layout screen for editing it comes in S3-M4. (The menu's "Statement of retained earnings" is now "Cash flow statement"; "Manufacturing statement" is gone.)
-- **File > Printer Setup** chooses the printer, paper and margins for reports. The choice lasts until the program exits; it doesn't change the Windows default printer. Orientation isn't offered there: each report has its own.
-- **Report preview** (Spec #3, S3-M1): every report opens in a window of its own, with Print, First / Previous / Next / Last, the page number, Zoom (fit width, fit page, 100 %), Options (the report's options again) and Close. PgUp / PgDn, Home / End, the arrow keys, the mouse wheel and Ctrl+P work in it. **File > Print** and the toolbar Print button print the active preview. On Windows 11 the Print dialog is the system's own print window.
-  `gl.exe /samplereport` also opens the report engine's test report (see Checks).
+- **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**
-  - Accounts Payable, Accounts Receivable and report commands show a "not yet ported" message naming the spec that brings them.
+  - Accounts Payable, Accounts Receivable and Fixed Assets commands, and their reports, show a "not yet ported" message naming the spec that brings them.
   - Other General Ledger commands say they are not part of Spec #1.
+
+## Reports
+
+Spec #3 replaced the Crystal Reports runtime with the port's own report engine. Every General Ledger report opens in a **preview** window of its own; none goes straight to the printer.
+
+### The reports
+
+| Menu | Report | Options |
+|---|---|---|
+| Reporting > General Ledger > **Trial Balance** | F1: each account's balance at the end of a period, in Debit or Credit, with the totals | period; zero balances |
+| Reporting > General Ledger > **Distribution List** | F2, the Distribution Trial Balance: for a period or a range, each account's opening balance, debits, credits and closing balance. A row marked `*` has movement without posted lines | periods; each account's posted lines beneath it (the original Distribution List, landscape); accounts with nothing |
+| Reporting > Financial Statements > **Income statement** | F3: month and year to date | period; department; prior year; budget and variance; the accounts under each line; zero lines |
+| Reporting > Financial Statements > **Balance sheet** | F4: end of the period and start of the year | period; accounts; zero lines |
+| Reporting > Financial Statements > **Cash flow statement** | F5: month and year to date, from net income, reconciled to cash | period; accounts; zero lines |
+| Reporting > General Ledger > **Trial Balance by Dept.** | the original listing (`GLDEPT.RPT`) at the current period | none |
+| Accounts > **Chart of Accounts Report** (also the toolbar's inquiry button) | opening balance, accumulated this year, current balance | none |
+| Accounts > **Budget Report** | the current period's amount, its budget and the difference | none |
+| Reporting > General Ledger > **Voucher Slips**, **Voucher Detail**, **Voucher Summary** | every voucher, in any state. The detail shows a voucher's difference when its debits and credits differ | none |
+| Reporting > General Ledger > **Preposting Distribution List**; Transactions > Voucher Reports > **General Ledger Pre-Posting Report** | the vouchers not yet posted | none |
+| Reporting > General Ledger > **Medical Representatives**, **Product code summary**, **Doctor Codes** | the master-data listings | none |
+| Voucher Entry's **Print** | the voucher's slip, in a window over the dialog | none |
+
+A report with options asks for them first and keeps them until the program exits. The reports read the books and change nothing.
+
+**The financial statements' lines** come from a statement layout kept in the company database (`gl_fsline`, `gl_fsrange`), created with a default grouping by account number the first time a statement runs. Accounts on no line print as "Unclassified accounts", and the statements say which. The Statement Layout screen for editing it comes in S3-M4. (The menu's "Statement of retained earnings" is now "Cash flow statement"; "Manufacturing statement" is gone.)
+
+### The preview
+
+Each preview has Print, First / Previous / Next / Last, the page number, Zoom (fit width, fit page, 100 %), Options (the report's options again, then a fresh copy) and Close. PgUp / PgDn, Home / End, the arrow keys, the mouse wheel and Ctrl+P work in it. Several previews can be open at once; the Window menu lists them.
+
+### Printing
+
+- **Print** in a preview (or Ctrl+P), **File > Print** and the toolbar's Print button print the active preview. The Print dialog chooses the printer and the pages; on Windows 11 it is the system's own print window.
+- **With no preview active**, File > Print and the toolbar's Print button open the **report list** ("Print Custom Report"). **Reporting > Custom Report** (also on the right-click menu) always opens it. Choose a report and press Print (or double-click it, or press Enter): it runs as from its menu. The original's custom Crystal reports can't run, so the list holds the port's reports and can't be edited.
+- **File > Printer Setup** chooses the printer, paper and margins. The choice lasts until the program exits; it doesn't change the Windows default printer. Orientation isn't offered: each report has its own.
+- **To make a PDF**, choose *Microsoft Print to PDF* in the Print dialog; Windows then asks for the file name.
 
 ## Checks
 
-- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`). Add `/quiet` to get the failure count as the exit code instead of a message box.
-- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then the sample report's preview 25 times (paging through it at each zoom), on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
+- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`) and the report list (1022). Add `/quiet` to get the failure count as the exit code instead of a message box.
+- **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then every report's preview (the sample report, the finance set and the original reports) 25 times, paging through each at every zoom, on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
 - **`gl.exe /samplereport`** opens the report engine's test report after startup: the chart of accounts grouped by type, with subtotals, a total and a wrapped note. Its options repeat the list (to make pages), drop zero balances, or turn the page to landscape. Use it to check the preview, Printer Setup and printing, e.g. to *Microsoft Print to PDF*.
 - **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).
 - **Debug builds** report CRT heap leaks at exit in the debugger's output window.
