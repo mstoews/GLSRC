@@ -275,6 +275,7 @@ On the Spec #3 engine, wired in place of the stubs for 1019 and 1020. Both are i
   - **E001** office furniture: straight line, cost 30,000.00, salvage 0, life 60 months, so 500.00 a month. 13 months used, accumulated 6,500.00: 12 months before this year, plus period 6.
   - **E002** laptops, bought in June 2026 (period 3): declining balance at 24 %, cost 5,000.00, salvage 0. The start-of-year value is its cost, so it is 100.00 a month. 1 month used, accumulated 100.00 (period 6).
   - Period 6's 600.00 is E001's 500.00 plus E002's 100.00, so cost 35,000.00 and accumulated 6,600.00 match the ledger.
+  - Both are in `gl_fadep` (year ending 2027-03-31, period 6, `BATCHNO` 0, since the movement has no voucher). Without them, E002's start-of-year value would be 4,900.00 and its monthly amount 98.00 (D3).
   - **E004:** disposed in period 5, cost 1,000.00, fully depreciated. It is not in the check.
   - **E005:** type XX, cost 2,000.00. It is skipped by the run and named.
 

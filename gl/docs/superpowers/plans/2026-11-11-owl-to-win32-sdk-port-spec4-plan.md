@@ -32,6 +32,32 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 0 — The portable core
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.1 holds. `LIFELEFT` is months used (`TGLCreateDeprSlip::Ok` adds 1; dialog 4004 labels it "Months Used"). The real tags are `FACODE` and `DEP_METH` on `GL_FA`, and `FATYPE` on `GL_FATYP`.
+> - **`gl/port/Assets.{h,cpp}`** (task 2):
+>   - `EnsureAssetTables` creates the three tables (with the real tags) and does the one-time `ACCUM_DEP` fill: a NULL `ACCUM_DEP` with months used.
+>   - `LoadAssetTypes` / `FindAssetType` / `SaveAssetType` and `LoadAssets` / `FindAsset` / `SaveAsset` work in cents. `Asset::disposed()` is `MODE` "D".
+>   - `ValidateAccount` matches the account and the dept, blank for none.
+>   - The arithmetic is pure: `Depreciable`, `BookValue`, `Remaining`, `MonthlyAmount` and `DueAmount`.
+>   - The history: `FiscalYearEnd` (gl_pds period 12), `LoadDepreciation`, `AppendDepreciation` and `StartOfYearBookValue` (cost less the accumulated depreciation before this year's `gl_fadep` rows).
+> - **Found while testing:** calling `Data4::blank()` *before* `appendStart()` flushes blanks over the current record. A failed lookup leaves a record current, so adding a second asset wiped the first. Every append here calls `appendStart()` then `blank()`, as `Data4::appendBlank` does, and a test checks that adding leaves the others intact.
+> - **Fixture** (task 3):
+>   - `fixed_assets()` writes `GL_FATYP` (EQ, XX), `GL_FA` (E001, E002, E004, E005) and `GL_FADEP`. The history holds period 6's 500.00 and 100.00 with `BATCHNO` 0, so E002's start-of-year value is its cost (spec §9).
+>   - **Every existing table is row-for-row identical** except `ACCESSM`'s Custom Report row. That row's ID becomes 20501 (`CM_REPORT_LIST`): S3-M7 changed the menu but didn't regenerate the fixture.
+>   - Regenerating at first dropped the row, because `manila_items()` read only numeric IDs. It now resolves `gl/port/PortIds.h` symbols and stops on an unknown one.
+>   - The Spec #3 sheet's queries give the same results.
+> - **Tests** (task 4): `gl_tests/test_assets.cpp`, 7 cases:
+>   - the fixture's register, which agrees with 151000 and 161000;
+>   - `ValidateAccount`;
+>   - straight line (4,800 ÷ 48; 1,000 ÷ 3 as 333.33 + 333.33 + 333.34; 60 months summing to the cost);
+>   - the salvage floor;
+>   - declining from `gl_fadep`, including the next year's 98.00;
+>   - saving without overwriting;
+>   - missing tables created, and the blank fill (16,650.00, and one capped at 99,900.00).
+>
+>   `gl_tests`: 100 cases.
+> - **Checked:** Debug and Release `/W4 /WX` clean; every suite, `/checkres`, `/stress` and the self-test pass.
+
 **Goal:** assets and types can be read, written and depreciated on Linux, under test, on a fixture whose register agrees with its ledger.
 
 ### Tasks
@@ -77,7 +103,7 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
    - **New, Top / Bottom / Next / Previous;** Enter on the type shows it.
    - **Types** shows a `TableList` (`GL.INI [GL_FATYP]`, columns Code, Description).
 
-   The translation notes name D9 and the original's `pack()` after a delete, which the port doesn't do (Spec #2's practice).
+   The translation notes name D9. A delete packs, as the original and Spec #2's `DeleteRecord` do.
 4. **Wire** 6036 (Fixed Assets > Asset Types) in `ManilaGL.cpp`. **`/checkres`** loads 4002 and **`/stress`** opens and closes it.
 5. **Tests:** saving and deleting types, and refusing to delete a type in use, through `Assets.h`.
 
