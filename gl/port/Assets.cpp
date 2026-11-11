@@ -289,6 +289,33 @@ bool ValidateAccount(cb4sqlite::Code4& code, const std::string& account, const s
     return q.next() && q.integer(0) > 0;
 }
 
+// ---- checking -------------------------------------------------------------
+
+std::optional<AssetProblem> CheckAsset(cb4sqlite::Code4& code, const Asset& a)
+{
+    using K = AssetProblem::Kind;
+    auto problem = [](AssetField f, K k) { return std::optional<AssetProblem>(AssetProblem{f, k}); };
+    if (TrimText(a.code).empty()) return problem(AssetField::Code, K::Required);
+    if (TrimText(a.type).empty()) return problem(AssetField::Type, K::Required);
+    if (!FindAssetType(code, a.type)) return problem(AssetField::Type, K::NoSuchType);
+    if (TrimText(a.description).empty()) return problem(AssetField::Description, K::Required);
+    if (a.datePurchased.size() != 8) return problem(AssetField::Date, K::Required);
+    if (a.cost <= 0) return problem(AssetField::Cost, K::Required);
+    if (a.life <= 0) return problem(AssetField::Life, K::Required);
+    if (a.method == DepMethod::Declining && a.percent <= 0) return problem(AssetField::Rate, K::Required);
+    if (a.salvage > a.cost) return problem(AssetField::Salvage, K::SalvageOverCost);
+    if (a.monthsUsed > a.life) return problem(AssetField::MonthsUsed, K::UsedOverLife);
+    if (a.accumulated > Depreciable(a)) return problem(AssetField::Accumulated, K::AccumOverDepreciable);
+    return std::nullopt;
+}
+
+bool HasDepreciation(cb4sqlite::Code4& code, const std::string& facode)
+{
+    cb4sqlite::Query q(code, "SELECT count(*) FROM gl_fadep WHERE _deleted = 0 AND trim(facode) = ?1");
+    q.bindText(1, TrimText(facode));
+    return q.next() && q.integer(0) > 0;
+}
+
 // ---- the arithmetic -----------------------------------------------------
 
 std::int64_t Depreciable(const Asset& a) { return a.cost - a.salvage; }

@@ -234,6 +234,38 @@ TEST_CASE("Saving types, assets and history", "[assets]")
     CHECK(rows[0].yearEnd == "20270331");
 }
 
+TEST_CASE("CheckAsset: what Add/Mod refuses", "[assets]")
+{
+    FixtureDb db;
+    Asset a = straight(120000, 0, 12, 0, 0);
+    a.code = "E006";
+    a.description = "Desk";
+    a.datePurchased = "20261001";
+    CHECK_FALSE(CheckAsset(db.code, a));
+
+    using K = AssetProblem::Kind;
+    auto failsOn = [&](Asset x, AssetField f, K k) {
+        const auto p = CheckAsset(db.code, x);
+        REQUIRE(p);
+        CHECK(p->field == f);
+        CHECK(p->kind == k);
+    };
+    Asset x = a; x.code = " ";          failsOn(x, AssetField::Code, K::Required);
+    x = a; x.type = "";                 failsOn(x, AssetField::Type, K::Required);
+    x = a; x.type = "ZZ";               failsOn(x, AssetField::Type, K::NoSuchType);
+    x = a; x.description = "";          failsOn(x, AssetField::Description, K::Required);
+    x = a; x.datePurchased = "";        failsOn(x, AssetField::Date, K::Required);
+    x = a; x.cost = 0;                  failsOn(x, AssetField::Cost, K::Required);
+    x = a; x.life = 0;                  failsOn(x, AssetField::Life, K::Required);
+    x = a; x.method = DepMethod::Declining; failsOn(x, AssetField::Rate, K::Required);
+    x = a; x.salvage = 130000;          failsOn(x, AssetField::Salvage, K::SalvageOverCost);
+    x = a; x.monthsUsed = 13;           failsOn(x, AssetField::MonthsUsed, K::UsedOverLife);
+    x = a; x.salvage = 20000; x.accumulated = 100001; failsOn(x, AssetField::Accumulated, K::AccumOverDepreciable);
+
+    CHECK(HasDepreciation(db.code, "E001"));
+    CHECK_FALSE(HasDepreciation(db.code, "E005"));
+}
+
 TEST_CASE("Deleting a type: refused while an asset uses it (D9)", "[assets]")
 {
     FixtureDb db;

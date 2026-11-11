@@ -27,6 +27,11 @@ LRESULT CALLBACK PicEditProc(HWND h, UINT m, WPARAM w, LPARAM l) { return EditPr
 
 } // namespace
 
-bool RegisterPicEdit(HINSTANCE inst) { return RegisterEditClass(inst, L"tbPic", PicEditProc); }
+bool RegisterPicEdit(HINSTANCE inst)
+{
+    // tbTime: the GL's only one (dialog 4004's 1035) is never set and the port
+    // hides it; registered as a tbPic so the template creates (spec #4 S4-M2).
+    return RegisterEditClass(inst, L"tbPic", PicEditProc) && RegisterEditClass(inst, L"tbTime", PicEditProc);
+}
 
 } // namespace win32fx::detail

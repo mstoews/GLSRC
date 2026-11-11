@@ -128,7 +128,14 @@ DIR=D:\GL\company.db
   - **Delete** is refused while an asset uses the type.
   - Typing a type and pressing Enter shows it; **Types** shows the list.
 
-  The rest of Fixed Assets comes with Spec #4's next milestones.
+- **Fixed Assets > Add/Modify** (4004): the asset register.
+  - **Fields:** an asset has a code, type, description, reference, date purchased, cost, salvage value, life in months, months used and method (straight line, or declining balance at a yearly rate).
+  - **Computed** as you type: the monthly depreciation, net book value and life in years.
+  - **Accumulated depreciation** (and months used) can be typed until the monthly run has depreciated the asset. After that they are the run's.
+  - **Lookup:** typing a code and pressing Enter shows the asset; Assets and Types show the lists.
+  - **Disposed assets:** an asset that has been disposed of can't be changed.
+
+  Create Voucher and Disposal come with Spec #4's next milestones.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

@@ -39,7 +39,7 @@
 #include "win32fx.h"
 
 #include "ChartOfAccounts.h"
-#include "FixedAssetTypes.h"
+#include "FixedAssets.h"
 #include "MasterData.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"

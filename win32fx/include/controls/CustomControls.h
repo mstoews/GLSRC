@@ -10,6 +10,8 @@
 //   tbInteger  integer edit                (IntEdit.cpp)
 //   tbSuperBtn push button with a picture  (SuperBtn.cpp)
 //   tbSpread   grid                        (Grid.cpp; fx::Grid in Grid.h)
+//   tbTime     a tbPic, only so templates load (PicEdit.cpp): the one
+//              in the GL (dialog 4004's 1035) is never set and is hidden
 //
 // The edits superclass the system EDIT control and the button superclasses
 // BUTTON: the dialog code talks to them with the usual WM_SETTEXT /
@@ -30,7 +32,7 @@
 
 namespace win32fx {
 
-// Registers all six classes (CS_GLOBALCLASS) for `inst`; calls
+// Registers all seven classes (CS_GLOBALCLASS) for `inst`; calls
 // InitCommonControlsEx first. False if any registration failed. Safe to call
 // more than once.
 bool RegisterCustomControls(HINSTANCE inst);

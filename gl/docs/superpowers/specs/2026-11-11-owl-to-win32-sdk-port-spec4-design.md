@@ -208,17 +208,17 @@ The screens follow the Spec #2 master-data pattern (Medical Reps, Product Codes)
 ### 6.2 Fixed Assets Add/Modify (4004)
 
 - **Enter** on the code shows that asset. **Assets** and **Types** show the lists; picking a type fills in its accounts, shown read-only.
-- **Add/Mod** checks the required fields (8101: code, type, description, cost, life), that the type exists, salvage ≤ cost (9097), months used ≤ life (9098), and a valid date. It then adds the asset, or modifies it after asking (8102).
+- **Add/Mod** checks the required fields (8101: code, type, description, cost, life, and the rate for Declining), that the type exists, salvage ≤ cost (9097), months used ≤ life (9098), accumulated ≤ cost − salvage, and a valid date. It then adds the asset, or modifies it after asking (8102).
 - **Computed and shown**, not typed:
   - monthly depreciation (§4.1);
   - accumulated depreciation and net book value;
   - life in years.
 
-  Accumulated is typed only for a new asset (D6): an asset brought in part-way through its life. It is fixed once a run has depreciated the asset.
+  Accumulated (and months used) can be typed until a run has depreciated the asset (D6): an asset brought in part-way through its life. From then on both are the run's, read-only. *(As built, S4-M2: the original template has accumulated read-only; the port makes it editable in code.)*
 - **Method** is Straight or Declining. The declining rate shows only for Declining, as in the original.
 - **"Full Year"** is hidden (D8).
-- **The time control** (1035) is hidden.
-- **A disposed asset** shows its date sold, and its fields are read-only.
+- **The time control** (1035) is hidden. *(As built, S4-M2: win32fx registers `tbTime` as a tbPic so the template loads; it is the only one in the GL.)*
+- **A disposed asset** shows its date sold in the caption ("Fixed Assets Add/Modification - disposed 08/15/2026"), and Add/Mod refuses to change it.
 
 ### 6.3 Disposal (1001)
 

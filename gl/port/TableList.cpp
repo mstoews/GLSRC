@@ -102,12 +102,15 @@ bool TableList::Create(HWND owner, Spec spec, std::function<void(int row)> onPic
     rows_ = std::make_unique<Data4>(&cb, spec_.table);
     if (!registerClass(spec_.section)) return false;
 
-    // FIELD1..3, or the first fields of the table, one per header.
+    // FIELD1..3, or spec.fields, or the first fields of the table, one per header.
     const int available = rows_->isValid() ? rows_->numFields() : 0;
     const int columns = std::min<int>(static_cast<int>(spec_.headers.size()), std::max(available, 1));
     const int f[3] = {IniInt(L"FIELD1"), IniInt(L"FIELD2"), IniInt(L"FIELD3")};
     const bool fromIni = f[0] != 0 && f[1] != 0 && f[2] != 0;
-    for (int c = 0; c < columns; ++c) fields_.push_back(fromIni ? f[c] : c + 1);
+    for (int c = 0; c < columns; ++c) {
+        const size_t i = static_cast<size_t>(c);
+        fields_.push_back(fromIni ? f[c] : i < spec_.fields.size() ? spec_.fields[i] : c + 1);
+    }
     spec_.headers.resize(static_cast<size_t>(columns));
     spec_.stretchColumn = std::min(spec_.stretchColumn, columns);
 

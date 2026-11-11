@@ -9,10 +9,6 @@
 
 #include <Windows.h>
 
-INT_PTR RunAssetTypes(HWND frame);
-
-// gl.exe /stress: opens and closes the Fixed Assets screens `times` times and
-// returns the change in the process's GDI + USER object count (0 if none),
-// as StressMasterData does. S4-M1: Asset Types; the later milestones add
-// their screens here.
-int StressFixedAssets(int times);
+// `closeAtOnce`: open and close at once, for /stress (StressFixedAssets in
+// FixedAssets.h).
+INT_PTR RunAssetTypes(HWND frame, bool closeAtOnce = false);
