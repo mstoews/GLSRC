@@ -13,6 +13,7 @@
 #define ID_CASH                  1031
 #define ID_DATE                  3035
 #define ID_DELETE                1118
+#define ID_DEPRECIATION          1034
 #define ID_DESCRIPT              2015
 #define ID_DISTLIST              1075
 #define ID_MODIFY                2026

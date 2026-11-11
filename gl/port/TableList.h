@@ -11,8 +11,8 @@
 //
 // The window is captioned and sizable, owned by the dialog (no WS_CHILD), so
 // it never changes the frame menu. It shows three columns: GL.INI <section>
-// FIELD1..3 (field numbers; default 1, 2, 3, or fewer if the table has fewer
-// fields) of the rows that pass <section> QUERY (default ".NOT. DELETED()"),
+// FIELD1..3 (field numbers; default Spec::fields, else 1, 2, 3, or fewer if the
+// table has fewer fields) of the rows that pass <section> QUERY (default ".NOT. DELETED()"),
 // in `tag` order. Its position is <section> LEFT/TOP/RIGHT/BOTTOM, saved when
 // the window is destroyed; without one it opens beside the dialog.
 //
@@ -46,6 +46,7 @@ public:
         std::wstring caption;
         std::vector<std::wstring> headers;  // one per column shown (at most 3)
         int stretchColumn = 3;              // the column that takes the remaining width
+        std::vector<int> fields;            // field numbers when GL.INI has no FIELD1..3; empty: 1, 2, 3
     };
 
     TableList() = default;

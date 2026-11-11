@@ -137,6 +137,28 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 2 — Fixed Assets Add/Modify (4004)
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.2 and §2.4 hold. `TAssetList` showed `REFERENCE` under "Description"; the port shows `DESCRIPT`. `TableList::Spec` gained `fields` (the default field numbers when `GL.INI` has no `FIELD1..3`) for that.
+> - **`prune_rc.py`** (task 2): 4004 added. **The template has the GL's only `tbTime`** (1035, never set), which win32fx didn't register, so the dialog failed to load (`/checkres` 1, `/stress` −1). win32fx now registers `tbTime` as a tbPic; the port hides it.
+> - **`gl/port/FixedAssets.{h,cpp}`** (task 3):
+>   - **Lookup:** Enter on the code shows the asset (a new code moves on). Enter on the type fills its accounts, as does leaving the field. Assets and Types open their lists, both hidden until asked for.
+>   - **Add/Mod** runs `Assets.h`'s new `CheckAsset`: 8101 naming the field, an unknown type, 9097, 9098, and accumulated above cost − salvage. The focus goes to the field. An existing asset is modified after asking (8102), then shown again; a new one is added and the screen cleared.
+>   - **The figures** (monthly, net book value, years) are recomputed as cost, salvage, life, months used, rate, accumulated or the method change. The declining start-of-year value comes from `gl_fadep` for a depreciated asset.
+>   - **Accumulated and months used** are editable (`EM_SETREADONLY`) until `HasDepreciation`. Add/Mod keeps the stored ones after that.
+>   - **A disposed asset** shows "- disposed <date>" in the caption, and Add/Mod refuses to change it.
+>   - "Full Year" and the time control are hidden; the rate shows only for Declining.
+> - **Wire** (task 4):
+>   - 6000 (`ID_FAADD`) in `ManilaGL.cpp`; `/checkres` loads 4004.
+>   - `StressFixedAssets` moved to `FixedAssets.cpp` and opens both screens. `RunAssetTypes` and `RunFixedAssets` take `closeAtOnce`.
+> - **Tests** (task 5): `CheckAsset` (each refusal, by field) and `HasDepreciation`. `gl_tests`: 102 cases.
+> - **Checked:** Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Driven in the app:
+>   - E001: 500.00 a month, 6,500.00, 23,500.00, 5.0 years; accumulated and months used read-only.
+>   - Next shows E002: 100.00 a month, the rate (24) shown.
+>   - New asset E006 (1,200.00, life 12): 100.00 a month; accumulated editable.
+>   - Salvage 2,000.00 is refused (9097). E006 is added; shown again, its life changed to 24 and confirmed: 50.00 a month, saved.
+>   - E004: the caption says it was disposed 08/15/2026, and Add/Mod refuses to change it.
+>   - Type ZZ is refused.
+
 **Goal:** the register can be maintained, showing the figures the run will use.
 
 ### Tasks

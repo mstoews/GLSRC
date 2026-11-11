@@ -83,6 +83,32 @@ DeleteTypeResult DeleteAssetType(cb4sqlite::Code4& code, const std::string& type
 // (blank for none), is in glaccts and not deleted.
 bool ValidateAccount(cb4sqlite::Code4& code, const std::string& account, const std::string& dept);
 
+// ---- checking an asset before it is saved (spec #4 6.2) ----------------------
+
+// What Add/Mod refuses, in the order the screen checks it. `field` names the
+// input to put the focus on.
+enum class AssetField { None, Code, Type, Description, Date, Cost, Salvage, Life, MonthsUsed, Rate, Accumulated };
+struct AssetProblem {
+    AssetField field = AssetField::None;
+    enum class Kind {
+        Required,        // string 8101, naming the field
+        NoSuchType,      // the type isn't in gl_fatyp
+        SalvageOverCost, // string 9097
+        UsedOverLife,    // string 9098
+        AccumOverDepreciable,
+    } kind = Kind::Required;
+};
+
+// TGLFixedAssets::Ok's checks, and those CheckInput meant to make (it was
+// never called): code, type (which must exist), description, a valid date
+// purchased, cost > 0, life > 0, a rate for the declining method; salvage <=
+// cost, months used <= life, accumulated <= cost - salvage.
+std::optional<AssetProblem> CheckAsset(cb4sqlite::Code4& code, const Asset& a);
+
+// True if the run has depreciated the asset (it has gl_fadep rows): its
+// accumulated depreciation is then the history's, not typed (D6).
+bool HasDepreciation(cb4sqlite::Code4& code, const std::string& facode);
+
 // ---- the arithmetic (spec #4 4.1) ----------------------------------------
 
 std::int64_t Depreciable(const Asset& a);   // cost - salvage
