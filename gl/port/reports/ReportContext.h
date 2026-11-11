@@ -39,3 +39,6 @@ struct ReportContext {
 // passes the date, so tests can fix it). Missing tables give an empty company
 // and no periods, not an error.
 ReportContext LoadReportContext(cb4sqlite::Code4& code, const std::string& todayYyyymmdd);
+
+// "Current period 7 (Oct 26)": the subtitle of the reports that print one.
+std::string CurrentPeriodLine(const ReportContext& ctx);

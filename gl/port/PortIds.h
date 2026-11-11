@@ -47,5 +47,6 @@
 // ---- commands --------------------------------------------------------------
 
 #define CM_SAMPLE_REPORT        20500   // gl.exe /samplereport, and /stress
+#define CM_REPORT_LIST          20501   // Reporting > Custom Report, GLSUB > Custom Report: the report list (D9, S3-M7)
 
 #endif // GL_PORT_PORTIDS_H

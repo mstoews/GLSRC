@@ -4,12 +4,7 @@ The record of plan Milestone 8 (`gl/docs/superpowers/plans/2026-11-09-owl-to-win
 
 Fill in every blank (`____`) and set each **Result** to `PASS`, `FAIL`, `PASS with known gap` or `BLOCKED`. A `FAIL` needs a triage line in [Gaps and triage](#gaps-and-triage): either fixed in Spec #3, or filed against a later spec.
 
-**Not built yet:** three checks depend on milestones not yet done. Mark them `BLOCKED` until those land, then walk them through:
-- #8 needs the Statement Layout screen (S3-M4, waiting for the finance team's review);
-- part of #10 needs the master listings (S3-M7);
-- part of #11 needs the report list (S3-M7).
-
-Everything else can be signed off now.
+**Not built yet:** #8 needs the Statement Layout screen (S3-M4, waiting for the finance team's review). Mark it `BLOCKED` until that lands, then walk it through. Everything else can be signed off now.
 
 The reports only read the books, except the year end in #9 and the layout edits in #8. Run #1–#7 and #10–#12 on one copy of `dev.db`, run #8 and #9 each on a fresh copy, and keep an untouched copy so the walkthrough can be repeated.
 
@@ -47,10 +42,10 @@ Run `gl\test\dev-fixture\setup.cmd` for each configuration first (`Debug`, then 
 | Check | Debug | Release | Notes |
 |---|---|---|---|
 | `x64\<Config>\cb4sqlite_tests.exe` (77 test cases pass) | ____ | ____ | |
-| `x64\<Config>\gl_tests.exe` (89 test cases pass) | ____ | ____ | |
+| `x64\<Config>\gl_tests.exe` (93 test cases pass) | ____ | ____ | |
 | `x64\<Config>\report_tests.exe` (17 test cases pass) | ____ | ____ | |
-| `gl.exe /checkres /quiet` (now also the port's dialogs in `port.rc`: 20000–20002) | ____ | ____ | |
-| `gl.exe /stress /quiet` (now also every report's preview, paged at each zoom) | ____ | ____ | see G6 |
+| `gl.exe /checkres /quiet` (now also the port's dialogs in `port.rc`, 20000–20002, the report list 1022, and Custom Report's own command) | ____ | ____ | |
+| `gl.exe /stress /quiet` (now also every report's preview, paged at each zoom) | ____ | ____ | |
 | `trivial_dialog.exe /selftest /quiet` (covers GDI measuring, drawing a page, and a preview) | ____ | ____ | |
 | Debug `gl.exe` under the debugger: open and close three reports' previews, then exit. The Output window shows no "Detected memory leaks!" | ____ | n/a | |
 
@@ -214,14 +209,19 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 - [ ] **Voucher Entry's Print**:
   - on the new voucher 104: "Voucher 104 isn't saved yet...";
   - after **Top** (voucher 101): a "Preview" window shows its slip over Voucher Entry, which can't be used until the preview closes (D7).
-- [ ] **BLOCKED until S3-M7:** Medical Representatives (6039), Product code summary (6038), Doctor Codes (6041, titled "Doctor Codes", D12).
+- [ ] **Medical Representatives**: landscape, "Medical Representative Summary Report", MR001–MR003 in code order, each with "1 Clinic Road" and "Vancouver BC" under it, terms 30; "3 medical representatives"; the footer reads "Report File: gl_medrp.rpt".
+- [ ] **Product code summary**: P100, P200, P300 with lot sizes 10, 24, 12 and prices 4.25, 6.50, 3.10 (`FAVPRICE`); "3 products".
+- [ ] **Doctor Codes**: titled "Doctor Codes Summary Report" (D12), DR001–DR003 with territories NORTH, SOUTH, EAST; "3 doctors".
 
 **Result:** ____ **Notes:** ____
 
 ### 11. File > Print
 
 - [ ] With a preview active, **File > Print** and the toolbar's Print button print that preview (D9).
-- [ ] **BLOCKED until S3-M7:** with no preview open they list the reports (dialog 1022), and the chosen one runs. Until then they show the "not yet ported" message.
+- [ ] Close every preview. **File > Print** opens "Print Custom Report" (dialog 1022) listing 16 reports, with only Print and Close. Choose **14 Medical Representatives** and press Print: its preview opens. Double-click **1 Trial Balance**: its options dialog, then its preview.
+- [ ] With a preview open, **Reporting > Custom Report** (and right-click on the background > Custom Report) still opens the list. Close runs nothing.
+- [ ] The list doesn't use the original's `gl_rept` table, which the fixture doesn't have. On a migrated real company, `sqlite3 <company>.db "select count(*) from gl_rept"` returns the same before and after using the list.
+- [ ] **Fixed Assets > Fixed assets listing**: the message says it arrives with the Fixed Assets port (Spec #4).
 
 **Result:** ____ **Notes:** ____
 
@@ -242,8 +242,7 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 | G3 | Only *Microsoft Print to PDF* was used in development. | No real printer on the build machine. | Check #1's real-printer step on the test machine. |
 | G4 | On Windows 11 the Print dialog is the system print window, run by `explorer.exe`. *Microsoft Print to PDF* asks for the file name in its own Save dialog. | Windows behaviour; `PrintDlgW` is used as the spec says. | None. |
 | G5 | The Linux ASan/UBSan build of the Spec #3 sources hasn't been run since S3-M1. | No Linux machine in this round. | Run `tools/linux/build_tests.sh --run`. |
-| G6 | `/stress` in Debug sometimes reads +1 from the Chart of Accounts step (Spec #1 code). | Found in S3-M6; under investigation in its own session. | Its PR. |
-| G7 | #8 and parts of #10 and #11 are blocked. | S3-M4 waits for the finance review; S3-M7 depends on S3-M4. | Walk them through when those milestones land. |
+| G6 | #8 is blocked. | S3-M4 waits for the finance review. | Walk it through when S3-M4 lands. |
 
 ## Gaps and triage
 
@@ -266,11 +265,11 @@ Add one row for each `FAIL` or unexpected behaviour found during the walkthrough
 | 7. F5 Cash Flow Statement | ____ |
 | 8. Statement Layout | ____ (BLOCKED until S3-M4) |
 | 9. Year end | ____ |
-| 10. Original reports | ____ (6039, 6038, 6041 BLOCKED until S3-M7) |
-| 11. File > Print | ____ (the report list BLOCKED until S3-M7) |
+| 10. Original reports | ____ |
+| 11. File > Print | ____ |
 | 12. Regression and resources | ____ |
 
-All criteria pass, or pass with the known gaps recorded above. The blocked parts are signed off separately once S3-M4 and S3-M7 land:
+All criteria pass, or pass with the known gaps recorded above. #8 is signed off separately once S3-M4 lands:
 
 - Tester: ____ Date: ____
 - Witness: ____ Date: ____

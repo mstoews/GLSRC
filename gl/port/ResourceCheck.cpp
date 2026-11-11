@@ -67,6 +67,8 @@ const DialogCase kDialogs[] = {
     // Spec #2 S2-M5.
     {1029, L"Transaction Inquiry (TGLTransInq)", true},
     {1017, L"Budget Data (TGLBudget)", true},
+    // Spec #3 S3-M7.
+    {1022, L"Report list (TGLCustomReport, D9)", true},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
@@ -102,6 +104,12 @@ void checkMenus(HINSTANCE inst, Report& r)
             wchar_t text[32] = {};
             GetMenuStringW(menu.get(), 7, text, 32, MF_BYPOSITION);
             r.check(std::wstring(text) == L"&Window", L"MANILA: Window menu at position 7");
+        }
+        // Spec #3 D9: Custom Report has its own command; File > Print keeps 3068.
+        if (menu && wcscmp(name, L"GLE") != 0) {
+            wchar_t text[32] = {};
+            GetMenuStringW(menu.get(), CM_REPORT_LIST, text, 32, MF_BYCOMMAND);
+            r.check(std::wstring(text) == L"&Custom Report...", fx::Format(L"%s: Custom Report is CM_REPORT_LIST", name));
         }
     }
 }

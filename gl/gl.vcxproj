@@ -71,7 +71,9 @@
     <ClInclude Include="port\db_gl_distb.h" />
     <ClInclude Include="port\reports\AccountReports.h" />
     <ClInclude Include="port\reports\Balances.h" />
+    <ClInclude Include="port\reports\MasterReports.h" />
     <ClInclude Include="port\reports\ReportContext.h" />
+    <ClInclude Include="port\reports\ReportList.h" />
     <ClInclude Include="port\reports\ReportOptions.h" />
     <ClInclude Include="port\reports\RunReport.h" />
     <ClInclude Include="port\reports\SampleReport.h" />
@@ -107,7 +109,9 @@
     <ClCompile Include="port\YearEnd.cpp" />
     <ClCompile Include="port\reports\AccountReports.cpp" />
     <ClCompile Include="port\reports\Balances.cpp" />
+    <ClCompile Include="port\reports\MasterReports.cpp" />
     <ClCompile Include="port\reports\ReportContext.cpp" />
+    <ClCompile Include="port\reports\ReportList.cpp" />
     <ClCompile Include="port\reports\ReportOptions.cpp" />
     <ClCompile Include="port\reports\RunReport.cpp" />
     <ClCompile Include="port\reports\SampleReport.cpp" />

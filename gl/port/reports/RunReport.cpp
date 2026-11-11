@@ -4,6 +4,7 @@
 #include "RunReport.h"
 
 #include "AccountReports.h"
+#include "MasterReports.h"
 #include "ReportOptions.h"
 #include "SampleReport.h"
 #include "Statements.h"
@@ -220,6 +221,21 @@ void RunPrePostingReport(fx::MdiFrame& frame)
     RunReport(frame, {}, [](const ReportContext& ctx) { return PrePostingReport(cb, ctx); });
 }
 
+void RunMedicalRepsListing(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return MedicalRepsListing(cb, ctx); });
+}
+
+void RunProductCodesListing(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return ProductCodesListing(cb, ctx); });
+}
+
+void RunDoctorCodesListing(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return DoctorCodesListing(cb, ctx); });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -235,7 +251,7 @@ int StressReports(int times)
     everything.comparePrior = everything.compareBudget = everything.showAccounts = true;
     // The sample report (several pages), F1, F2 for periods 1 to the current
     // one with voucher lines (landscape), F3 with every column and its
-    // accounts (landscape), F4 and F5.
+    // accounts (landscape), F4 and F5; then every original report.
     const ReportBuilder builders[] = {
         sampleReport(three, false).second,
         [](const ReportContext& ctx) { return TrialBalance(cb, ctx, {}); },
@@ -251,6 +267,9 @@ int StressReports(int times)
         [](const ReportContext& ctx) { return VoucherSummary(cb, ctx); },
         [](const ReportContext& ctx) { return PrepostingDistribution(cb, ctx); },
         [](const ReportContext& ctx) { return PrePostingReport(cb, ctx); },
+        [](const ReportContext& ctx) { return MedicalRepsListing(cb, ctx); },
+        [](const ReportContext& ctx) { return ProductCodesListing(cb, ctx); },
+        [](const ReportContext& ctx) { return DoctorCodesListing(cb, ctx); },
     };
     auto round = [&] {
         for (const ReportBuilder& b : builders)
