@@ -302,6 +302,30 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M2 and c
 
 ## Milestone 5 — Reports, report list, clean-up
 
+> **As built (2026-11-11; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §7 holds.
+>   - **`GL_FA.RPT`**, "General Ledger Fixed Asset Summary": Fixed Asset Code, Date Purchased, Date Sold, Reference and Description, Pd. Used, Asset Life, Historical Cost, Salvage Value, and its own formulas for the monthly and accumulated amounts. Current period; "Report File:" footer.
+>   - **`GL_FATYP.RPT`**, "General Leger Fixed Asset Types": the type, its description, and each account with dept and description. "Report Name:" footer.
+>   - `gl_xls.cpp` ran them by name. `ID_FINFA` / `ID_FINDEP` have no value in the headers, so the port names 1019 and 1020 in `ManilaGL.cpp`.
+> - **`gl/port/reports/AssetReports.{h,cpp}`** (task 2):
+>   - **1019** (landscape):
+>     - grouped by type; each asset with its reference under it;
+>     - disposed assets marked "(disposed)" with their date sold, listed but not totalled (a note says so);
+>     - net book value added; totals per type and overall.
+>   - **1019's ledger check (D11)** is per account: the register's cost and accumulated depreciation of the assets in use, against each account's balance at the current period (accumulated is a credit). Each account gets a line: agrees, differs by …, or not in the chart (naming the types). Then a hint on what a difference means. Found while testing: an account used for both cost and accumulated depreciation (type XX) named its type twice; fixed.
+>   - **1020:** each type's three accounts; a count.
+>   - **Column widths** were set from PDFs of the fixture: the first print clipped "Fixed Asset", "Months", "(Months)", "Depreciation", and a 1020 description.
+> - **Wire** (task 3): 1019 and 1020 run the reports; `kFixedAssetReports` is gone. Both join the report list (now 18 reports; the Spec #3 sheet notes it) and `/stress`'s builders. The report run functions create the asset tables if missing.
+> - **Tests** (task 4): `gl_tests/test_reports_assets.cpp`, 3 cases:
+>   - 1019's groups, rows, totals (37,000.00 / 683.33 / 6,600.00 / 30,400.00 for the 3 assets in use) and the disposed note;
+>   - the check: agrees on the fixture; 161000 differs by 600.00 after an unposted run; 999999 not in the chart;
+>   - 1020's rows.
+>
+>   `gl_tests`: 112 cases.
+> - **README** (task 5): the Fixed Assets bullets (from M1–M4), the monthly cycle, and both reports in the Reports table.
+> - **Checked** (task 6): Debug and Release clean; every suite, `/checkres`, `/stress` and the self-test pass. Both reports printed to PDF from the app and checked.
+> - **Not done:** spec R5's automatic check, refusing a run whose period ends before the last run's (the new year's dates not set). It stays a documented step (README, design §4.2); file it if the walkthrough shows it's needed.
+
 **Goal:** 1019 and 1020 print; the module is complete in the menus, the checks and the README.
 
 ### Tasks

@@ -48,6 +48,8 @@ const ListedReport kReports[] = {
     {ID_REPLIST, L"Medical Representatives"},
     {ID_PRODUCTLIST, L"Product code summary"},
     {ID_DOCTOR_RPT, L"Doctor Codes"},
+    {1019, L"Fixed Assets Listing"},                // GLFinFA (spec #4 7)
+    {1020, L"Fixed Asset Types"},                   // GLFinDep
 };
 
 class ReportListDialog : public fx::Dialog {

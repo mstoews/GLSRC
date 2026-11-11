@@ -72,6 +72,12 @@ void RunMedicalRepsListing(fx::MdiFrame& frame);
 void RunProductCodesListing(fx::MdiFrame& frame);
 void RunDoctorCodesListing(fx::MdiFrame& frame);
 
+// The fixed-asset reports (AssetReports.h, spec #4 7): 1019 Fixed Asset
+// Summary, with the check against the ledger, and 1020 Fixed Asset Types.
+// No options.
+void RunFixedAssetListing(fx::MdiFrame& frame);
+void RunFixedAssetTypes(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5, then every original report), pages through it at every zoom, and closes it. Returns the GDI + USER

@@ -218,7 +218,7 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 ### 11. File > Print
 
 - [ ] With a preview active, **File > Print** and the toolbar's Print button print that preview (D9).
-- [ ] Close every preview. **File > Print** opens "Print Custom Report" (dialog 1022) listing 16 reports, with only Print and Close. Choose **14 Medical Representatives** and press Print: its preview opens. Double-click **1 Trial Balance**: its options dialog, then its preview.
+- [ ] Close every preview. **File > Print** opens "Print Custom Report" (dialog 1022) listing 16 reports (18 since Spec #4 S4-M5 added the two fixed-asset reports at the end), with only Print and Close. Choose **14 Medical Representatives** and press Print: its preview opens. Double-click **1 Trial Balance**: its options dialog, then its preview.
 - [ ] With a preview open, **Reporting > Custom Report** (and right-click on the background > Custom Report) still opens the list. Close runs nothing.
 - [ ] The list doesn't use the original's `gl_rept` table, which the fixture doesn't have. On a migrated real company, `sqlite3 <company>.db "select count(*) from gl_rept"` returns the same before and after using the list.
 - [ ] **Fixed Assets > Fixed assets listing**: the message says it arrives with the Fixed Assets port (Spec #4).
