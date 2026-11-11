@@ -75,13 +75,14 @@ const WORD kArCommands[] = {
 };
 // TManilaGL::GLPrePosting; no legacy header names it.
 constexpr WORD kPrePostingReport = 8136;
+// TGlWindow::GLFinFA / GLFinDep (gl_xls.cpp): ID_FINFA / ID_FINDEP have no value in the headers.
+constexpr WORD kFixedAssetListing = 1019;
+constexpr WORD kFixedAssetTypes = 1020;
 
 // The reports Spec #3 doesn't port (spec #3 1.2): they go with their modules.
 // Every General Ledger report is ported (S3-M1 to S3-M7); 1025 left the menu
 // (D13), and 6077 (GLAccounts), on no menu or toolbar, isn't ported (D11).
-const WORD kFixedAssetReports[] = {
-    1019, 1020,               // GLFinFA, GLFinDep: fixed-asset listings (Spec #4)
-};
+// The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5).
 const WORD kApReports[] = {
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
     4091, 4092,
@@ -261,6 +262,12 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case ID_DISPOSAL:                      // TManilaGL::GLFixedDisposal: Fixed Assets > Disposal
         RunAssetDisposal(hwnd());
         return true;
+    case kFixedAssetListing:               // Fixed Assets > Fixed assets listing (GL_FA.RPT, spec #4 7)
+        RunFixedAssetListing(*this);
+        return true;
+    case kFixedAssetTypes:                 // ... > Fixed asset types (GL_FATYP.RPT)
+        RunFixedAssetTypes(*this);
+        return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
         RunVoucherEntry(hwnd());
@@ -392,9 +399,7 @@ std::wstring ManilaGL::MenuText(WORD id) const
 void ManilaGL::NotPorted(WORD id)
 {
     const std::wstring item = MenuText(id);
-    if (contains(kFixedAssetReports, id)) {
-        ReportingStubs::Show(hwnd(), item.c_str(), L"Fixed Assets", 4);
-    } else if (contains(kApReports, id)) {
+    if (contains(kApReports, id)) {
         ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Payable", 5);
     } else if (contains(kArReports, id)) {
         ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Receivable", 6);

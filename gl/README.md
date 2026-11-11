@@ -79,7 +79,7 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
 | `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (Specs #1, #2 and #3)
+## What runs (Specs #1 to #4)
 
 - **Frame:**
   - the MANILA menu and the top toolbar;
@@ -147,11 +147,16 @@ DIR=D:\GL\company.db
   - **Dispose** records the date and keeps the asset in the register, marked disposed; the monthly run skips it from then on. Nothing is posted: the message lists the entry to make in Voucher Entry.
   - **Delete** removes an asset entered by mistake, if it has never been depreciated.
 
-  The fixed-asset reports come with Spec #4's next milestone.
+- **The monthly fixed-asset cycle:**
+  1. Run Create Voucher for the period.
+  2. Post its voucher with Transactions > Post Voucher.
+  3. Print the Fixed Assets Listing: its check against the ledger should agree.
+
+  To undo a run before posting, cancel its voucher. After disposing of an asset, record the entry Disposal gives in Voucher Entry, so the check agrees again.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**
-  - Accounts Payable, Accounts Receivable and Fixed Assets commands, and their reports, show a "not yet ported" message naming the spec that brings them.
+  - Accounts Payable and Accounts Receivable commands, and their reports, show a "not yet ported" message naming the spec that brings them.
   - Other General Ledger commands say they are not part of Spec #1.
 
 ## Reports
@@ -174,6 +179,8 @@ Spec #3 replaced the Crystal Reports runtime with the port's own report engine. 
 | Reporting > General Ledger > **Preposting Distribution List**; Transactions > Voucher Reports > **General Ledger Pre-Posting Report** | the vouchers not yet posted | none |
 | Reporting > General Ledger > **Medical Representatives**, **Product code summary**, **Doctor Codes** | the master-data listings | none |
 | Voucher Entry's **Print** | the voucher's slip, in a window over the dialog | none |
+| Fixed Assets > **Fixed assets listing** | the asset register by type at the current period: cost, salvage, monthly and accumulated depreciation, book value; disposed assets with their date sold. It ends with a check of the register against the ledger, account by account | none |
+| Fixed Assets > **Fixed asset types** | each type with its asset, expense and accumulated-depreciation accounts | none |
 
 A report with options asks for them first and keeps them until the program exits. The reports read the books and change nothing.
 
