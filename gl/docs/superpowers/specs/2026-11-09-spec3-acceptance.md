@@ -4,7 +4,7 @@ The record of plan Milestone 8 (`gl/docs/superpowers/plans/2026-11-09-owl-to-win
 
 Fill in every blank (`____`) and set each **Result** to `PASS`, `FAIL`, `PASS with known gap` or `BLOCKED`. A `FAIL` needs a triage line in [Gaps and triage](#gaps-and-triage): either fixed in Spec #3, or filed against a later spec.
 
-**Not built yet:** #8 needs the Statement Layout screen (S3-M4, waiting for the finance team's review). Mark it `BLOCKED` until that lands, then walk it through. Everything else can be signed off now.
+**Not built yet:** #8 needs the Statement Layout screen (S3-M4). The finance team's review it waited for is done (2026-11-11), but the screen isn't built yet. Mark #8 `BLOCKED` until it lands, then walk it through. Everything else can be signed off now.
 
 The reports only read the books, except the year end in #9 and the layout edits in #8. Run #1–#7 and #10–#12 on one copy of `dev.db`, run #8 and #9 each on a fresh copy, and keep an untouched copy so the walkthrough can be repeated.
 
@@ -238,11 +238,11 @@ Run these on the test machine, logged in as `ADMIN`. Every report opens with its
 | # | Gap | Why accepted | Follow-up |
 |---|---|---|---|
 | G1 | High DPI is not tested. The walkthrough runs at 96 DPI. | As Spec #1 G1. | The AP/AR specs (#5/#6). |
-| G2 | The default statement groupings and the prior-year balance-sheet column aren't confirmed by the finance team. | Spec §14 Q3 and Q7. The statements were sent for review in S3-M3. | Settle before S3-M4; change the default if asked. |
+| G2 | ~~The default statement groupings and the prior-year balance-sheet column aren't confirmed by the finance team.~~ | Settled 2026-11-11: the finance team is good with the statements as they are (spec §14 Q3, Q7). | None. |
 | G3 | Only *Microsoft Print to PDF* was used in development. | No real printer on the build machine. | Check #1's real-printer step on the test machine. |
 | G4 | On Windows 11 the Print dialog is the system print window, run by `explorer.exe`. *Microsoft Print to PDF* asks for the file name in its own Save dialog. | Windows behaviour; `PrintDlgW` is used as the spec says. | None. |
 | G5 | The Linux ASan/UBSan build of the Spec #3 sources hasn't been run since S3-M1. | No Linux machine in this round. | Run `tools/linux/build_tests.sh --run`. |
-| G6 | #8 is blocked. | S3-M4 waits for the finance review. | Walk it through when S3-M4 lands. |
+| G6 | #8 is blocked. | S3-M4 isn't built yet (no longer waiting on the finance review). | Walk it through when S3-M4 lands. |
 
 ## Gaps and triage
 
