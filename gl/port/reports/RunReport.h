@@ -56,6 +56,16 @@ void RunTrialBalanceByDept(fx::MdiFrame& frame);
 void RunChartOfAccountsReport(fx::MdiFrame& frame);
 void RunBudgetReport(fx::MdiFrame& frame);
 
+// The original voucher reports (VoucherReports.h): 6074 Voucher Slips, 8082
+// Voucher Detail, 6075 Voucher Summary, 6078 Preposting Distribution List,
+// 8136 Pre-Posting Report. No options. (Voucher Entry's Print shows one
+// slip itself: VoucherEntry.cpp.)
+void RunVoucherSlips(fx::MdiFrame& frame);
+void RunVoucherDetail(fx::MdiFrame& frame);
+void RunVoucherSummary(fx::MdiFrame& frame);
+void RunPrepostingDistribution(fx::MdiFrame& frame);
+void RunPrePostingReport(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5), pages through it at every zoom, and closes it. Returns the GDI + USER

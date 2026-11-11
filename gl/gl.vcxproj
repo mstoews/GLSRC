@@ -78,6 +78,7 @@
     <ClInclude Include="port\reports\StatementLayout.h" />
     <ClInclude Include="port\reports\Statements.h" />
     <ClInclude Include="port\reports\TrialBalances.h" />
+    <ClInclude Include="port\reports\VoucherReports.h" />
     <ClInclude Include="port\stubs\Stubs.h" />
     <ClInclude Include="res\resource.h" />
   </ItemGroup>
@@ -113,6 +114,7 @@
     <ClCompile Include="port\reports\StatementLayout.cpp" />
     <ClCompile Include="port\reports\Statements.cpp" />
     <ClCompile Include="port\reports\TrialBalances.cpp" />
+    <ClCompile Include="port\reports\VoucherReports.cpp" />
     <ClCompile Include="port\stubs\ApStubs.cpp" />
     <ClCompile Include="port\stubs\ArStubs.cpp" />
     <ClCompile Include="port\stubs\ReportingStubs.cpp" />

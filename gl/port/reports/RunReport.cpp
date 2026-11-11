@@ -8,6 +8,7 @@
 #include "SampleReport.h"
 #include "Statements.h"
 #include "TrialBalances.h"
+#include "VoucherReports.h"
 
 #include "../Globals.h"
 
@@ -194,6 +195,31 @@ void RunBudgetReport(fx::MdiFrame& frame)
     RunReport(frame, {}, [](const ReportContext& ctx) { return BudgetReport(cb, ctx); });
 }
 
+void RunVoucherSlips(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return VoucherSlips(cb, ctx); });
+}
+
+void RunVoucherDetail(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return VoucherDetail(cb, ctx); });
+}
+
+void RunVoucherSummary(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return VoucherSummary(cb, ctx); });
+}
+
+void RunPrepostingDistribution(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return PrepostingDistribution(cb, ctx); });
+}
+
+void RunPrePostingReport(fx::MdiFrame& frame)
+{
+    RunReport(frame, {}, [](const ReportContext& ctx) { return PrePostingReport(cb, ctx); });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -220,6 +246,11 @@ int StressReports(int times)
         [](const ReportContext& ctx) { return TrialBalanceByDept(cb, ctx); },
         [](const ReportContext& ctx) { return ChartOfAccountsReport(cb, ctx); },
         [](const ReportContext& ctx) { return BudgetReport(cb, ctx); },
+        [](const ReportContext& ctx) { return VoucherSlips(cb, ctx); },
+        [](const ReportContext& ctx) { return VoucherDetail(cb, ctx); },
+        [](const ReportContext& ctx) { return VoucherSummary(cb, ctx); },
+        [](const ReportContext& ctx) { return PrepostingDistribution(cb, ctx); },
+        [](const ReportContext& ctx) { return PrePostingReport(cb, ctx); },
     };
     auto round = [&] {
         for (const ReportBuilder& b : builders)
