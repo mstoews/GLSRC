@@ -71,5 +71,6 @@
 #define CM_SAMPLE_REPORT        20500   // gl.exe /samplereport, and /stress
 #define CM_STATEMENT_LAYOUT     20502   // Accounts > Statement Layout (spec #3 6.4, S3-M4)
 #define CM_REPORT_LIST          20501   // Reporting > Custom Report, GLSUB > Custom Report: the report list (D9, S3-M7)
+#define CM_VOUCHER_LIST         20503   // Transactions > Voucher List: every voucher in an MDI grid (VoucherBrowser.h)
 
 #endif // GL_PORT_PORTIDS_H

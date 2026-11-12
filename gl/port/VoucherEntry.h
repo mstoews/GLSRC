@@ -16,8 +16,10 @@
 
 #include <Windows.h>
 
-INT_PTR RunVoucherEntry(HWND frame);
-INT_PTR RunPriorPeriodEntry(HWND frame);
+// `voucher` > 0 opens the dialog on that voucher, as if picked in its voucher
+// list (the voucher browser, VoucherBrowser.h); 0 starts on a new voucher.
+INT_PTR RunVoucherEntry(HWND frame, long voucher = 0);
+INT_PTR RunPriorPeriodEntry(HWND frame, long voucher = 0);
 
 // gl.exe /stress: opens and closes Voucher Entry `times` times (alternating
 // with Prior Period Entry) and returns the change in GDI + USER objects.
