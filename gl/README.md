@@ -82,8 +82,8 @@ DIR=D:\GL\company.db
 ## What runs (Specs #1 to #4)
 
 - **Frame:**
-  - the MANILA menu and the top toolbar;
-  - a module bar along the bottom whose fields show the company name, menu help and the current period;
+  - the MANILA menu and the toolbar (hover over a button for its name);
+  - a status bar along the bottom showing the company name, menu help and the current period;
   - right-click on the background for the GLSUB menu.
 - **Login** (dialog 1158). **Maintenance > User Access** (1159). Its Menu button opens Menu Access (1160) with the menus of the level shown: double-click or Enter on a menu grays or enables it, and OK saves them as that level's menu code. Reset applies the level shown to the current session's menus.
 - **File > Company Profile** (1021), with:
@@ -202,9 +202,14 @@ Each preview has Print, First / Previous / Next / Last, the page number, Zoom (f
 - **File > Printer Setup** chooses the printer, paper and margins. The choice lasts until the program exits; it doesn't change the Windows default printer. Orientation isn't offered: each report has its own.
 - **To make a PDF**, choose *Microsoft Print to PDF* in the Print dialog; Windows then asks for the file name.
 
+## Icons
+
+The buttons and toolbar show icons from Microsoft's **Fluent UI System Icons** (MIT licence, `gl/res/icons/fluent/LICENSE`) in place of the original bitmaps (UI refresh spec §4.2). `gl/res/icons/fluent/map.csv` says which icon replaces which bitmap, and `sheet.png` shows each pair. A bitmap with no icon there is still shown, with its greys matched to the system's button colour. To change or add one, edit `map.csv` and follow `gl/res/tools/make_icons.py`'s instructions (it downloads the SVGs at a pinned commit and renders the `.ico` files); the outputs are committed.
+
 ## Checks
 
-- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`), the report list (1022) and the Fixed Assets dialogs. Add `/quiet` to get the failure count as the exit code instead of a message box.
+- **`gl.exe /checkres`** loads every resource the port uses, including the port's own dialogs (`gl/res/port.rc`), the report list (1022) and the Fixed Assets dialogs, and checks that each dialog's captions fit their controls (UI refresh spec §4.6). Add `/quiet` to get the failure count as the exit code instead of a message box.
+- **`gl.exe /screenshots [dir]`** shows the frame and saves it and every dialog as PNG files in `dir` (default `screenshots`), named `<id>-<dpi>.png`, then exits. For before-and-after comparisons of the UI refresh. Add `/quiet` to skip the summary.
 - **`gl.exe /stress`** opens and closes the Chart of Accounts 100 times, (Add, Delete and Budget Data in turn), then Department, Medical Rep, Doctor and Product Codes, Voucher Entry, Post, Recover, Cancel and Transaction Inquiry 25 times each, then every report's preview (the sample report, the finance set and the original reports) 25 times, paging through each at every zoom, then the Fixed Assets screens 25 times, on the company database, and reports the change in GDI and USER objects, in total and per step. With `/quiet` the total is the exit code, so 0 passes.
 - **`gl.exe /samplereport`** opens the report engine's test report after startup: the chart of accounts grouped by type, with subtotals, a total and a wrapped note. Its options repeat the list (to make pages), drop zero balances, or turn the page to landscape. Use it to check the preview, Printer Setup and printing, e.g. to *Microsoft Print to PDF*.
 - **`gl.exe /failpost <n>`** runs normally, except that posting fails after writing its nth line. Use it to check that a failed post leaves `glaccts`, `gl_dist`, `gl_btch` and `gl_btchd` unchanged (spec #2 §8 #6).

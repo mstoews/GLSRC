@@ -47,7 +47,6 @@
     <ClInclude Include="include\MessageLoop.h" />
     <ClInclude Include="include\MdiFrame.h" />
     <ClInclude Include="include\Toolbar.h" />
-    <ClInclude Include="include\VerticalToolbar.h" />
     <ClInclude Include="include\StatusBar.h" />
     <ClInclude Include="include\controls\CustomControls.h" />
     <ClInclude Include="include\controls\Grid.h" />
@@ -63,7 +62,6 @@
     <ClCompile Include="src\Verify.cpp" />
     <ClCompile Include="src\MdiFrame.cpp" />
     <ClCompile Include="src\Toolbar.cpp" />
-    <ClCompile Include="src\VerticalToolbar.cpp" />
     <ClCompile Include="src\StatusBar.cpp" />
     <ClCompile Include="src\controls\Register.cpp" />
     <ClCompile Include="src\controls\EditRules.cpp" />

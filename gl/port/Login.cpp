@@ -198,6 +198,8 @@ protected:
 
 private:
     enum { kPlus = 0, kMinus = 1 };
+    bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
+    HIMAGELIST MakeImages() const;   // kPlus, kMinus at the dialog's DPI
     void Show(int row);    // row's picture and colour from state_
     void Toggle(int row);  // TAccessMenus::Select
     void Ok();
@@ -208,6 +210,41 @@ private:
     std::string code_;     // the starting code; after OK, the edited one
 };
 
+HIMAGELIST AccessMenus::MakeImages() const
+{
+    HIMAGELIST images = nullptr;
+    // UI refresh (spec 4.2): the modern icons PPLUS / PMINUS, 16 px scaled to
+    // the DPI; the original 11 px bitmaps if they're missing.
+    const int size = MulDiv(16, static_cast<int>(GetDpiForWindow(hwnd())), 96);
+    HICON plus = fx::LoadModernIcon(hInst, L"PLUS", size), minus = fx::LoadModernIcon(hInst, L"MINUS", size);
+    if (plus && minus) {
+        images = ImageList_Create(size, size, ILC_COLOR32 | ILC_MASK, 2, 0);
+        for (HICON icon : {plus, minus})   // kPlus, kMinus
+            if (images) ImageList_AddIcon(images, icon);
+    } else {
+        images = ImageList_Create(11, 11, ILC_COLOR24, 2, 0);
+        for (const wchar_t* name : {L"PLUS", L"MINUS"}) {   // kPlus, kMinus
+            auto bmp = static_cast<HBITMAP>(LoadImageW(hInst, name, IMAGE_BITMAP, 0, 0, 0));
+            if (images && bmp) ImageList_Add(images, bmp, nullptr);
+            if (bmp) DeleteObject(bmp);
+        }
+    }
+    if (plus) DestroyIcon(plus);
+    if (minus) DestroyIcon(minus);
+    return images;
+}
+
+bool AccessMenus::OnMessage(UINT msg, WPARAM, LPARAM, LRESULT&)
+{
+    if (msg == WM_DPICHANGED && grid_.IsGrid()) {   // the pictures at the new size (UI refresh spec 5.2)
+        HIMAGELIST old = images_;
+        images_ = MakeImages();
+        grid_.SetImageList(images_);
+        if (old) ImageList_Destroy(old);
+    }
+    return false;   // the dialog manager rescales the dialog
+}
+
 bool AccessMenus::OnInitDialog()
 {
     MainDialog::OnInitDialog();   // SetBitmap(IDOK), SetBitmap(IDCANCEL)
@@ -215,12 +252,7 @@ bool AccessMenus::OnInitDialog()
     grid_ = fx::Grid(GetDlgItem(hwnd(), ID_DISTLIST));
     if (!grid_.IsGrid()) return true;
 
-    images_ = ImageList_Create(11, 11, ILC_COLOR24, 2, 0);
-    for (const wchar_t* name : {L"PLUS", L"MINUS"}) {   // kPlus, kMinus
-        auto bmp = static_cast<HBITMAP>(LoadImageW(hInst, name, IMAGE_BITMAP, 0, 0, 0));
-        if (images_ && bmp) ImageList_Add(images_, bmp, nullptr);
-        if (bmp) DeleteObject(bmp);
-    }
+    images_ = MakeImages();
     grid_.SetImageList(images_);
 
     // SetColWidth(2, 4) characters; column 1 takes the rest.

@@ -41,6 +41,12 @@ bool RegisterCustomControls(HINSTANCE inst);
 // if it is blank or not a valid date. Two-digit years: 00-49 are 20xx, 50-99 19xx.
 std::wstring DateGetYmd(HWND ctl);
 
+// The modern icon that replaces bitmap `resource` (UI refresh spec 4.2, D2):
+// icon "P<id>" for a numeric resource, "P<name>" for a named one, loaded at
+// `sizePx` with LoadIconWithScaleDown. Null if `inst` has no such icon. The
+// caller destroys it (DestroyIcon). tbSuperBtn's SBM_SETPICT uses it.
+HICON LoadModernIcon(HINSTANCE inst, LPCWSTR resource, int sizePx);
+
 } // namespace win32fx
 
 // ---- Toolbox compatibility (include/toolbox.h names and values) -----------

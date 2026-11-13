@@ -16,10 +16,20 @@
 // SUPERBTN_PICT_HANDLE an HBITMAP/HICON the caller keeps. SUPERBTN_PICT_NONE
 // removes the picture. The other SBM_* messages are accepted and ignored.
 //
+// UI refresh (spec 4.2, D2): for SUPERBTN_PICT_BITMAP, the modern icon
+// "P<id>" (gl/res/icons/fluent) is shown instead when the module has one, at
+// 16 px for a button with text and 20 px for a picture-only one, scaled to
+// the button's DPI. Without one, the bitmap loads with LR_LOADMAP3DCOLORS, so
+// its greys become the system's button colours. After a DPI change
+// (WM_DPICHANGED_AFTERPARENT) such an icon is loaded again at the new size.
+//
 
 #include "ControlsInternal.h"
 
+#include <CommCtrl.h>   // LoadIconWithScaleDown
+
 #include <memory>
+#include <string>
 
 namespace win32fx::detail {
 
@@ -34,6 +44,9 @@ struct BtnState {
     UINT imageType = IMAGE_BITMAP;
     bool owned = false;
     bool pictureOnly = false;
+    bool modern = false;       // image is the modern icon for `source`
+    std::wstring sourceName;   // the bitmap resource it replaces: a name,
+    WORD sourceId = 0;         // or an ID
 };
 
 WNDCLASSEXW g_button{};
@@ -54,13 +67,32 @@ void freeImage(BtnState& st) noexcept
 LRESULT setPicture(BtnState& st, HWND h, WPARAM type, LPARAM lp)
 {
     HANDLE image = nullptr;
-    const UINT imageType = (type & SUPERBTN_PICT_ICON) ? IMAGE_ICON : IMAGE_BITMAP;
+    UINT imageType = (type & SUPERBTN_PICT_ICON) ? IMAGE_ICON : IMAGE_BITMAP;
     bool owned = false;
+    bool modern = false;
+    std::wstring sourceName;
+    WORD sourceId = 0;
     if (type & SUPERBTN_PICT_HANDLE) {
         image = reinterpret_cast<HANDLE>(lp);
     } else if (type & (SUPERBTN_PICT_BITMAP | SUPERBTN_PICT_ICON)) {
         auto inst = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(h, GWLP_HINSTANCE));
-        image = LoadImageW(inst, reinterpret_cast<const wchar_t*>(lp), imageType, 0, 0, LR_DEFAULTCOLOR);
+        const auto* res = reinterpret_cast<const wchar_t*>(lp);
+        if (imageType == IMAGE_BITMAP) {
+            const int size = MulDiv(st.pictureOnly ? 20 : 16, static_cast<int>(GetDpiForWindow(h)), 96);
+            if (HICON icon = win32fx::LoadModernIcon(inst, res, size)) {
+                image = icon;
+                imageType = IMAGE_ICON;
+                modern = true;
+                if (IS_INTRESOURCE(res)) {
+                    sourceId = static_cast<WORD>(reinterpret_cast<ULONG_PTR>(res));
+                } else {
+                    sourceName = res;
+                }
+            }
+        }
+        if (!image)
+            image = LoadImageW(inst, res, imageType, 0, 0,
+                               LR_DEFAULTCOLOR | (imageType == IMAGE_BITMAP ? LR_LOADMAP3DCOLORS : 0));
         if (!image) return FALSE;
         owned = true;
     }
@@ -69,6 +101,9 @@ LRESULT setPicture(BtnState& st, HWND h, WPARAM type, LPARAM lp)
     st.image = image;
     st.imageType = imageType;
     st.owned = owned;
+    st.modern = modern;
+    st.sourceName = std::move(sourceName);
+    st.sourceId = sourceId;
 
     LONG_PTR style = GetWindowLongPtrW(h, GWL_STYLE) & ~static_cast<LONG_PTR>(BS_BITMAP | BS_ICON);
     if (st.pictureOnly && image) style |= (imageType == IMAGE_ICON) ? BS_ICON : BS_BITMAP;
@@ -109,6 +144,12 @@ LRESULT dispatch(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         return r;
     }
     if (st && msg == SBM_SETPICT) return setPicture(*st, h, wp, lp);
+    if (st && msg == WM_DPICHANGED_AFTERPARENT && st->modern) {   // the icon at the new DPI's size
+        const std::wstring name = st->sourceName;                  // setPicture replaces these
+        const LPCWSTR res = name.empty() ? MAKEINTRESOURCEW(st->sourceId) : name.c_str();
+        setPicture(*st, h, SUPERBTN_PICT_BITMAP, reinterpret_cast<LPARAM>(res));
+        return base(h, msg, wp, lp);
+    }
     if (msg >= static_cast<UINT>(SBM_SETCOLOR) && msg <= static_cast<UINT>(SBM_GETSTRETCH)) return 0;
     return base(h, msg, wp, lp);
 }
@@ -123,6 +164,23 @@ LRESULT CALLBACK SuperBtnProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 } // namespace
+
+} // namespace win32fx::detail
+
+HICON win32fx::LoadModernIcon(HINSTANCE inst, LPCWSTR resource, int sizePx)
+{
+    if (!resource) return nullptr;
+    const std::wstring name =
+        IS_INTRESOURCE(resource)
+            ? L"P" + std::to_wstring(static_cast<unsigned>(reinterpret_cast<ULONG_PTR>(resource)))
+            : L"P" + std::wstring(resource);
+    if (!FindResourceW(inst, name.c_str(), MAKEINTRESOURCEW(14))) return nullptr;   // RT_GROUP_ICON
+    HICON icon = nullptr;
+    if (FAILED(LoadIconWithScaleDown(inst, name.c_str(), sizePx, sizePx, &icon))) return nullptr;
+    return icon;
+}
+
+namespace win32fx::detail {
 
 bool RegisterSuperBtn(HINSTANCE inst)
 {

@@ -1,68 +1,73 @@
 //
-// Toolbar.h - the top toolbar (spec 3.5): the original TToolBar.
+// Toolbar.h - the frame's command bar (UI refresh spec 4.3, D3): a common-
+// controls toolbar (ToolbarWindow32) with flat icon buttons and tooltips. It
+// replaced the original TToolBar, a dialog of tbSuperBtn buttons (1032).
 //
-// The legacy toolbars are modeless child dialogs built from a template
-// (dialog 1032 for the top bar, 2057 for the module bar) whose buttons are
-// tbSuperBtn controls with bitmaps. DialogBar is that: a child Dialog that
-// sends every WM_COMMAND from its buttons on to its parent, the frame, which
-// the original did one handler at a time (TToolBar::Mssg). A port that needs
-// a different ID sent overrides MapCommand.
+// A thin wrapper, as StatusBar: the control has its own window procedure.
+// Each button shows the modern icon for a bitmap ID (LoadModernIcon, "P<id>")
+// and sends a command: a click arrives at the parent as WM_COMMAND with the
+// command, BN_CLICKED and the bar's HWND. A frame that tells menu commands from
+// control notifications by a null lParam should treat the bar's as null.
 //
-//     Toolbar bar;
-//     bar.CreateBar(hInst, 1032, frame);
-//     bar.SetBackground(L"STATUSBAR");
-//     bar.SetLayout(10, 30, 25);
-//     bar.PlaceButton(ID_NEW, 0, true);      // TToolBar::SetPic
-//     frame.Dock(bar, win32fx::DockSide::Top, bar.height());
+//     fx::CommandBar bar;
+//     bar.Create(frame, IDC_TOOLBAR, inst);
+//     bar.AddButton(ID_SAVE, ID_SAVE, L"Save");
+//     bar.AddSeparator();
+//     frame.Dock(bar, fx::DockSide::Top, bar.Height());
 //
 #pragma once
 
-#include "Dialog.h"
-#include "HandleGuard.h"
+#include <Windows.h>
+#include <CommCtrl.h>
+
+#include <list>
+#include <string>
 
 namespace win32fx {
 
-class DialogBar : public Dialog {
+class CommandBar {
 public:
-    // A modeless child dialog from `templateId` (WS_CHILD template), shown.
-    HWND CreateBar(HINSTANCE inst, UINT templateId, HWND parent);
+    CommandBar() noexcept = default;
+    CommandBar(const CommandBar&) = delete;
+    CommandBar& operator=(const CommandBar&) = delete;
+    ~CommandBar();
 
-    // Button grid used by PlaceButton: `space` px from the left, slots
-    // `width` x `height` px, top 2 px. Original values: 10, 30, 25.
-    void SetLayout(int spacePx, int widthPx, int heightPx) noexcept;
+    // A child of `parent` with ID `id`; icons `iconPx` px at 96 DPI, scaled to
+    // the parent's DPI. Null on failure.
+    HWND Create(HWND parent, UINT id, HINSTANCE inst, int iconPx = 24);
 
-    // The original SetPic: moves button `id` to slot `slot` (fractional
-    // slots make the gaps between groups), shows or hides it, and gives it
-    // the bitmap resource with the same ID. Returns the SBM_SETPICT result.
-    LRESULT PlaceButton(int id, double slot, bool show);
+    // A button with the icon that replaces bitmap `picture`, sending `command`,
+    // with tooltip `tip`. Without such an icon the button has no picture.
+    void AddButton(int picture, WORD command, const std::wstring& tip);
+    void AddSeparator();
 
-    int height() const noexcept { return barHeight_; }
-    void setHeight(int h) noexcept { barHeight_ = h; }
+    // The bar's height for its buttons, in px: dock it with this.
+    int Height() const;
 
-protected:
-    // The ID to send to the parent for a click on `id`; 0 to send nothing.
-    virtual WORD MapCommand(WORD id) { return id; }
+    // After a DPI change (UI refresh spec 5.2): the bar is made again with its
+    // icons at the parent's new DPI. Returns the new HWND: the old one is
+    // destroyed, so undock it first and dock this one.
+    HWND Rebuild();
 
-    bool OnCommand(WORD id, WORD code, HWND ctl) override;
-
-    HINSTANCE inst_ = nullptr;
-    int space_ = 10, width_ = 30, btnHeight_ = 25;
-    int barHeight_ = 30;   // TOOLBAR_HEIGHT
-};
-
-class Toolbar : public DialogBar {
-public:
-    // Paints bitmap resource `name` stretched across the bar, as
-    // TToolBar::WMPaint did with "STATUSBAR". Null: the dialog background.
-    void SetBackground(const wchar_t* bitmapName);
-
-protected:
-    // Paints the background (WM_ERASEBKGND); an override must call this first.
-    bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
+    HWND hwnd() const noexcept { return hwnd_; }
+    operator HWND() const noexcept { return hwnd_; }
 
 private:
-    BitmapGuard background_;
-    int bmpWidth_ = 0, bmpHeight_ = 0;
+    struct Button {
+        int picture;   // 0: a separator
+        WORD command;
+        std::wstring tip;
+    };
+    void addButton(const Button& b);
+
+    HWND hwnd_ = nullptr;
+    HWND parent_ = nullptr;
+    UINT id_ = 0;
+    int iconPx96_ = 24;
+    std::list<Button> buttons_;
+    HINSTANCE inst_ = nullptr;
+    HIMAGELIST images_ = nullptr;   // owned: the toolbar doesn't destroy it
+    int iconPx_ = 24;               // at the current DPI
 };
 
 } // namespace win32fx

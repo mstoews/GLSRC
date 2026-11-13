@@ -11,6 +11,7 @@
 #define _INC_EXCPT
 #define _CRTIMP
 typedef int errno_t;
+#define _SSIZE_T_DEFINED   // glibc already has ssize_t; rpcndr.h (COM, WIC, DWM headers) would redeclare it
 #include <cwctype>
 typedef long long __time64_t;
 typedef enum _EXCEPTION_DISPOSITION { ExceptionContinueExecution, ExceptionContinueSearch, ExceptionNestedException, ExceptionCollidedUnwind } EXCEPTION_DISPOSITION;

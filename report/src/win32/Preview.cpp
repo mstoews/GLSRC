@@ -100,6 +100,7 @@ private:
     void Relayout();
     void UpdateStrip();
     void Options();
+    void SetUiFont();   // uiFont_ for the window's DPI, on the strip's controls
 
     Report report_;
     Rebuild rebuild_;
@@ -318,11 +319,7 @@ bool PreviewWindow::OnCreate(LPCREATESTRUCTW cs)
 {
     HINSTANCE inst = cs->hInstance;
     SetClassLongPtrW(hwnd(), GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(GetSysColorBrush(COLOR_BTNFACE)));
-    const UINT dpi = GetDpiForWindow(hwnd());
-    NONCLIENTMETRICSW ncm{};
-    ncm.cbSize = sizeof ncm;
-    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0, dpi);
-    uiFont_ = CreateFontIndirectW(&ncm.lfMessageFont);
+    SetUiFont();
 
     const wchar_t* text[kButtons] = {L"&Print...", L"|<", L"<", L">", L">|", zoomText(zoom_), L"&Options...", L"&Close"};
     for (int i = 0; i < kButtons; ++i) {
@@ -340,6 +337,19 @@ bool PreviewWindow::OnCreate(LPCREATESTRUCTW cs)
     AddPrinterListener(hwnd());
     Relayout();
     return false;   // DefMDIChildProc too
+}
+
+void PreviewWindow::SetUiFont()
+{
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof ncm;
+    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0, GetDpiForWindow(hwnd()));
+    HFONT old = uiFont_;
+    uiFont_ = CreateFontIndirectW(&ncm.lfMessageFont);
+    for (HWND b : buttons_)
+        if (b) SendMessageW(b, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    if (label_) SendMessageW(label_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    if (old) DeleteObject(old);   // after the controls let go of it
 }
 
 bool PreviewWindow::OnSize(UINT, int cx, int cy)
@@ -408,6 +418,14 @@ bool PreviewWindow::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result)
         Relayout();
         result = 0;
         return true;
+    case WM_DPICHANGED_AFTERPARENT: {   // moved to a monitor with another scaling (UI refresh spec 5.2)
+        SetUiFont();
+        RECT rc{};
+        GetClientRect(hwnd(), &rc);
+        OnSize(SIZE_RESTORED, rc.right, rc.bottom);   // the strip at the new DPI
+        if (view_.hwnd()) view_.Update();             // 100 % zoom follows the DPI
+        return false;
+    }
     default:
         return false;
     }

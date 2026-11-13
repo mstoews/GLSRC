@@ -3,9 +3,10 @@
 // (gl/src/gl.cpp, gl/header/gl_main.h, gl_man.h). Plan M5 task 3.
 //
 //   - MANILA menu (HGLMenu); the Window menu is submenu 7.
-//   - Toolbar 1032 at the top (TToolBar), module bar 2057 at the bottom
-//     (TVToolBar). The module bar's three fields are the status line:
-//     3222 company name, 3223 menu help, 3224 current period.
+//   - A toolbar at the top (the original TToolBar, dialog 1032) and a status
+//     bar at the bottom (TVToolBar, dialog 2057), both the standard controls
+//     since the UI refresh (spec 4.3, 4.4). The status bar's three parts are
+//     the original's fields: 3222 company name, 3223 menu help, 3224 period.
 //   - GL.INI [ACCESS] PSW=T: a login over the frame at startup; Cancel
 //     closes the program. The menu-access string grays menu items on the
 //     next WM_INITMENUPOPUP.
@@ -36,6 +37,7 @@ public:
     static void ReleaseGleMenu(HWND child);
 
     void OnMdiChildActivate(HWND child) override;
+    void OnDpiChanged(UINT dpi) override;   // the toolbar's icons, the status bar's font
 
 protected:
     bool OnCreate(LPCREATESTRUCTW cs) override;
@@ -45,11 +47,7 @@ protected:
     bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
 
 private:
-    class TopToolbar : public fx::Toolbar {
-    protected:
-        WORD MapCommand(WORD id) override;   // TToolBar's response table
-    };
-
+    void SetStatus(int field, const std::wstring& text);   // field: ID_STATUSHELP, ID_MENUHELP, ID_PERIODFIELD
     void MenuHelp(WPARAM wp, LPARAM lp);       // TGlWindow::WMMenuSelect
     void PopUpMenu(POINT screen);              // TGlWindow::PopUpMenu
     void NotPorted(WORD id);
@@ -58,6 +56,6 @@ private:
 
     static LRESULT CALLBACK ClientProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref);
 
-    TopToolbar toolbar_;
-    fx::VerticalToolbar vbar_;
+    fx::CommandBar toolbar_;
+    fx::StatusBar status_;
 };

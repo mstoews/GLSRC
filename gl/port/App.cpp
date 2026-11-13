@@ -27,6 +27,12 @@
 //   gl.exe /failpost <n>        fault injection (spec #2 8 #6): posting throws
 //                               after writing its nth line, so the check can
 //                               see that nothing was written (Vouchers.h)
+//   gl.exe /screenshots [dir] [/quiet]
+//                               shows the frame, saves it and every dialog of
+//                               the resource check as PNGs in dir (default
+//                               "screenshots"), then exits (UI refresh spec
+//                               4.6; ResourceCheck.h); the exit code is the
+//                               number that failed
 //
 // Debug builds report CRT heap leaks at exit (_CrtDumpMemoryLeaks, to the
 // debugger's output window).
@@ -35,6 +41,9 @@
 // it (it maps Tab to Print).
 //
 #include <Windows.h>
+#include <shellapi.h>   // CommandLineToArgvW
+
+#pragma comment(lib, "shell32.lib")
 
 #include "win32fx.h"
 
@@ -76,6 +85,19 @@ WCHAR CurDir[MAX_PATH] = L"";
 char szMsg[256] = "";
 
 namespace {
+
+// The word after /screenshots, unless it is another switch; else "screenshots".
+std::wstring screenshotDir()
+{
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    std::wstring dir = L"screenshots";
+    for (int i = 1; argv && i + 1 < argc; ++i)
+        if (CompareStringOrdinal(argv[i], -1, L"/screenshots", -1, TRUE) == CSTR_EQUAL && argv[i + 1][0] != L'/')
+            dir = argv[i + 1];
+    if (argv) LocalFree(argv);
+    return dir;
+}
 
 bool activatePrevious()
 {
@@ -121,7 +143,8 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     const std::wstring args = cmdLine ? cmdLine : L"";
     if (args.find(L"/checkres") != std::wstring::npos)
         return RunResourceCheck(inst, args.find(L"/quiet") != std::wstring::npos);
-    if (activatePrevious()) return 0;
+    const bool screenshots = args.find(L"/screenshots") != std::wstring::npos;
+    if (!screenshots && activatePrevious()) return 0;
 
     const CompanyDbLocation db = FindCompanyDb();
     if (!db.error.empty()) return fail(db.error);
@@ -174,12 +197,17 @@ int WINAPI wWinMain(_In_ HINSTANCE inst, _In_opt_ HINSTANCE, _In_ LPWSTR cmdLine
     {
         ManilaGL frame;
         if (frame.Create(inst)) {
-            ShowWindow(frame, show);
+            ShowWindow(frame, screenshots ? SW_SHOWNORMAL : show);
             UpdateWindow(frame);
-            // After the login the frame posted at creation, if there is one.
-            if (args.find(L"/samplereport") != std::wstring::npos)
-                PostMessageW(frame, WM_COMMAND, CM_SAMPLE_REPORT, 0);
-            rc = fx::RunMessageLoop(frame, frame.mdiClient());
+            if (screenshots) {   // the login GL.INI may ask for stays queued, and is dropped
+                rc = SaveScreenshots(inst, frame, screenshotDir(), args.find(L"/quiet") != std::wstring::npos);
+                DestroyWindow(frame);
+            } else {
+                // After the login the frame posted at creation, if there is one.
+                if (args.find(L"/samplereport") != std::wstring::npos)
+                    PostMessageW(frame, WM_COMMAND, CM_SAMPLE_REPORT, 0);
+                rc = fx::RunMessageLoop(frame, frame.mdiClient());
+            }
         }
     }
     cb.close();

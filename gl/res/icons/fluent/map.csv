@@ -1,0 +1,32 @@
+resource,fluent,old picture,used by
+1,Add,green plus,IDOK on MainDialog screens (Add/Mod; the original's picture)
+2,Door Arrow Left,door with arrow,IDCANCEL (Close)
+1003,Folder Open,open folder,toolbar: Open
+1031,Money,money bag,toolbar: Cash
+1071,Caret Right,blue triangle right,Next
+1072,Caret Left,blue triangle left,Previous
+1074,Document Bullet List,coloured list,ID_SLIPLIST (Voucher / Products list)
+1094,Arrow Reset,yellow return arrow,User Access Update: Reset
+1118,Delete,eraser,Delete (a bin: today's sign for delete)
+1121,Text Bullet List LTR,binoculars,ID_VIEW / Voucher Entry: List
+1125,Table Settings,binoculars,Company Profile: Account Setup
+2000,Search,magnifier,Transaction Inquiry: Search
+2026,Edit,green return arrow,User Access Update: Modify
+2236,Money,money bag,Cash Accounts: Cash
+3068,Print,printer,toolbar: Print; Voucher Entry: Print
+4000,Calendar LTR,calendar 1 2,Company Profile: Period Dates
+4014,Receipt Money,receivable basket,toolbar: AR Voucher
+4044,Wallet,list with pencil,toolbar: AP Voucher
+4045,Door Arrow Left,door with arrow,toolbar: Exit
+4051,Book Add,green plus,toolbar: Chart of Accounts (add)
+4052,Document Edit,form with pen,toolbar: GL Voucher
+4053,Document Checkmark,form with tick,toolbar: Post Vouchers
+4054,Document Search,binoculars,toolbar: Account Inquiry; Chart of Accounts and Department: Search
+4055,Save,floppy disk,toolbar: Save
+4057,Document Add,blank page,toolbar: New; New
+4066,Arrow Previous,first,Top
+4067,Arrow Next,last,Bottom
+4076,Filter,folder with pencil,ID_SETDATA: Set Data (list window parameters)
+4095,Add,green plus,ID_ADD: Add/Mod, Add
+PLUS,Add,green plus,Menu Access grid: allowed
+MINUS,Subtract,green minus,Menu Access grid: not allowed

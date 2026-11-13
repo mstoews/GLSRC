@@ -5,77 +5,84 @@
 #include "Toolbar.h"
 #include "controls/CustomControls.h"
 
+#pragma comment(lib, "comctl32.lib")
+
 namespace win32fx {
 
-// ---- DialogBar ----
+CommandBar::~CommandBar()
+{
+    if (hwnd_ && IsWindow(hwnd_)) DestroyWindow(hwnd_);
+    if (images_) ImageList_Destroy(images_);
+}
 
-HWND DialogBar::CreateBar(HINSTANCE inst, UINT templateId, HWND parent)
+HWND CommandBar::Create(HWND parent, UINT id, HINSTANCE inst, int iconPx)
 {
     inst_ = inst;
-    HWND h = CreateModeless(inst, templateId, parent);
-    if (h) ShowWindow(h, SW_SHOW);
-    return h;
+    parent_ = parent;
+    id_ = id;
+    iconPx96_ = iconPx;
+    // CCS_NORESIZE | CCS_NOPARENTALIGN: MdiFrame::Dock places and sizes it.
+    hwnd_ = CreateWindowExW(0, TOOLBARCLASSNAMEW, nullptr,
+                            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS |
+                                CCS_NODIVIDER | CCS_NORESIZE | CCS_NOPARENTALIGN,
+                            0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(id)), inst, nullptr);
+    if (!hwnd_) return nullptr;
+    SendMessageW(hwnd_, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    iconPx_ = MulDiv(iconPx, static_cast<int>(GetDpiForWindow(parent)), 96);
+    if (images_) ImageList_Destroy(images_);
+    images_ = ImageList_Create(iconPx_, iconPx_, ILC_COLOR32 | ILC_MASK, 16, 4);
+    SendMessageW(hwnd_, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(images_));
+    // No text under the icons: the strings show only as tooltips.
+    SendMessageW(hwnd_, TB_SETMAXTEXTROWS, 0, 0);
+    return hwnd_;
 }
 
-void DialogBar::SetLayout(int spacePx, int widthPx, int heightPx) noexcept
+void CommandBar::AddButton(int picture, WORD command, const std::wstring& tip)
 {
-    space_ = spacePx;
-    width_ = widthPx;
-    btnHeight_ = heightPx;
+    buttons_.push_back({picture, command, tip});
+    addButton(buttons_.back());
 }
 
-LRESULT DialogBar::PlaceButton(int id, double slot, bool show)
+void CommandBar::AddSeparator()
 {
-    HWND btn = GetDlgItem(hwnd(), id);
-    if (!btn) return 0;
-    RECT rc{};
-    GetClientRect(hwnd(), &rc);
-    MoveWindow(btn, static_cast<int>(rc.left + space_ + slot * width_), rc.top + 2, width_, btnHeight_, TRUE);
-    ShowWindow(btn, show ? SW_SHOW : SW_HIDE);
-    SendMessageW(btn, SBM_SETSHADOWSIZE, 1, 0);
-    return SendMessageW(btn, SBM_SETPICT, SUPERBTN_PICT_BITMAP, id);
+    buttons_.push_back({0, 0, {}});
+    addButton(buttons_.back());
 }
 
-bool DialogBar::OnCommand(WORD id, WORD code, HWND ctl)
+void CommandBar::addButton(const Button& button)
 {
-    // The bar is never closed by Enter/Esc (IDOK/IDCANCEL without a control).
-    if (!ctl) return true;
-    if (code == BN_CLICKED)
-        if (const WORD to = MapCommand(id)) SendMessageW(GetParent(hwnd()), WM_COMMAND, to, 0);   // TToolBar::Mssg
-    return true;
-}
-
-// ---- Toolbar ----
-
-void Toolbar::SetBackground(const wchar_t* bitmapName)
-{
-    background_.reset();
-    bmpWidth_ = bmpHeight_ = 0;
-    if (bitmapName)
-        background_.reset(static_cast<HBITMAP>(LoadImageW(inst_, bitmapName, IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR)));
-    if (background_) {
-        BITMAP bm{};
-        GetObjectW(background_.get(), sizeof bm, &bm);
-        bmpWidth_ = bm.bmWidth;
-        bmpHeight_ = bm.bmHeight;
+    if (!hwnd_) return;
+    TBBUTTON b{};
+    if (button.picture == 0) {
+        b.fsStyle = BTNS_SEP;
+    } else {
+        b.iBitmap = I_IMAGENONE;
+        if (HICON icon = LoadModernIcon(inst_, MAKEINTRESOURCEW(button.picture), iconPx_)) {
+            if (images_) b.iBitmap = ImageList_AddIcon(images_, icon);
+            DestroyIcon(icon);
+        }
+        b.idCommand = button.command;
+        b.fsState = TBSTATE_ENABLED;
+        b.fsStyle = BTNS_BUTTON;
+        b.iString = reinterpret_cast<INT_PTR>(button.tip.c_str());   // buttons_ is a list: it stays put
     }
-    if (hwnd()) InvalidateRect(hwnd(), nullptr, TRUE);
+    SendMessageW(hwnd_, TB_ADDBUTTONSW, 1, reinterpret_cast<LPARAM>(&b));
 }
 
-bool Toolbar::OnMessage(UINT msg, WPARAM wp, LPARAM, LRESULT& result)
+HWND CommandBar::Rebuild()
 {
-    if (msg != WM_ERASEBKGND || !background_) return false;
-    // TToolBar::WMPaint: the left 10 px of the bitmap stretched across the bar.
-    const HDC dc = reinterpret_cast<HDC>(wp);
-    RECT rc{};
-    GetClientRect(hwnd(), &rc);
-    MemDcGuard mem(CreateCompatibleDC(dc));
-    const HGDIOBJ old = SelectObject(mem.get(), background_.get());
-    StretchBlt(dc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, mem.get(), 0, 0,
-               bmpWidth_ < 10 ? bmpWidth_ : 10, bmpHeight_ < barHeight_ ? bmpHeight_ : barHeight_, SRCCOPY);
-    SelectObject(mem.get(), old);
-    result = 1;
-    return true;
+    if (hwnd_ && IsWindow(hwnd_)) DestroyWindow(hwnd_);
+    hwnd_ = nullptr;
+    if (!Create(parent_, id_, inst_, iconPx96_)) return nullptr;
+    for (const Button& b : buttons_) addButton(b);
+    return hwnd_;
+}
+
+int CommandBar::Height() const
+{
+    if (!hwnd_) return 0;
+    const int pad = MulDiv(2, static_cast<int>(GetDpiForWindow(hwnd_)), 96);
+    return HIWORD(SendMessageW(hwnd_, TB_GETBUTTONSIZE, 0, 0)) + 2 * pad;
 }
 
 } // namespace win32fx

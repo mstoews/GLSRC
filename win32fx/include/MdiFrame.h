@@ -53,6 +53,12 @@ public:
     // The menu-merge hook (see the header comment).
     virtual void OnMdiChildActivate(HWND /*child*/) {}
 
+    // WM_DPICHANGED (UI refresh spec 5.2): called with the new DPI before the
+    // frame takes Windows' suggested rectangle and lays out again. Rebuild
+    // pixel-sized things here; a bar whose height changed is docked again.
+    // Children get WM_DPICHANGED_AFTERPARENT themselves.
+    virtual void OnDpiChanged(UINT /*dpi*/) {}
+
 protected:
     bool OnCreate(LPCREATESTRUCTW cs) override;
     bool OnSize(UINT type, int cx, int cy) override;

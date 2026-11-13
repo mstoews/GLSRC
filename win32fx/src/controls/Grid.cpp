@@ -13,6 +13,13 @@
 // Esc / Up / Down; losing the focus to anything else commits it, through a
 // posted message so the editor isn't destroyed inside its own WM_KILLFOCUS.
 //
+// Font and DPI (UI refresh spec 5.1, 5.2): in a dialog the grid takes the
+// dialog's font (WM_SETFONT). Elsewhere (no parent font) it makes its own,
+// the system message font at its DPI. After a DPI change
+// (WM_DPICHANGED_AFTERPARENT) it takes the parent's new font, or remakes its
+// own. Whenever the font changes, the column widths (set by the screens in
+// character widths) scale by the change in the width of "0".
+//
 
 #include "ControlsInternal.h"
 #include "controls/Grid.h"
@@ -60,6 +67,7 @@ struct GridState {
     int activeCol = 0;                               // 0-based
     int lastKey = 0;
     int changedRow = 0, changedCol = 0;              // 1-based
+    HFONT ownFont = nullptr;                         // made by the grid when its parent has none
 };
 
 LRESULT CALLBACK GridProc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
@@ -346,6 +354,36 @@ LRESULT onNotify(GridState& st, const NMHDR* nm)
     }
 }
 
+int charWidth(const GridState& st) { return st.list ? std::max(1, ListView_GetStringWidth(st.list, L"0")) : 8; }
+
+// `font` for the list (and its header); the columns scale with it.
+void applyFont(GridState& st, HFONT font, BOOL redraw)
+{
+    if (!st.list) return;
+    const int before = charWidth(st);
+    SendMessageW(st.list, WM_SETFONT, reinterpret_cast<WPARAM>(font), redraw);
+    const int after = charWidth(st);
+    if (after == before) return;
+    for (int c = 0; c < columnCount(st); ++c)
+        if (c + 1 != st.stretchCol)
+            ListView_SetColumnWidth(st.list, c, MulDiv(ListView_GetColumnWidth(st.list, c), after, before));
+    stretch(st);
+}
+
+// The grid's own font, for a parent without one: the message font at its DPI.
+void useOwnFont(GridState& st, HWND h)
+{
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof ncm;
+    if (!SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0, GetDpiForWindow(h))) return;
+    HFONT old = st.ownFont;
+    st.ownFont = CreateFontIndirectW(&ncm.lfMessageFont);
+    applyFont(st, st.ownFont, TRUE);
+    if (old) DeleteObject(old);
+}
+
+HFONT parentFont(HWND h) { return reinterpret_cast<HFONT>(SendMessageW(GetParent(h), WM_GETFONT, 0, 0)); }
+
 LRESULT onCreate(GridState& st, HWND h)
 {
     const DWORD style = static_cast<DWORD>(GetWindowLongPtrW(h, GWL_STYLE));
@@ -361,6 +399,7 @@ LRESULT onCreate(GridState& st, HWND h)
     ListView_SetExtendedListViewStyle(st.list, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER |
                                                    LVS_EX_SUBITEMIMAGES);
     SetWindowSubclass(st.list, ListProc, kListSubclass, 0);
+    if (!parentFont(h)) useOwnFont(st, h);   // a dialog sends its font itself
     return 0;
 }
 
@@ -377,6 +416,7 @@ LRESULT dispatch(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     auto* st = reinterpret_cast<GridState*>(GetWindowLongPtrW(h, 0));
     if (msg == WM_NCDESTROY) {
         SetWindowLongPtrW(h, 0, 0);
+        if (st && st->ownFont) DeleteObject(st->ownFont);   // the list is gone by now
         delete st;
         return DefWindowProcW(h, msg, wp, lp);
     }
@@ -393,8 +433,20 @@ LRESULT dispatch(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     case WM_SETFONT:
-        if (st->list) SendMessageW(st->list, WM_SETFONT, wp, lp);
+        applyFont(*st, reinterpret_cast<HFONT>(wp), static_cast<BOOL>(lp));
+        if (st->ownFont && reinterpret_cast<HFONT>(wp) != st->ownFont) {   // the parent's from now on
+            DeleteObject(st->ownFont);
+            st->ownFont = nullptr;
+        }
         return 0;
+    case WM_DPICHANGED_AFTERPARENT:
+        if (HFONT pf = parentFont(h)) {
+            if (st->list && pf != reinterpret_cast<HFONT>(SendMessageW(st->list, WM_GETFONT, 0, 0)))
+                SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(pf), TRUE);
+        } else {
+            useOwnFont(*st, h);
+        }
+        return DefWindowProcW(h, msg, wp, lp);
     case WM_GETFONT:
         return st->list ? SendMessageW(st->list, WM_GETFONT, 0, 0) : 0;
     case WM_SETFOCUS:

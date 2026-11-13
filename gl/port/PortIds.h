@@ -66,11 +66,30 @@
 #define IDC_FA_SUMMARY          20130   // Disposal (1001): cost, accumulated depreciation, book value (S4-M4)
 #define IDC_FA_DELETE           20131   // Disposal (1001): Delete, for an asset never depreciated
 
+#define IDC_FRAME_TOOLBAR       20160   // the frame's toolbar (UI refresh spec 4.3; ManilaGL.cpp)
+#define IDC_FRAME_STATUS        20161   // the frame's status bar (UI refresh spec 4.4)
+
 // ---- commands --------------------------------------------------------------
 
 #define CM_SAMPLE_REPORT        20500   // gl.exe /samplereport, and /stress
 #define CM_STATEMENT_LAYOUT     20502   // Accounts > Statement Layout (spec #3 6.4, S3-M4)
 #define CM_REPORT_LIST          20501   // Reporting > Custom Report, GLSUB > Custom Report: the report list (D9, S3-M7)
 #define CM_VOUCHER_LIST         20503   // Transactions > Voucher List: every voucher in an MDI grid (VoucherBrowser.h)
+
+// ---- strings ---------------------------------------------------------------
+
+// The frame's toolbar tooltips (UI refresh spec 4.3; port.rc), in button order.
+#define IDS_TIP_NEW             20800
+#define IDS_TIP_OPEN            20801
+#define IDS_TIP_SAVE            20802
+#define IDS_TIP_PRINT           20803
+#define IDS_TIP_GLBATCH         20804
+#define IDS_TIP_APBATCH         20805
+#define IDS_TIP_CASH            20806
+#define IDS_TIP_ARBATCH         20807
+#define IDS_TIP_GLINQ           20808
+#define IDS_TIP_GLPOST          20809
+#define IDS_TIP_GLADD           20810
+#define IDS_TIP_EXIT            20811
 
 #endif // GL_PORT_PORTIDS_H

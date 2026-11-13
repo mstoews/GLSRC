@@ -111,11 +111,9 @@ int findPopup(HMENU menu, const wchar_t* text)
     return -1;
 }
 
-} // namespace
-
 // ---- the top toolbar --------------------------------------------------------
 
-WORD ManilaGL::TopToolbar::MapCommand(WORD id)
+WORD toolbarCommand(WORD id)
 {
     // TToolBar (gl/header/gl_tool.h, gl/src/gl_toolb.cpp): button -> the command it sent.
     switch (id) {
@@ -127,9 +125,29 @@ WORD ManilaGL::TopToolbar::MapCommand(WORD id)
     case ID_GLINQ:      return ID_GLCHARTINQ;
     case ID_CANCEL:     return fx::CM_EXIT;   // GLQuit: Mssg(24340)
     case ID_NEW:        return 111;
-    default:            return id;            // ID_PRINT, ID_OPEN, ID_SAVE, ID_APBATCH, the edit buttons
+    default:            return id;            // ID_PRINT, ID_OPEN, ID_SAVE, ID_APBATCH
     }
 }
+
+// TToolBar::SetupWindow's buttons, in its order; `gap` where it left a wider
+// space (pos += 1.3), now a separator. The spreadsheet buttons it placed hidden
+// (cut, copy, paste, border, font, alignment, number, grids) are gone: no
+// spreadsheet window was ever ported to show them.
+struct ToolButton {
+    WORD id;   // the original button ID: its bitmap, and so its icon P<id>
+    UINT tip;
+    bool gap;
+};
+const ToolButton kToolButtons[] = {
+    {ID_NEW, IDS_TIP_NEW, false},         {ID_OPEN, IDS_TIP_OPEN, false},
+    {ID_SAVE, IDS_TIP_SAVE, false},       {ID_PRINT, IDS_TIP_PRINT, true},
+    {ID_GLBATCH, IDS_TIP_GLBATCH, false}, {ID_APBATCH, IDS_TIP_APBATCH, false},
+    {ID_CASH, IDS_TIP_CASH, false},       {ID_ARBATCHENT, IDS_TIP_ARBATCH, true},
+    {ID_GLINQ, IDS_TIP_GLINQ, false},     {ID_GLPOST, IDS_TIP_GLPOST, false},
+    {ID_GLADD, IDS_TIP_GLADD, true},      {ID_CANCEL, IDS_TIP_EXIT, false},
+};
+
+} // namespace
 
 // ---- the frame ----------------------------------------------------------------
 
@@ -143,42 +161,17 @@ bool ManilaGL::OnCreate(LPCREATESTRUCTW cs)
 {
     MdiFrame::OnCreate(cs);
 
-    // TGlWindow::SetupWindow: the toolbar (1032) and the module bar (2057).
-    toolbar_.CreateBar(hInst, 1032, hwnd());
-    toolbar_.SetBackground(L"STATUSBAR");
-    toolbar_.setHeight(TOOLBAR_HEIGHT);
-    toolbar_.SetLayout(10, 30, 25);
-    double pos = 0;   // TToolBar::SetupWindow
-    toolbar_.PlaceButton(ID_NEW, pos, true);        pos += 1;
-    toolbar_.PlaceButton(ID_OPEN, pos, true);       pos += 1;
-    toolbar_.PlaceButton(ID_SAVE, pos, true);       pos += 1;
-    toolbar_.PlaceButton(ID_PRINT, pos, true);      pos += 1.3;
-    toolbar_.PlaceButton(ID_GLBATCH, pos, true);    pos += 1;
-    toolbar_.PlaceButton(ID_APBATCH, pos, true);    pos += 1;
-    toolbar_.PlaceButton(ID_CASH, pos, true);       pos += 1;
-    toolbar_.PlaceButton(ID_ARBATCHENT, pos, true); pos += 1.3;
-    toolbar_.PlaceButton(ID_GLINQ, pos, true);      pos += 1;
-    toolbar_.PlaceButton(ID_GLPOST, pos, true);     pos += 1;
-    toolbar_.PlaceButton(ID_GLADD, pos, true);      pos += 1.3;
-    toolbar_.PlaceButton(ID_CANCEL, pos, true);
-    pos = 4.3;   // the spreadsheet buttons, hidden until a sheet is active (not in Spec #1)
-    for (const int id : {ID_CUT, ID_COPY, ID_PASTE}) {
-        toolbar_.PlaceButton(id, pos, false);
-        pos += 1;
+    // TGlWindow::SetupWindow: the toolbar (1032) and the module bar (2057),
+    // now the standard controls (UI refresh spec 4.3, 4.4). The status bar is
+    // docked first: it sits at the very bottom.
+    status_.Create(hwnd(), IDC_FRAME_STATUS, hInst);
+    Dock(status_, fx::DockSide::Bottom, 0);
+    toolbar_.Create(hwnd(), IDC_FRAME_TOOLBAR, hInst);
+    for (const ToolButton& b : kToolButtons) {
+        toolbar_.AddButton(b.id, toolbarCommand(b.id), fx::LoadResString(hInst, b.tip));
+        if (b.gap) toolbar_.AddSeparator();
     }
-    pos += 0.3;
-    for (const int id : {ID_BORDER, ID_FONT, ID_ALIGNMENT, ID_NUMBER, ID_GRIDS}) {
-        toolbar_.PlaceButton(id, pos, false);
-        pos += 1;
-    }
-    Dock(toolbar_, fx::DockSide::Top, toolbar_.height());
-
-    // TVToolBar: SetPic(ID_GENERAL / 2210 / ID_RECEIVABLE) finds no buttons in
-    // gl_new.rc's 2057 (spec 6.2), so only the status fields are left.
-    vbar_.CreateBar(hInst, 2057, hwnd());
-    vbar_.SetBackground(L"STATUSBAR");
-    vbar_.setHeight(TOOLBAR_HEIGHT);
-    Dock(vbar_, fx::DockSide::Bottom, vbar_.height());
+    Dock(toolbar_, fx::DockSide::Top, toolbar_.Height());
 
     // TGLClient::WMRButtonDown: a right-click on the client opens GLSUB.
     SetWindowSubclass(mdiClient(), ClientProc, 1, reinterpret_cast<DWORD_PTR>(this));
@@ -198,17 +191,25 @@ bool ManilaGL::OnCreate(LPCREATESTRUCTW cs)
     return true;
 }
 
+void ManilaGL::OnDpiChanged(UINT)
+{
+    // UI refresh spec 5.2: the toolbar is made again at the new icon size (a
+    // new window, so it is docked again); the status bar gets the new font. The
+    // frame then takes its new size, and OnSize sets the status parts.
+    Undock(toolbar_);
+    if (toolbar_.Rebuild()) Dock(toolbar_, fx::DockSide::Top, toolbar_.Height());
+    status_.UpdateFont();
+}
+
 bool ManilaGL::OnSize(UINT type, int cx, int cy)
 {
     MdiFrame::OnSize(type, cx, cy);
-    if (!vbar_.hwnd()) return true;
-    // TGlWindow::WMSize: company on the left (8 x 25 px), period on the right
-    // (100 px), menu help between them.
-    constexpr int kHeight = 25, kSpace = 2;
-    vbar_.PlaceField(ID_STATUSHELP, kSpace, 8 * kHeight);
-    vbar_.PlaceField(ID_PERIODFIELD, cx - 102, 100);
-    const int left = kSpace + 8 * kHeight + 1;
-    vbar_.PlaceField(ID_MENUHELP, left, (std::max)(0, (cx - 102) - left - 10));
+    if (!status_.hwnd()) return true;
+    // TGlWindow::WMSize's layout: company on the left (200 px at 96 DPI),
+    // period on the right (100 px), menu help between them.
+    const int dpi = static_cast<int>(GetDpiForWindow(hwnd()));
+    const int company = MulDiv(200, dpi, 96), period = MulDiv(100, dpi, 96);
+    status_.SetParts({company, (std::max)(company, cx - period), -1});
     // The original also reread the company and period here, on every resize;
     // RefreshStatus() runs after the screens that change them instead.
     return true;
@@ -216,12 +217,21 @@ bool ManilaGL::OnSize(UINT type, int cx, int cy)
 
 void ManilaGL::RefreshStatus()
 {
-    vbar_.SetText(ID_STATUSHELP, GetCompany().c_str());       // TGlWindow::GLCreateStatusBar
-    vbar_.SetText(ID_PERIODFIELD, GetCurrentPeriod().c_str());
+    SetStatus(ID_STATUSHELP, GetCompany());       // TGlWindow::GLCreateStatusBar
+    SetStatus(ID_PERIODFIELD, GetCurrentPeriod());
+}
+
+void ManilaGL::SetStatus(int field, const std::wstring& text)
+{
+    // The original's three fields of 2057 -> the status bar's parts.
+    const int part = field == ID_STATUSHELP ? 0 : field == ID_MENUHELP ? 1 : 2;
+    status_.SetText(part, text.c_str());
 }
 
 bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
 {
+    // Toolbar clicks are commands, as TToolBar::Mssg sent them (lParam 0).
+    if (ctl && ctl == toolbar_.hwnd()) ctl = nullptr;
     if (MdiFrame::OnCommand(id, code, ctl)) return true;   // Window menu, CM_EXIT
     switch (id) {
     case ID_SYSACCESS:                     // TManilaGL::GLSysAccess (posted at startup)
@@ -459,7 +469,7 @@ void ManilaGL::MenuHelp(WPARAM wp, LPARAM lp)
         str = IDS_MENUITEM;     // "Select a menu item from the menu list..."
     else if (flags & MF_SYSMENU)
         str = IDS_SYSTEM;       // "System menu..."
-    vbar_.SetText(ID_MENUHELP, fx::LoadResString(hInst, str).c_str());
+    SetStatus(ID_MENUHELP, fx::LoadResString(hInst, str));
 }
 
 void ManilaGL::PopUpMenu(POINT screen)

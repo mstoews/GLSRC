@@ -207,6 +207,7 @@ namespace {
 
 // TGLToolBox::SetupWindow / SetBitmap: two columns of 30 x 25 buttons, in
 // this order (position 1 top left, 2 top right, 3 second row left, ...).
+// 30 x 25 px at 96 DPI, scaled (UI refresh spec 5.1).
 constexpr int kTools[] = {ID_TOP, ID_BOTTOM, ID_NEXT, ID_PREVIOUS, ID_NEW,
                           ID_SLIPLIST, IDOK, ID_DELETE, ID_VIEW, IDCANCEL};
 constexpr int kToolW = 30, kToolH = 25;
@@ -224,25 +225,35 @@ bool ToolBox::Create(HWND owner)
     if (!registerClass(kToolClass)) return false;
     RECT dlg{};
     GetWindowRect(owner, &dlg);
-    RECT rc{0, 0, 2 * kToolW, 5 * kToolH};
+    const UINT dpi = GetDpiForWindow(owner);
+    auto px = [dpi](int v) { return MulDiv(v, static_cast<int>(dpi), 96); };
+    RECT rc{0, 0, 2 * px(kToolW), 5 * px(kToolH)};
     const DWORD style = WS_POPUP | WS_CAPTION | WS_CLIPCHILDREN;
-    AdjustWindowRectEx(&rc, style, FALSE, WS_EX_TOOLWINDOW);
-    return fx::Window::Create(WS_EX_TOOLWINDOW, kToolClass, L"ToolBox", style, dlg.right - 110, dlg.top + 20,
-                              rc.right - rc.left, rc.bottom - rc.top, owner, nullptr, hInst);
+    AdjustWindowRectExForDpi(&rc, style, FALSE, WS_EX_TOOLWINDOW, dpi);
+    return fx::Window::Create(WS_EX_TOOLWINDOW, kToolClass, L"ToolBox", style, dlg.right - px(110),
+                              dlg.top + px(20), rc.right - rc.left, rc.bottom - rc.top, owner, nullptr, hInst);
 }
 
 bool ToolBox::OnCreate(LPCREATESTRUCTW)
 {
     for (int i = 0; i < static_cast<int>(sizeof kTools / sizeof kTools[0]); ++i) {
         // "tbSuperBtn" as the text: SuperBtn.cpp shows only the picture.
-        HWND b = CreateWindowExW(0, L"tbSuperBtn", L"tbSuperBtn", WS_CHILD | WS_VISIBLE, (i % 2) * kToolW,
-                                 (i / 2) * kToolH, kToolW, kToolH, hwnd(),
+        HWND b = CreateWindowExW(0, L"tbSuperBtn", L"tbSuperBtn", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd(),
                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTools[i])), hInst, nullptr);
         if (b)
             SendMessageW(b, SBM_SETPICT, SUPERBTN_PICT_BITMAP,
                          reinterpret_cast<LPARAM>(MAKEINTRESOURCEW(kTools[i])));
     }
+    placeButtons();
     return false;
+}
+
+void ToolBox::placeButtons()
+{
+    const int dpi = static_cast<int>(GetDpiForWindow(hwnd()));
+    const int w = MulDiv(kToolW, dpi, 96), h = MulDiv(kToolH, dpi, 96);
+    for (int i = 0; i < static_cast<int>(sizeof kTools / sizeof kTools[0]); ++i)
+        if (HWND b = GetDlgItem(hwnd(), kTools[i])) MoveWindow(b, (i % 2) * w, (i / 2) * h, w, h, TRUE);
 }
 
 bool ToolBox::OnCommand(WORD id, WORD code, HWND)
@@ -253,10 +264,18 @@ bool ToolBox::OnCommand(WORD id, WORD code, HWND)
     return true;
 }
 
-bool ToolBox::OnMessage(UINT msg, WPARAM, LPARAM, LRESULT& result)
+bool ToolBox::OnMessage(UINT msg, WPARAM, LPARAM lp, LRESULT& result)
 {
     if (msg == WM_MOUSEACTIVATE) {   // clicking a tool leaves the dialog active
         result = MA_NOACTIVATE;
+        return true;
+    }
+    if (msg == WM_DPICHANGED) {   // moved to a monitor with another scaling (UI refresh spec 5.2)
+        const RECT* r = reinterpret_cast<const RECT*>(lp);
+        SetWindowPos(hwnd(), nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        placeButtons();   // the buttons reload their icons themselves (WM_DPICHANGED_AFTERPARENT)
+        result = 0;
         return true;
     }
     return false;
