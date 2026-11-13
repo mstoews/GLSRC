@@ -1,6 +1,6 @@
 # Spec #6 — OWL-to-Win32 SDK Port: Accounts Receivable
 
-**Status:** Draft for review (2026-11-13). Q1–Q3 answered (§13); the plan comes after review.
+**Status:** Draft for review (2026-11-13). Q1–Q3 answered (§13). The plan: `plans/2026-11-13-owl-to-win32-sdk-port-spec6-plan.md`.
 **Date:** 2026-11-13
 **Scope:** Sixth spec of the migration: the Accounts Receivable module.
 - customers;
