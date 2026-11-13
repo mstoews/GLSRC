@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** Draft
+**Plan status:** In progress (S6-M0 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -36,6 +36,39 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 0 — The portable core
+
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.1 holds against `dbf/AR_*.DBF` and `.MDX`. `TARInvoiceEntry::ModifyCurrentSlip` (`ar_btche.cpp:950-1060`) is as §2.3 says. Further findings:
+>   - The real tags are not in alphabetical order (`AR_BTCH`: account, invoiceno, recno, batchno; `AR_DIST` starts with paymentreq; `AR_JSUM` with ardist). `EnsureArTables` and the fixture create them in the real order, since the first is the default.
+>   - `AR_CUST.VAT_DEPT` is C4 in the DBF. A migration of the real company shows it as 6 wide only because dbf2sqlite widens the column for R0006's stray bytes.
+>   - The original never wrote `QTY` or `PRICE`; the port does (§4.1).
+> - **`gl/port/Ar.{h,cpp}`** (task 2):
+>   - `EnsureArTables` creates the five deployed tables, with their layouts and tags, and the port's `ar_linex`, `ar_rcpt` and `ar_xfer`, when missing. Nothing is migrated: no deployed voucher exists (§2.7).
+>   - `LoadArAccounts` reads `GL_SETAT` `AR`, `SALE`, `VATP` and the `CA` banks.
+>   - `Customer` with `LoadCustomers` / `FindCustomer` / `SaveCustomer`. A replaced customer keeps `CREDIT` and the `TERMS_*` fields the port doesn't use.
+>   - `ArVoucher` and `ArLine` (quantity in hundredths, price in cents), with `LoadArVouchers`, `FindArVoucher`, `LoadArLines`, `NextArVoucherNumber` and `SaveArVoucher`. The last replaces a voucher's lines and `ar_linex` rows in one transaction, with the memo, and the analysis codes in their own columns (D13).
+>   - `DuplicateArInvoice` (D6): any voucher not cancelled, posted or not.
+>   - The arithmetic is pure: `LineAmount`, `SplitSale` and `ComputeSale`.
+>   - Read-only for now: `LoadArOpenItems`, `LoadReceipts`, `LoadArJournal` (Spec #5's `JournalRow`).
+>   - `ar_journal` names the journal types: "AR" for invoices, "RC" for receipts. A receipt's rows carry its `RCPTNO` in `CHEQUE`.
+> - **Spec change:** a discount's split (§5.2) now uses `SplitSale`, so its VAT is round(d × v ÷ (100 + v)) and its sales part the rest. The design's round(d × 100 ÷ (100 + v)) for the sales part could differ by a cent on a half-cent tie, and then a discount of a whole invoice wouldn't reverse it exactly. §5.3 now names `RCPTNO` and its link to the journal.
+> - **Fixture** (task 3): `accounts_receivable()` writes the five tables, `AR_LINEX` and `AR_RCPT` (layouts and tags as the real ones; `AR_BTCH` with its memo file):
+>   - customers C001–C003;
+>   - vouchers 1 and 2 open (2 has a quantity × price line and a typed one), 3 posted and owed, 4 posted with receipt 1 (500.00, "R"), 5 posted with receipt 2 (800.00, "C"), 6 cancelled;
+>   - 12 journal rows for 3, 4, 5 and the two receipts, all waiting.
+>
+>   **All 29 tables the fixture had are row-for-row identical** after migration (compared table by table), `_cb_*` metadata included. The new tables' fields and tags match the real company's.
+> - **Tests** (task 4): `gl_tests/test_ar.cpp`, 7 cases:
+>   - `LineAmount` and `SplitSale`, including the spec's 3,300.00, a half-cent tie, a negative amount, and sales + VAT = amount over thousands of amounts and rates;
+>   - `ComputeSale`: two lines, a deletion, separate sales accounts, no VAT, nothing, and 37 lines balancing;
+>   - the tables made in an empty company, and a second `EnsureArTables` changing nothing;
+>   - the fixture's customers and `GL_SETAT` accounts;
+>   - the fixture's vouchers, each one's lines equal to what `ComputeSale` makes of its product lines; the open items agreeing with the vouchers and receipts; the journal balanced, each invoice's AR debit its total, each receipt's credit its amount;
+>   - `DuplicateArInvoice`;
+>   - saving a customer (keeping `CREDIT` and `TERMS_TXT`) and vouchers, without touching the others.
+>
+>   `gl_tests`: 148 cases (`[ar]` 7).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` (148), `cb4sqlite_tests` (77) and `report_tests` (17) pass; `/checkres` 0; `/stress` 0 (126 s) on the new fixture.
 
 **Goal:** AR's tables can be read and written, and a sales invoice's amounts computed, under test, on a fixture whose AR data is consistent with itself and moves no GL balance.
 
