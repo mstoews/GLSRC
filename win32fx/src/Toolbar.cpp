@@ -9,6 +9,67 @@
 
 namespace win32fx {
 
+namespace {
+
+// The bar's edge (UI refresh): kBorder px of white, then kGap px of the
+// parent's background, the same on every side, so the buttons sit in the
+// middle of the bar. Both at 96 DPI. The edge is the toolbar's non-client
+// area, so the control lays its buttons out inside it unchanged.
+constexpr int kBorder = 2;
+constexpr int kGap = 2;
+constexpr UINT_PTR kEdgeSubclass = 1;
+
+int scaledTo(HWND h, int px96) { return MulDiv(px96, static_cast<int>(GetDpiForWindow(h)), 96); }
+
+void paintEdge(HWND h)
+{
+    RECT wr{}, cr{};
+    GetWindowRect(h, &wr);
+    GetClientRect(h, &cr);
+    MapWindowPoints(h, nullptr, reinterpret_cast<POINT*>(&cr), 2);
+    OffsetRect(&cr, -wr.left, -wr.top);
+    OffsetRect(&wr, -wr.left, -wr.top);
+    HDC dc = GetWindowDC(h);
+    if (!dc) return;
+    ExcludeClipRect(dc, cr.left, cr.top, cr.right, cr.bottom);
+    // The gap shows what the transparent toolbar shows: the parent's background.
+    HBRUSH back = reinterpret_cast<HBRUSH>(GetClassLongPtrW(GetParent(h), GCLP_HBRBACKGROUND));
+    FillRect(dc, &wr, back ? back : GetSysColorBrush(COLOR_APPWORKSPACE));
+    const int b = scaledTo(h, kBorder);
+    HBRUSH white = static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+    const RECT sides[] = {{wr.left, wr.top, wr.right, wr.top + b},
+                          {wr.left, wr.bottom - b, wr.right, wr.bottom},
+                          {wr.left, wr.top, wr.left + b, wr.bottom},
+                          {wr.right - b, wr.top, wr.right, wr.bottom}};
+    for (const RECT& r : sides) FillRect(dc, &r, white);
+    ReleaseDC(h, dc);
+}
+
+LRESULT CALLBACK edgeProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)
+{
+    switch (msg) {
+    case WM_NCCALCSIZE:
+        if (wp) {
+            const int e = scaledTo(h, kBorder + kGap);
+            RECT& r = reinterpret_cast<NCCALCSIZE_PARAMS*>(lp)->rgrc[0];
+            InflateRect(&r, -e, -e);
+            if (r.bottom < r.top) r.bottom = r.top;
+            if (r.right < r.left) r.right = r.left;
+            return 0;
+        }
+        break;
+    case WM_NCPAINT:
+        paintEdge(h);
+        return 0;
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(h, edgeProc, kEdgeSubclass);
+        break;
+    }
+    return DefSubclassProc(h, msg, wp, lp);
+}
+
+} // namespace
+
 CommandBar::~CommandBar()
 {
     if (hwnd_ && IsWindow(hwnd_)) DestroyWindow(hwnd_);
@@ -27,6 +88,8 @@ HWND CommandBar::Create(HWND parent, UINT id, HINSTANCE inst, int iconPx)
                                 CCS_NODIVIDER | CCS_NORESIZE | CCS_NOPARENTALIGN,
                             0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(id)), inst, nullptr);
     if (!hwnd_) return nullptr;
+    SetWindowSubclass(hwnd_, edgeProc, kEdgeSubclass, 0);
+    SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     SendMessageW(hwnd_, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
     iconPx_ = MulDiv(iconPx, static_cast<int>(GetDpiForWindow(parent)), 96);
     if (images_) ImageList_Destroy(images_);
@@ -81,8 +144,8 @@ HWND CommandBar::Rebuild()
 int CommandBar::Height() const
 {
     if (!hwnd_) return 0;
-    const int pad = MulDiv(2, static_cast<int>(GetDpiForWindow(hwnd_)), 96);
-    return HIWORD(SendMessageW(hwnd_, TB_GETBUTTONSIZE, 0, 0)) + 2 * pad;
+    // The buttons, with the edge above and below them (edgeProc).
+    return HIWORD(SendMessageW(hwnd_, TB_GETBUTTONSIZE, 0, 0)) + 2 * scaledTo(hwnd_, kBorder + kGap);
 }
 
 } // namespace win32fx
