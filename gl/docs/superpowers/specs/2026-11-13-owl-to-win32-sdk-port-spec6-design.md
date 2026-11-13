@@ -224,7 +224,7 @@ Maintenance > **Update AR and AP** transfers both journals, as Spec #5 §4.4 doe
   - **partial** when it is less, and Discount isn't ticked: the invoice stays owed for the rest;
   - **with a discount** when it is less and Discount is ticked: the rest is written off as an early-payment discount, and the invoice is settled.
 
-  More than what's owed is refused. The W/H box is hidden (Q3).
+  More than what's owed is refused. The W/H box is hidden (Q3). A short amount with neither box ticked asks, as the original (string 8132): Yes is a discount, No a partial. (S6-M4)
 - **OK records the receipt and its GL entry at once**, in one transaction (D9). The list's separate Create step goes: there is nothing left to create.
 
 ### 5.2 The receipt's entry

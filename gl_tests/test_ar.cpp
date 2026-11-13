@@ -884,3 +884,188 @@ TEST_CASE("The AR transfer's voucher posts with Spec #2", "[ar]")
     for (const ArOpenItem& i : LoadArOpenItems(db.code)) owed += i.remainder;
     CHECK(owed == 280000);
 }
+
+namespace {
+
+struct RcRow {
+    std::string account, dept, mode, date, cheque;
+    int period = 0;
+    std::int64_t debit = 0, credit = 0;
+};
+
+std::vector<RcRow> receiptRows(cb4sqlite::Code4& code, long batchno, long receipt)
+{
+    std::vector<RcRow> out;
+    for (const JournalRow& j : LoadArJournal(code))
+        if (j.batchno == batchno && TrimText(j.type) == "RC" && TrimText(j.cheque) == std::to_string(receipt))
+            out.push_back({j.account.account, j.account.dept, j.mode, TrimText(j.date), TrimText(j.cheque), j.period,
+                           j.debit, j.credit});
+    return out;
+}
+
+ArOpenItem openItem(cb4sqlite::Code4& code, long batchno)
+{
+    for (const ArOpenItem& i : LoadArOpenItems(code))
+        if (i.batchno == batchno) return i;
+    FAIL("no open item for voucher " << batchno);
+    return {};
+}
+
+const ApAccount kBank{"102101", ""};
+
+} // namespace
+
+TEST_CASE("ReceiptItems: what's owed, and all (S6-M4)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    auto items = ReceiptItems(db.code);
+    REQUIRE(items.size() == 2);   // 3 (O) and 4 (R); 5 is settled
+    CHECK(items[0].item.batchno == 3);
+    CHECK(items[0].customerName == "CITYHOSP");
+    CHECK(items[0].vatRate == 10);
+    CHECK(items[0].sales == ApAccount{"410001", "10"});
+    CHECK(items[0].vat == ApAccount{"260007", ""});
+    CHECK(items[1].item.batchno == 4);
+    CHECK(items[1].sales == ApAccount{"410001", "20"});
+    CHECK(items[1].item.remainder == 60000);
+    items = ReceiptItems(db.code, true);
+    REQUIRE(items.size() == 3);
+    CHECK(items[2].item.batchno == 5);
+    CHECK(NextReceiptNumber(db.code) == 3);
+    CHECK_FALSE(FindReceiptItem(db.code, 1));   // not posted: no open item
+}
+
+TEST_CASE("RecordReceipt: in full, in part, with a discount (D8, D9)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+
+    // Refusals.
+    CHECK(RecordReceipt(db.code, 99, "20261025", kBank, 100, false).result == ReceiptResult::NotFound);
+    CHECK(RecordReceipt(db.code, 5, "20261025", kBank, 100, false).result == ReceiptResult::Settled);
+    CHECK(RecordReceipt(db.code, 3, "20261025", kBank, 0, false).result == ReceiptResult::Zero);
+    CHECK(RecordReceipt(db.code, 3, "20261025", kBank, 220001, false).result == ReceiptResult::TooMuch);
+    CHECK(RecordReceipt(db.code, 3, "20261025", kBank, 220000, true).result == ReceiptResult::NoDiscount);
+    CHECK(RecordReceipt(db.code, 3, "20300101", kBank, 100, false).result == ReceiptResult::ClosedPeriod);
+    CHECK(RecordReceipt(db.code, 3, "20261025", {"999999", ""}, 100, false).result == ReceiptResult::UnknownBank);
+    CHECK(LoadReceipts(db.code).size() == 2);   // nothing written
+
+    // In full: voucher 3, 2,200.00.
+    ReceiptOutcome o = RecordReceipt(db.code, 3, "20261025", kBank, 220000, false, "Cheque 1001");
+    CHECK(o.result == ReceiptResult::Recorded);
+    CHECK(o.number == 3);
+    CHECK(o.settled);
+    CHECK(o.discount == 0);
+    ArOpenItem i = openItem(db.code, 3);
+    CHECK(i.paymentCtl == ar_receipt::kSettled);
+    CHECK(i.received == 220000);
+    CHECK(i.remainder == 0);
+    CHECK(TrimText(i.datePaid) == "20261025");
+    CHECK(i.bank == kBank);
+    auto rows = receiptRows(db.code, 3, 3);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].account == "102101");
+    CHECK(rows[0].debit == 220000);
+    CHECK(rows[1].account == "111101");
+    CHECK(rows[1].credit == 220000);
+    for (const RcRow& r : rows) {
+        CHECK(r.mode == "1");
+        CHECK(r.period == 7);
+        CHECK(r.date == "20261025");
+    }
+    CHECK(RecoverArVoucher(db.code, 3) == ArRecoverResult::Received);
+
+    // Two partials on voucher 4 (600.00 owed after the fixture's 500.00).
+    o = RecordReceipt(db.code, 4, "20261026", kBank, 20000, false);
+    CHECK(o.number == 4);
+    CHECK_FALSE(o.settled);
+    i = openItem(db.code, 4);
+    CHECK(i.paymentCtl == ar_receipt::kPartial);
+    CHECK(i.received == 70000);
+    CHECK(i.remainder == 40000);
+    CHECK(RecordReceipt(db.code, 4, "20261027", kBank, 10000, false).number == 5);
+    i = openItem(db.code, 4);
+    CHECK(i.received == 80000);
+    CHECK(i.remainder == 30000);
+    CHECK(TrimText(i.datePaid) == "20261027");
+
+    // Then 190.00 with a discount: 110.00 written off, 10.00 of it VAT (10 %).
+    o = RecordReceipt(db.code, 4, "20261028", kBank, 19000, true);
+    CHECK(o.number == 6);
+    CHECK(o.settled);
+    CHECK(o.discount == 11000);
+    i = openItem(db.code, 4);
+    CHECK(i.paymentCtl == ar_receipt::kSettled);
+    CHECK(i.received == 99000);
+    CHECK(i.remainder == 0);
+    rows = receiptRows(db.code, 4, 6);
+    REQUIRE(rows.size() == 4);
+    CHECK(rows[0].account == "102101");
+    CHECK(rows[0].debit == 19000);
+    CHECK(rows[1].account == "410001");
+    CHECK(rows[1].dept == "20");
+    CHECK(rows[1].debit == 10000);
+    CHECK(rows[2].account == "260007");
+    CHECK(rows[2].debit == 1000);
+    CHECK(rows[3].account == "111101");
+    CHECK(rows[3].credit == 30000);   // the whole remainder
+    const auto receipts = LoadReceipts(db.code, 4);
+    REQUIRE(receipts.size() == 4);
+    CHECK(receipts.back().discount == 11000);
+    CHECK(receipts.back().discountVat == 1000);
+    CHECK(ReceiptItems(db.code).empty());   // everything settled
+}
+
+TEST_CASE("ReverseReceipt: the latest, waiting or transferred (D10)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    CHECK(ReverseReceipt(db.code, 3, "20261028") == ReverseResult::NoReceipt);
+
+    // Waiting: voucher 4's two partials, latest first, then the fixture's receipt 1.
+    REQUIRE(RecordReceipt(db.code, 4, "20261026", kBank, 20000, false).number == 3);
+    REQUIRE(RecordReceipt(db.code, 4, "20261027", kBank, 40000, false).number == 4);
+    CHECK(openItem(db.code, 4).paymentCtl == ar_receipt::kSettled);
+    const auto jsum = LoadArJournal(db.code).size();
+    CHECK(ReverseReceipt(db.code, 4, "20261028") == ReverseResult::Reversed);
+    CHECK(receiptRows(db.code, 4, 4).empty());
+    CHECK(LoadArJournal(db.code).size() == jsum - 2);
+    ArOpenItem i = openItem(db.code, 4);
+    CHECK(i.paymentCtl == ar_receipt::kPartial);
+    CHECK(i.received == 70000);
+    CHECK(i.remainder == 40000);
+    CHECK(TrimText(i.datePaid) == "20261026");
+    CHECK(ReverseReceipt(db.code, 4, "20261028") == ReverseResult::Reversed);
+    CHECK(ReverseReceipt(db.code, 4, "20261028") == ReverseResult::Reversed);   // the fixture's receipt 1
+    i = openItem(db.code, 4);
+    CHECK(i.paymentCtl == ar_receipt::kOpen);
+    CHECK(i.received == 0);
+    CHECK(i.remainder == 110000);
+    CHECK(TrimText(i.datePaid).empty());
+    CHECK(i.bank.empty());
+    CHECK(LoadReceipts(db.code, 4).empty());
+    CHECK(ReverseReceipt(db.code, 4, "20261028") == ReverseResult::NoReceipt);
+    CHECK(RecoverArVoucher(db.code, 4) == ArRecoverResult::Recovered);   // no receipt left
+
+    // Transferred: voucher 3 in full, then the transfer; the reversal is new rows.
+    const ReceiptOutcome o = RecordReceipt(db.code, 3, "20261025", kBank, 220000, false);
+    REQUIRE(o.result == ReceiptResult::Recorded);
+    REQUIRE(TransferAr(db.code, 99).vouchers.size() == 1);
+    CHECK(ReverseReceipt(db.code, 3, "20300101") == ReverseResult::ClosedPeriod);   // no open period then
+    CHECK(ReverseReceipt(db.code, 3, "20261029") == ReverseResult::Reversed);
+    const auto rows = receiptRows(db.code, 3, o.number);
+    REQUIRE(rows.size() == 4);
+    CHECK(rows[0].mode == "2");
+    CHECK(rows[1].mode == "2");
+    CHECK(rows[2].mode == "1");
+    CHECK(rows[2].date == "20261029");
+    CHECK(rows[2].account == "102101");
+    CHECK(rows[2].credit == 220000);   // the bank's debit reversed
+    CHECK(rows[3].account == "111101");
+    CHECK(rows[3].debit == 220000);
+    i = openItem(db.code, 3);
+    CHECK(i.paymentCtl == ar_receipt::kOpen);
+    CHECK(i.remainder == 220000);
+    CHECK(NextReceiptNumber(db.code) == o.number + 1);   // a transferred receipt's number isn't reused
+}

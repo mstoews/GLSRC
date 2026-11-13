@@ -54,6 +54,7 @@
     <ClInclude Include="port\ArCustomers.h" />
     <ClInclude Include="port\ArInvoiceEntry.h" />
     <ClInclude Include="port\ArPosting.h" />
+    <ClInclude Include="port\ArReceipts.h" />
     <ClInclude Include="port\Assets.h" />
     <ClInclude Include="port\Backup.h" />
     <ClInclude Include="port\ChartOfAccounts.h" />
@@ -117,6 +118,7 @@
     <ClCompile Include="port\ArCustomers.cpp" />
     <ClCompile Include="port\ArInvoiceEntry.cpp" />
     <ClCompile Include="port\ArPosting.cpp" />
+    <ClCompile Include="port\ArReceipts.cpp" />
     <ClCompile Include="port\Assets.cpp" />
     <ClCompile Include="port\Backup.cpp" />
     <ClCompile Include="port\ChartOfAccounts.cpp" />

@@ -21,6 +21,7 @@
 
 #include "report/Format.h"  // rpt::ToCents
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -914,6 +915,252 @@ int UndoArTransfer(cb4sqlite::Code4& code, long glVoucher)
     const int rows = UndoJournalTransfer(code, glVoucher, "ar_jsum", "ar_xfer");
     if (rows > 0) markTransferred(code);
     return rows;
+}
+
+// ---- receipts ----------------------------------------------------------------------------------
+
+namespace {
+
+ReceiptItem receiptItem(cb4sqlite::Code4& code, const ArOpenItem& i, const std::map<std::string, Customer>& customers)
+{
+    ReceiptItem r;
+    r.item = i;
+    const auto c = customers.find(i.customer);
+    if (c != customers.end()) {
+        r.customerName = TrimText(c->second.shortName).empty() ? TrimText(c->second.name) : TrimText(c->second.shortName);
+        r.sales = c->second.sales;
+        r.vat = c->second.vat;
+        r.vatRate = c->second.vatRate;
+    }
+    if (const std::optional<ArVoucher> v = FindArVoucher(code, i.batchno)) {
+        r.vatRate = v->vatRate;
+        bool sales = false;
+        for (const ArLine& l : LoadArLines(code, i.batchno)) {
+            if (l.role == ArLineRole::Vat) r.vat = l.account;
+            if (l.role == ArLineRole::Sales && !sales) {
+                r.sales = l.account;
+                sales = true;
+            }
+        }
+    }
+    return r;
+}
+
+std::map<std::string, Customer> customersByNumber(cb4sqlite::Code4& code)
+{
+    std::map<std::string, Customer> out;
+    for (const Customer& c : LoadCustomers(code)) out[TrimText(c.number)] = c;
+    return out;
+}
+
+// Writes one receipt journal row (TYPE "RC", waiting).
+void appendReceiptRow(Data4& j, const ApAccount& account, const std::string& descript, int period,
+                      const std::string& date, long batchno, const std::string& reference, long receipt,
+                      std::int64_t debit, std::int64_t credit)
+{
+    if (debit == 0 && credit == 0) return;
+    j.appendStart();
+    j.blank();
+    Field4(j, "account").assign(account.account.c_str());
+    Field4(j, "dept").assign(account.dept.c_str());
+    Field4(j, "period").assign(periodText(period).c_str());
+    Field4(j, "mode").assign("1");
+    Field4(j, "date").assign(date.c_str());
+    Field4(j, "type").assign(ar_journal::kReceipt);
+    Field4(j, "batchno").assignLong(batchno);
+    Field4(j, "reference").assign(clip(TrimText(reference), 30).c_str());
+    Field4(j, "cheque").assign(std::to_string(receipt).c_str());
+    Field4(j, "descript").assign(clip(TrimText(descript), 50).c_str());
+    Field4(j, "debit").assign(money(debit).c_str());
+    Field4(j, "credit").assign(money(credit).c_str());
+    j.append();
+}
+
+// Rewrites the open item of `batchno` with its receipt fields.
+void updateOpenItem(cb4sqlite::Code4& code, long batchno, std::int64_t received, std::int64_t remainder,
+                    const std::string& datePaid, const ApAccount& bank, const char* control)
+{
+    Data4 d(&code, "ar_dist");
+    Field4 b(d, "batchno");
+    if (seekBatch(d, b, batchno)) {
+        Field4(d, "amountpaid").assign(money(received).c_str());
+        Field4(d, "remainder").assign(money(remainder).c_str());
+        Field4(d, "datepaid").assign(datePaid.c_str());
+        Field4(d, "account").assign(bank.account.c_str());
+        Field4(d, "dept").assign(bank.dept.c_str());
+        Field4(d, "paymentctl").assign(control);
+        d.flush();
+    }
+    d.close();
+}
+
+} // namespace
+
+std::vector<ReceiptItem> ReceiptItems(cb4sqlite::Code4& code, bool all)
+{
+    const std::map<std::string, Customer> customers = customersByNumber(code);
+    std::vector<ReceiptItem> out;
+    for (const ArOpenItem& i : LoadArOpenItems(code)) {
+        if (!all && i.paymentCtl == ar_receipt::kSettled) continue;
+        out.push_back(receiptItem(code, i, customers));
+    }
+    std::stable_sort(out.begin(), out.end(), [](const ReceiptItem& a, const ReceiptItem& b) {
+        return a.item.customer != b.item.customer ? a.item.customer < b.item.customer
+                                                  : a.item.invoiceNo < b.item.invoiceNo;
+    });
+    return out;
+}
+
+std::optional<ReceiptItem> FindReceiptItem(cb4sqlite::Code4& code, long batchno)
+{
+    for (const ArOpenItem& i : LoadArOpenItems(code))
+        if (i.batchno == batchno) return receiptItem(code, i, customersByNumber(code));
+    return std::nullopt;
+}
+
+long NextReceiptNumber(cb4sqlite::Code4& code)
+{
+    cb4sqlite::Query q(code, "SELECT max(n) FROM (SELECT max(rcptno) AS n FROM ar_rcpt WHERE _deleted = 0 UNION ALL "
+                             "SELECT max(CAST(trim(cheque) AS INTEGER)) FROM ar_jsum WHERE _deleted = 0 AND "
+                             "trim(type) = 'RC')");
+    return (q.next() ? static_cast<long>(q.integer(0)) : 0) + 1;
+}
+
+ReceiptOutcome RecordReceipt(cb4sqlite::Code4& code, long batchno, const std::string& date, const ApAccount& bank,
+                             std::int64_t amount, bool discount, const std::string& reference)
+{
+    ReceiptOutcome out;
+    const std::optional<ReceiptItem> found = FindReceiptItem(code, batchno);
+    if (!found) return out;
+    const ArOpenItem& i = found->item;
+    if (i.paymentCtl == ar_receipt::kSettled || i.remainder <= 0) {
+        out.result = ReceiptResult::Settled;
+        return out;
+    }
+    if (amount <= 0) {
+        out.result = ReceiptResult::Zero;
+        return out;
+    }
+    if (amount > i.remainder) {
+        out.result = ReceiptResult::TooMuch;
+        return out;
+    }
+    if (discount && amount == i.remainder) {
+        out.result = ReceiptResult::NoDiscount;
+        return out;
+    }
+    const int period = OpenPeriodOf(code, date);
+    if (period == 0) {
+        out.result = ReceiptResult::ClosedPeriod;
+        return out;
+    }
+    if (!ValidateAccount(code, bank.account, bank.dept)) {
+        out.result = ReceiptResult::UnknownBank;
+        return out;
+    }
+
+    const std::int64_t d = discount ? i.remainder - amount : 0;
+    const SaleSplit split = SplitSale(d, found->vatRate);
+    const long number = NextReceiptNumber(code);
+    const std::string ref = TrimText(reference).empty() ? "Receipt " + std::to_string(number) : TrimText(reference);
+
+    cb4sqlite::Transaction tx(code);
+    {
+        Data4 r(&code, "ar_rcpt");
+        r.appendStart();
+        r.blank();
+        Field4(r, "rcptno").assignLong(number);
+        Field4(r, "batchno").assignLong(batchno);
+        Field4(r, "vendorno").assign(i.customer.c_str());
+        Field4(r, "invoiceno").assign(clip(i.invoiceNo, 8).c_str());
+        Field4(r, "date").assign(date.c_str());
+        Field4(r, "period").assignLong(period);
+        Field4(r, "bankacct").assign(bank.account.c_str());
+        Field4(r, "bankdept").assign(bank.dept.c_str());
+        Field4(r, "amount").assign(money(amount).c_str());
+        Field4(r, "discount").assign(money(d).c_str());
+        Field4(r, "discvat").assign(money(split.vat).c_str());
+        Field4(r, "reference").assign(clip(TrimText(reference), 30).c_str());
+        r.append();
+        r.close();
+    }
+    {
+        Data4 j(&code, "ar_jsum");
+        appendReceiptRow(j, bank, AccountName(code, bank), period, date, batchno, ref, number, amount, 0);
+        appendReceiptRow(j, found->sales, AccountName(code, found->sales), period, date, batchno, ref, number,
+                         split.sales, 0);
+        appendReceiptRow(j, found->vat, AccountName(code, found->vat), period, date, batchno, ref, number, split.vat, 0);
+        appendReceiptRow(j, i.ar, AccountName(code, i.ar), period, date, batchno, ref, number, 0, amount + d);
+        j.close();
+    }
+    const std::int64_t remainder = i.remainder - amount - d;
+    updateOpenItem(code, batchno, i.received + amount, remainder, date, bank,
+                   remainder == 0 ? ar_receipt::kSettled : ar_receipt::kPartial);
+    tx.commit();
+    out.result = ReceiptResult::Recorded;
+    out.number = number;
+    out.discount = d;
+    out.settled = remainder == 0;
+    return out;
+}
+
+ReverseResult ReverseReceipt(cb4sqlite::Code4& code, long batchno, const std::string& date)
+{
+    const std::vector<Receipt> receipts = LoadReceipts(code, batchno);
+    const std::optional<ReceiptItem> found = FindReceiptItem(code, batchno);
+    if (receipts.empty() || !found) return ReverseResult::NoReceipt;
+    const Receipt& last = receipts.back();
+
+    struct Row {
+        long long rowid;
+        ApAccount account;
+        std::string descript;
+        std::int64_t debit, credit;
+        bool transferred;
+    };
+    std::vector<Row> rows;
+    {
+        cb4sqlite::Query q(code, "SELECT _rowid, account, dept, descript, debit, credit, trim(mode) FROM ar_jsum "
+                                 "WHERE _deleted = 0 AND trim(type) = 'RC' AND batchno = ?1 AND trim(cheque) = ?2 "
+                                 "ORDER BY _rowid");
+        q.bindInt(1, batchno);
+        q.bindText(2, std::to_string(last.number));
+        while (q.next())
+            rows.push_back({q.integer(0), {TrimText(q.text(1)), TrimText(q.text(2))}, q.text(3),
+                            rpt::ToCents(q.number(4)), rpt::ToCents(q.number(5)), q.text(6) == "2"});
+    }
+    bool anyTransferred = false;
+    for (const Row& r : rows) anyTransferred = anyTransferred || r.transferred;
+    const int period = anyTransferred ? OpenPeriodOf(code, date) : 0;
+    if (anyTransferred && period == 0) return ReverseResult::ClosedPeriod;
+
+    cb4sqlite::Transaction tx(code);
+    {
+        Data4 j(&code, "ar_jsum");
+        bool deleted = false;
+        for (const Row& r : rows)
+            if (!r.transferred && j.go(static_cast<long>(r.rowid)) == r4success) {
+                j.deleteRec();
+                deleted = true;
+            }
+        if (deleted) j.pack();
+        const std::string ref = "Reversal of receipt " + std::to_string(last.number);
+        for (const Row& r : rows)
+            if (r.transferred)
+                appendReceiptRow(j, r.account, r.descript, period, date, batchno, ref, last.number, r.credit, r.debit);
+        j.close();
+    }
+    deleteWhere(code, "ar_rcpt", "rcptno = ?1", last.number);
+
+    const ArOpenItem& i = found->item;
+    const std::int64_t received = i.received - last.amount;
+    const std::int64_t remainder = i.remainder + last.amount + last.discount;
+    const Receipt* before = receipts.size() > 1 ? &receipts[receipts.size() - 2] : nullptr;
+    updateOpenItem(code, batchno, received, remainder, before ? before->date : std::string(),
+                   before ? before->bank : ApAccount{},
+                   before == nullptr && remainder == i.amount ? ar_receipt::kOpen : ar_receipt::kPartial);
+    tx.commit();
+    return ReverseResult::Reversed;
 }
 
 // ---- the ledger rows ---------------------------------------------------------------------
