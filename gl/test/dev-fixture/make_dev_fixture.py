@@ -38,7 +38,7 @@ _spec = importlib.util.spec_from_file_location(
     "make_fixtures", os.path.join(ROOT, "dbf2sqlite_core", "test", "make_fixtures.py"))
 mf = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(mf)
-dbf, mdx = mf.dbf, mf.mdx
+dbf, mdx, dbt = mf.dbf, mf.mdx, mf.dbt
 
 
 def manila_items():
@@ -554,6 +554,193 @@ def accounts_payable(d):
     ])
 
 
+def accounts_receivable(d):
+    """Spec #6 9: the AR tables and the port's AR_LINEX and AR_RCPT.
+
+    Layouts and tags copy the real AR_* tables (checked 2026-11-13; the tags in
+    the real .MDX order); the rows are made up, in period 7 (Oct 26). VAT is
+    included in the price. Every AR_JSUM row is waiting ("1"), not transferred,
+    so no GL balance moves. AR_XFER is left to EnsureArTables, as AP_XFER.
+
+      C001 hospital  VAT 10 %, terms 30, sales 410001-10    C002 doctor  VAT 10 %, terms 30, sales 410001-20
+      C003 pharmacy  no VAT, terms 0, sales 410001-10       all: AR 111101, VAT 260007
+
+      voucher 1  open       C001 S-1001  3 x 1,100.00 = 3,300.00 -> sales 3,000.00 + VAT 300.00
+      voucher 2  open       C002 S-1002  2 x 550.00 = 1,100.00, and 220.00 typed -> sales 1,000.00 + 200.00,
+                                         VAT 120.00; AR 1,320.00
+      voucher 3  posted     C001 S-1003  1 x 2,200.00 -> 2,000.00 + VAT 200.00; owed in full ("O")
+      voucher 4  posted     C002 S-1004  4 x 275.00 = 1,100.00 -> 1,000.00 + VAT 100.00; receipt 1 500.00 on
+                                         10/20/26 ("R", 600.00 owed)
+      voucher 5  posted     C003 S-1005  800.00 typed, no VAT; receipt 2 800.00 on 10/15/26 ("C", settled)
+      voucher 6  cancelled  C001 S-1006  1 x 550.00 -> 500.00 + VAT 50.00 ("X", lines kept)
+    """
+    cust_fields = [
+        ("VENDORNO", "C", 6, 0), ("VDSHORT", "C", 12, 0), ("VDNAME", "C", 40, 0), ("ADDRESS1", "C", 30, 0),
+        ("ADDRESS2", "C", 30, 0), ("ADDRESS3", "C", 30, 0), ("POSTAL", "C", 8, 0), ("PHONE", "C", 16, 0),
+        ("FAX", "C", 16, 0), ("S_ADD1", "C", 40, 0), ("S_ADD2", "C", 40, 0), ("S_ADD3", "C", 40, 0),
+        ("S_POSTAL", "C", 8, 0), ("S_PHONE", "C", 16, 0), ("S_FAX", "C", 16, 0), ("DEPART", "C", 4, 0),
+        ("ACCOUNT", "C", 7, 0), ("AR_DEPT", "C", 4, 0), ("AR_ACCT", "C", 7, 0), ("VAT_ACCT", "C", 7, 0),
+        ("VAT_DEPT", "C", 4, 0), ("CONTACT", "C", 12, 0), ("TERMS", "N", 3, 0), ("TERMS_DAYS", "N", 3, 0),
+        ("TERMS_PERC", "N", 2, 0), ("TERMS_TXT", "C", 20, 0), ("CREDIT", "N", 16, 2), ("VAT", "N", 3, 0),
+        ("VIN", "C", 10, 0)]
+
+    # addr: (address1, address2, address3, postal); ship: (s_add1, s_add2, s_add3, s_postal)
+    def customer(no, short, name, addr, ship, sales_dept, vat_acct, contact, terms, vat, vin):
+        return ((no, short, name) + addr + ("(604) 555 - 0170", None) + ship
+                + (None, None, None, "111101", sales_dept, "410001", vat_acct, None, contact, terms,
+                   None, None, None, None, vat, vin))
+    dbf(os.path.join(d, "AR_CUST.DBF"), cust_fields, [
+        customer("C001", "CITYHOSP", "City General Hospital", ("100 Hospital Road", None, "Vancouver BC", "V5Z1M9"),
+                 ("Receiving, Pharmacy Wing", "100 Hospital Road", "Vancouver BC", "V5Z1M9"),
+                 "10", "260007", "Purchasing", 30, 10, "200-123-45"),
+        customer("C002", "REYES", "Reyes, Ana Dra.", ("12 Clinic Street", None, "Burnaby BC", "V5H2E1"),
+                 (None, None, None, None), "20", "260007", "A. Reyes", 30, 10, None),
+        customer("C003", "NORTHPHARM", "Northside Pharmacy", ("8 North Avenue", None, "Surrey BC", "V3T4W2"),
+                 (None, None, None, None), "10", None, "Owner", 0, 0, None),
+    ], mdx=True)
+    mdx(os.path.join(d, "AR_CUST.MDX"), "AR_CUST", [("VENDORNO", "VENDORNO", "C", False, False, "")])
+
+    btch_fields = [
+        ("BATCHNO", "N", 6, 0), ("MODE", "C", 1, 0), ("TYPE", "C", 2, 0), ("ADJ", "C", 1, 0), ("PERIOD", "N", 2, 0),
+        ("VENDORNO", "C", 6, 0), ("INVOICENO", "C", 8, 0), ("ORDERNO", "C", 10, 0), ("ORDERDATE", "D", 8, 0),
+        ("VIN", "C", 10, 0), ("UNITS", "C", 7, 0), ("DUEDATE", "D", 8, 0), ("INVDATE", "D", 8, 0),
+        ("REFERENCE", "C", 40, 0), ("DESCRIPT", "C", 10, 0), ("DATE", "D", 8, 0), ("ACCOUNT", "C", 7, 0),
+        ("DEPART", "C", 4, 0), ("PAYABLE", "N", 16, 2), ("REBATEAMT", "N", 16, 2), ("ENTRYNO", "N", 3, 0),
+        ("VATPERCENT", "N", 2, 0), ("REBATE", "N", 2, 0), ("TERMS", "N", 3, 0), ("VATAMT", "N", 16, 2),
+        ("ADJAMT", "N", 16, 2), ("MEMOFIELD", "M", 10, 0)]
+    memo = dbt(os.path.join(d, "AR_BTCH.DBT"), "AR_BTCH", [b"Deliver to the pharmacy wing."])
+
+    def head(no, mode, cust, invoice, order, invdate, due, ref, total, lines, vat_pct, terms, vat, memo_ptr=None):
+        return (no, mode, None, None, 7, cust, invoice, order, invdate, None, None, due, invdate, ref, "Sales",
+                invdate, "111101", None, total, 0.0, lines, vat_pct, 0, terms, vat, 0.0, memo_ptr)
+    dbf(os.path.join(d, "AR_BTCH.DBF"), btch_fields, [
+        head(1, "1", "C001", "S-1001", "PO-5521", "20261022", "20261121", "Saline, 3 cases", 3300.0, 3, 10, 30,
+             300.0, memo[0]),
+        head(2, "1", "C002", "S-1002", None, "20261023", "20261122", "Clinic supplies", 1320.0, 4, 10, 30, 120.0),
+        head(3, "0", "C001", "S-1003", "PO-5480", "20261005", "20261104", "Dressings", 2200.0, 3, 10, 30, 200.0),
+        head(4, "0", "C002", "S-1004", None, "20261008", "20261107", "Vaccines, 4 boxes", 1100.0, 3, 10, 30, 100.0),
+        head(5, "0", "C003", "S-1005", None, "20261002", "20261002", "Counter sale", 800.0, 2, 0, 0, 0.0),
+        head(6, "X", "C001", "S-1006", None, "20261009", "20261108", "Entered twice", 550.0, 3, 10, 30, 50.0),
+    ], version=0x8B, mdx=True)
+    mdx(os.path.join(d, "AR_BTCH.MDX"), "AR_BTCH", [
+        ("ACCOUNT", "ACCOUNT+DEPART", "C", False, False, ""),
+        ("INVOICENO", "VENDORNO+INVOICENO", "C", False, False, ""),
+        ("RECNO", "RECNO()", "N", False, False, ""),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+    ])
+
+    rd, gen, vatp, ar = "SALES REVENUE - R&D", "SALES REVENUE - GENERAL", "VAT PAYABLE", "ACCOUNTS RECEIVABLE - TRADE"
+
+    def line(no, entry, desc, acct, dept, qty, price, dr, cr):
+        return (no, entry, desc, None, None, None, qty, price, acct, dept, dr, cr)
+    dbf(os.path.join(d, "AR_BTCHD.DBF"),
+        [("BATCHNO", "N", 6, 0), ("ENTRYNO", "N", 3, 0), ("DESCRIPT", "C", 40, 0), ("MEDREP", "C", 5, 0),
+         ("PRODUCT", "C", 7, 0), ("DRCODE", "C", 5, 0), ("QTY", "N", 14, 2), ("PRICE", "N", 14, 2),
+         ("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("DEBIT", "N", 14, 2), ("CREDIT", "N", 14, 2)], [
+        line(1, 1, rd, "410001", "10", 3.0, 1100.0, 0.0, 3000.0),
+        line(1, 2, vatp, "260007", None, 0.0, 0.0, 0.0, 300.0),
+        line(1, 3, ar, "111101", None, 0.0, 0.0, 3300.0, 0.0),
+        line(2, 1, gen, "410001", "20", 2.0, 550.0, 0.0, 1000.0),
+        line(2, 2, gen, "410001", "20", 0.0, 0.0, 0.0, 200.0),
+        line(2, 3, vatp, "260007", None, 0.0, 0.0, 0.0, 120.0),
+        line(2, 4, ar, "111101", None, 0.0, 0.0, 1320.0, 0.0),
+        line(3, 1, rd, "410001", "10", 1.0, 2200.0, 0.0, 2000.0),
+        line(3, 2, vatp, "260007", None, 0.0, 0.0, 0.0, 200.0),
+        line(3, 3, ar, "111101", None, 0.0, 0.0, 2200.0, 0.0),
+        line(4, 1, gen, "410001", "20", 4.0, 275.0, 0.0, 1000.0),
+        line(4, 2, vatp, "260007", None, 0.0, 0.0, 0.0, 100.0),
+        line(4, 3, ar, "111101", None, 0.0, 0.0, 1100.0, 0.0),
+        line(5, 1, rd, "410001", "10", 0.0, 0.0, 0.0, 800.0),
+        line(5, 2, ar, "111101", None, 0.0, 0.0, 800.0, 0.0),
+        line(6, 1, rd, "410001", "10", 1.0, 550.0, 0.0, 500.0),
+        line(6, 2, vatp, "260007", None, 0.0, 0.0, 0.0, 50.0),
+        line(6, 3, ar, "111101", None, 0.0, 0.0, 550.0, 0.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AR_BTCHD.MDX"), "AR_BTCHD", [
+        ("RECNO", "RECNO()", "N", False, False, ""),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+    ])
+
+    # The port's line roles and typed amounts (Ar.h): S sales, V VAT, R the AR line.
+    linex = [(1, 1, "S", 3300.0), (1, 2, "V", 0.0), (1, 3, "R", 0.0),
+             (2, 1, "S", 1100.0), (2, 2, "S", 220.0), (2, 3, "V", 0.0), (2, 4, "R", 0.0),
+             (3, 1, "S", 2200.0), (3, 2, "V", 0.0), (3, 3, "R", 0.0),
+             (4, 1, "S", 1100.0), (4, 2, "V", 0.0), (4, 3, "R", 0.0),
+             (5, 1, "S", 800.0), (5, 2, "R", 0.0),
+             (6, 1, "S", 550.0), (6, 2, "V", 0.0), (6, 3, "R", 0.0)]
+    dbf(os.path.join(d, "AR_LINEX.DBF"),
+        [("BATCHNO", "N", 6, 0), ("ENTRYNO", "N", 3, 0), ("ROLE", "C", 1, 0), ("GROSS", "N", 16, 2)], linex,
+        mdx=True)
+    mdx(os.path.join(d, "AR_LINEX.MDX"), "AR_LINEX", [("BATCHNO", "BATCHNO", "N", False, False, "")])
+
+    # (bank, ctl, date, due, batch, invoice, customer, reference, amount, vat, received, datepaid, remainder)
+    def dist(bank, ctl, date, due, batch, invoice, cust, ref, amount, vat, paid, datepaid, remainder):
+        return (bank, None, None, "111101", None, 7, date, due, batch, invoice, ctl, cust, None, ref, None,
+                amount, 0.0, paid, 0, datepaid, vat, 0.0, None, remainder)
+    dbf(os.path.join(d, "AR_DIST.DBF"),
+        [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("MODE", "C", 1, 0), ("APACCOUNT", "C", 7, 0),
+         ("APDEPART", "C", 4, 0), ("PERIOD", "N", 2, 0), ("DATE", "D", 8, 0), ("DUEDATE", "D", 8, 0),
+         ("BATCHNO", "N", 6, 0), ("INVOICENO", "C", 8, 0), ("PAYMENTCTL", "C", 1, 0), ("VENDORNO", "C", 6, 0),
+         ("CHEQUENO", "C", 10, 0), ("REFERENCE", "C", 20, 0), ("DESCRIPT", "C", 50, 0), ("AMOUNT", "N", 16, 2),
+         ("REBATEAMT", "N", 16, 2), ("AMOUNTPAID", "N", 16, 2), ("PAYMENTREQ", "N", 10, 0), ("DATEPAID", "D", 8, 0),
+         ("VATAMT", "N", 16, 2), ("ADJUSTMENT", "N", 16, 2), ("REBATE", "C", 2, 0), ("REMAINDER", "N", 16, 2)], [
+        dist(None, "O", "20261005", "20261104", 3, "S-1003", "C001", "Dressings", 2200.0, 200.0, 0.0, None, 2200.0),
+        dist("102101", "R", "20261008", "20261107", 4, "S-1004", "C002", "Vaccines, 4 boxes", 1100.0, 100.0,
+             500.0, "20261020", 600.0),
+        dist("102101", "C", "20261002", "20261002", 5, "S-1005", "C003", "Counter sale", 800.0, 0.0,
+             800.0, "20261015", 0.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AR_DIST.MDX"), "AR_DIST", [
+        ("PAYMENTREQ", "PAYMENTREQ", "N", False, False, ""),
+        ("VENDORNO", "VENDORNO", "C", False, False, ""),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+        ("INVOICENO", "VENDORNO+INVOICENO", "C", False, False, ""),
+        ("DEPT", "DEPT", "C", False, False, ""),
+        ("ACCOUNT", "ACCOUNT", "C", False, False, ""),
+    ])
+
+    dbf(os.path.join(d, "AR_RCPT.DBF"),
+        [("RCPTNO", "N", 6, 0), ("BATCHNO", "N", 6, 0), ("VENDORNO", "C", 6, 0), ("INVOICENO", "C", 8, 0),
+         ("DATE", "D", 8, 0), ("PERIOD", "N", 2, 0), ("BANKACCT", "C", 7, 0), ("BANKDEPT", "C", 4, 0),
+         ("AMOUNT", "N", 16, 2), ("DISCOUNT", "N", 16, 2), ("DISCVAT", "N", 16, 2), ("REFERENCE", "C", 30, 0)], [
+        (1, 4, "C002", "S-1004", "20261020", 7, "102101", None, 500.0, 0.0, 0.0, "Cheque 88231"),
+        (2, 5, "C003", "S-1005", "20261015", 7, "102101", None, 800.0, 0.0, 0.0, "Cash"),
+    ], mdx=True)
+    mdx(os.path.join(d, "AR_RCPT.MDX"), "AR_RCPT", [
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+        ("RCPTNO", "RCPTNO", "N", False, False, ""),
+    ])
+
+    # AR's journal, all waiting: vouchers 3, 4 and 5, and the two receipts (CHEQUE: the receipt's number).
+    def jsum(acct, dept, date, typ, batch, ref, rcpt, desc, dr, cr):
+        return (acct, dept, " 7", "1", date, typ, batch, ref, rcpt, desc, dr, cr)
+    bank = "CHECKING ACCOUNT"
+    dbf(os.path.join(d, "AR_JSUM.DBF"),
+        [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("PERIOD", "C", 4, 0), ("MODE", "C", 1, 0),
+         ("DATE", "D", 8, 0), ("TYPE", "C", 3, 0), ("BATCHNO", "N", 6, 0), ("REFERENCE", "C", 30, 0),
+         ("CHEQUE", "C", 7, 0), ("DESCRIPT", "C", 50, 0), ("DEBIT", "N", 16, 2), ("CREDIT", "N", 16, 2)], [
+        jsum("410001", "10", "20261005", "AR", 3, "Dressings", None, rd, 0.0, 2000.0),
+        jsum("260007", None, "20261005", "AR", 3, "Dressings", None, vatp, 0.0, 200.0),
+        jsum("111101", None, "20261005", "AR", 3, "Dressings", None, ar, 2200.0, 0.0),
+        jsum("410001", "20", "20261008", "AR", 4, "Vaccines, 4 boxes", None, gen, 0.0, 1000.0),
+        jsum("260007", None, "20261008", "AR", 4, "Vaccines, 4 boxes", None, vatp, 0.0, 100.0),
+        jsum("111101", None, "20261008", "AR", 4, "Vaccines, 4 boxes", None, ar, 1100.0, 0.0),
+        jsum("410001", "10", "20261002", "AR", 5, "Counter sale", None, rd, 0.0, 800.0),
+        jsum("111101", None, "20261002", "AR", 5, "Counter sale", None, ar, 800.0, 0.0),
+        jsum("102101", None, "20261015", "RC", 5, "Cash", "2", bank, 800.0, 0.0),
+        jsum("111101", None, "20261015", "RC", 5, "Cash", "2", ar, 0.0, 800.0),
+        jsum("102101", None, "20261020", "RC", 4, "Cheque 88231", "1", bank, 500.0, 0.0),
+        jsum("111101", None, "20261020", "RC", 4, "Cheque 88231", "1", ar, 0.0, 500.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AR_JSUM.MDX"), "AR_JSUM", [
+        ("ARDIST", "BATCHNO", "N", False, False, 'TYPE="AR "'),
+        ("APDIST", "BATCHNO", "N", False, False, 'TYPE="AP "'),
+        ("DESCRIPT", "DESCRIPT", "C", False, False, ""),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+        ("ACCOUNT", "ACCOUNT+DEPT", "C", False, False, ""),
+    ])
+
+
 def main():
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT)
@@ -679,6 +866,7 @@ def main():
     vouchers(d)
     fixed_assets(d)
     accounts_payable(d)
+    accounts_receivable(d)
 
     print(f"dev fixture written to {OUT}: {len(items)} accessm rows")
 

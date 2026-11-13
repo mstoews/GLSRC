@@ -227,14 +227,14 @@ Maintenance > **Update AR and AP** transfers both journals, as Spec #5 §4.4 doe
 
 Dated the receipt date, in its period, `TYPE` "RC", with the invoice's voucher number and the bank:
 - Dr bank, the amount received;
-- for a discount d (what was owed less the amount received): Dr the customer's **sales account** round(d × 100 ÷ (100 + v)), and Dr the voucher's **VAT account** the rest of d, so output VAT falls with the price, as the original intended (§2.5); the sales account is the invoice's, not a session global (§2.6 #2);
+- for a discount d (what was owed less the amount received): d is split as a sale (§4.1): Dr the voucher's **VAT account** round(d × v ÷ (100 + v)), and Dr the customer's **sales account** the rest of d (so a discount of a whole invoice reverses its split exactly), so output VAT falls with the price, as the original intended (§2.5); the sales account is the invoice's, not a session global (§2.6 #2);
 - Cr the invoice's AR account, the amount received plus d.
 
 The invoice's `AR_DIST` row: `AMOUNTPAID` grows by the amount received, `REMAINDER` falls by the amount plus any discount, `DATEPAID` and the bank are the latest receipt's. `PAYMENTCTL` becomes **R** while something is owed, **C** when nothing is (D8).
 
 ### 5.3 The receipts table (D8)
 
-A port table, **`AR_RCPT`**, keeps each receipt: the invoice (voucher number), the customer, date, period, bank, amount, discount, the discount's VAT, and a reference. `AR_DIST` holds only the latest receipt's fields, so without it a second partial would overwrite the first, and a receipt couldn't be reversed. The deployed table has no rows to migrate.
+A port table, **`AR_RCPT`**, keeps each receipt: the invoice (voucher number), the customer, date, period, bank, amount, discount, the discount's VAT, and a reference, numbered across all invoices (`RCPTNO`). The receipt's `AR_JSUM` rows carry that number in `CHEQUE`, so reversing it finds exactly its rows. `AR_DIST` holds only the latest receipt's fields, so without it a second partial would overwrite the first, and a receipt couldn't be reversed. The deployed table has no rows to migrate.
 
 ### 5.4 Reversing a receipt (D10)
 

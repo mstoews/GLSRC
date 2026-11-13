@@ -50,6 +50,7 @@
     <ClInclude Include="port\ApPosting.h" />
     <ClInclude Include="port\ApTransfer.h" />
     <ClInclude Include="port\ApVendors.h" />
+    <ClInclude Include="port\Ar.h" />
     <ClInclude Include="port\Assets.h" />
     <ClInclude Include="port\Backup.h" />
     <ClInclude Include="port\ChartOfAccounts.h" />
@@ -109,6 +110,7 @@
     <ClCompile Include="port\ApTransfer.cpp" />
     <ClCompile Include="port\ApVendors.cpp" />
     <ClCompile Include="port\App.cpp" />
+    <ClCompile Include="port\Ar.cpp" />
     <ClCompile Include="port\Assets.cpp" />
     <ClCompile Include="port\Backup.cpp" />
     <ClCompile Include="port\ChartOfAccounts.cpp" />
