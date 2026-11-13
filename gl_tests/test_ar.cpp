@@ -519,3 +519,141 @@ TEST_CASE("DeleteCustomer refuses a customer in use (D12)", "[ar]")
     CHECK(LoadCustomers(db.code).size() == 2);
     CHECK(FindCustomer(db.code, "C001"));
 }
+
+TEST_CASE("SaveSaleLine and DeleteSaleLine recompute the voucher (S6-M2, D4)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ApAccount vat{"260007", ""};
+
+    ArVoucher h;
+    h.customer = "C001";
+    h.invoiceNo = "S-2001";
+    h.date = h.invoiceDate = "20261105";
+    h.dueDate = "20261205";
+    h.period = 11;
+    h.terms = 30;
+    h.vatRate = 10;
+    h.account = {"111101", ""};
+
+    // Spec #6 10: 3 x 1,100.00 at 10 %.
+    SaleEntry e;
+    e.account = {"410001", "10"};
+    e.qty = 300;
+    e.price = 110000;
+    const long n = SaveSaleLine(db.code, h, e, vat);
+    CHECK(n == 7);
+    auto lines = LoadArLines(db.code, n);
+    REQUIRE(lines.size() == 3);
+    CHECK(lines[0].role == ArLineRole::Sales);
+    CHECK(lines[0].credit == 300000);
+    CHECK(lines[0].qty == 300);
+    CHECK(lines[0].price == 110000);
+    CHECK_FALSE(TrimText(lines[0].descript).empty());   // the account's name
+    CHECK(lines[1].role == ArLineRole::Vat);
+    CHECK(lines[1].credit == 30000);
+    CHECK(lines[1].account == vat);
+    CHECK(lines[2].role == ArLineRole::Receivable);
+    CHECK(lines[2].debit == 330000);
+    CHECK(TrimText(lines[2].account.account) == "111101");
+    auto v = FindArVoucher(db.code, n);
+    REQUIRE(v);
+    CHECK(v->mode == ar_mode::kOpen);
+    CHECK(v->total == 330000);
+    CHECK(v->vatAmount == 30000);
+    CHECK(v->lines == 3);
+
+    // A second line, typed: 220.00 on 410001-20, described.
+    h.number = n;
+    SaleEntry t;
+    t.account = {"410001", "20"};
+    t.gross = 22000;
+    t.descript = "Samples";
+    t.product = "P1";
+    t.drcode = "D1";
+    t.medrep = "R1";
+    CHECK(SaveSaleLine(db.code, h, t, vat) == n);
+    lines = LoadArLines(db.code, n);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[1].credit == 20000);
+    CHECK(lines[1].gross == 22000);
+    CHECK(TrimText(lines[1].descript) == "Samples");
+    CHECK(TrimText(lines[1].product) == "P1");
+    CHECK(TrimText(lines[1].drcode) == "D1");
+    CHECK(TrimText(lines[1].medrep) == "R1");
+    CHECK(lines[2].credit == 32000);   // 300.00 + 20.00
+    CHECK(lines[3].debit == 352000);
+    v = FindArVoucher(db.code, n);
+    CHECK(v->total == 352000);
+    CHECK(v->vatAmount == 32000);
+
+    // Replace line 1: 2 x 1,100.00.
+    e.line = 1;
+    e.qty = 200;
+    CHECK(SaveSaleLine(db.code, h, e, vat) == n);
+    lines = LoadArLines(db.code, n);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[0].credit == 200000);
+    CHECK(lines[2].credit == 22000);
+    CHECK(lines[3].debit == 242000);
+
+    // Delete line 1: the typed line is left, and still balances.
+    CHECK_FALSE(DeleteSaleLine(db.code, n, 3, vat));   // only two product lines
+    CHECK(DeleteSaleLine(db.code, n, 1, vat));
+    lines = LoadArLines(db.code, n);
+    REQUIRE(lines.size() == 3);
+    CHECK(TrimText(lines[0].descript) == "Samples");
+    CHECK(lines[1].credit == 2000);
+    CHECK(lines[2].debit == 22000);
+    std::int64_t dr = 0, cr = 0;
+    for (const ArLine& l : lines) {
+        dr += l.debit;
+        cr += l.credit;
+    }
+    CHECK(dr == cr);
+    CHECK(FindArVoucher(db.code, n)->total == 22000);
+
+    // The last line deleted: an empty voucher, still there.
+    CHECK(DeleteSaleLine(db.code, n, 1, vat));
+    CHECK(LoadArLines(db.code, n).empty());
+    CHECK(FindArVoucher(db.code, n)->total == 0);
+}
+
+TEST_CASE("Sale lines are refused on a voucher that isn't open; DeleteArVoucher (D5)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ApAccount vat{"260007", ""};
+    SaleEntry e;
+    e.account = {"410001", "10"};
+    e.gross = 11000;
+    for (long posted : {3L, 6L}) {   // posted, cancelled
+        ArVoucher h = *FindArVoucher(db.code, posted);
+        const auto before = LoadArLines(db.code, posted).size();
+        CHECK(SaveSaleLine(db.code, h, e, vat) == 0);
+        CHECK_FALSE(DeleteSaleLine(db.code, posted, 1, vat));
+        CHECK_FALSE(DeleteArVoucher(db.code, posted));
+        CHECK(LoadArLines(db.code, posted).size() == before);
+        CHECK(FindArVoucher(db.code, posted)->mode == h.mode);
+    }
+
+    // Voucher 2 (open) goes, header, lines and ar_linex rows; voucher 1 stays.
+    const auto one = LoadArLines(db.code, 1).size();
+    const std::int64_t linex = count(db.code, "SELECT count(*) FROM ar_linex WHERE batchno <> 2");
+    CHECK(DeleteArVoucher(db.code, 2));
+    CHECK_FALSE(FindArVoucher(db.code, 2));
+    CHECK(LoadArLines(db.code, 2).empty());
+    CHECK(count(db.code, "SELECT count(*) FROM ar_linex WHERE batchno = 2") == 0);
+    CHECK(count(db.code, "SELECT count(*) FROM ar_linex") == linex);
+    CHECK(LoadArLines(db.code, 1).size() == one);
+    CHECK(LoadArVouchers(db.code).size() == 5);
+    CHECK_FALSE(DeleteArVoucher(db.code, 2));   // gone already
+
+    // The memo (TARMemo): replaced whole, the voucher's other fields kept.
+    CHECK(SaveArMemo(db.code, 1, "Deliver to ward 3.\r\nCall first."));
+    const auto memo = FindArVoucher(db.code, 1);
+    CHECK(memo->memo == "Deliver to ward 3.\r\nCall first.");
+    CHECK(memo->total == 330000);
+    CHECK(LoadArLines(db.code, 1).size() == one);
+    CHECK_FALSE(SaveArMemo(db.code, 2, "x"));
+}

@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 and M1 built)
+**Plan status:** In progress (S6-M0 to M2 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -178,6 +178,39 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 2 — Sales invoice entry (1053)
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.3 holds. More found (now in §2.3):
+>   - `prune_rc.py` takes 1053 from `gl_new.rc`, which has **Memo** (1100) and Print. Memo worked in the original: it edits `MEMOFIELD` in dialog 1060, with the menu `MEMO`.
+>   - Picking a product fills its average price (`FAVPRICE`); each combo's code shows beside it (5015, 1008, 1003).
+>   - A line's description is the product's name, or else the sales account's (`GetSalesDescription`); 1053 has no description field.
+> - **`Ar.h`** (task 3): `SaleEntry`, `SaveSaleLine`, `DeleteSaleLine` (recompute the VAT and AR lines and the header's `PAYABLE` / `VATAMT` from all the product lines; refused, 0 / false, on a voucher that isn't open), `DeleteArVoucher` (D5), and `SaveArMemo`.
+> - **`prune_rc.py`** (task 2): 1053 and 1060, and the menu `MEMO`.
+>   - `/checkres` found "Terms" too wide (32 px in 30): 2 units wider.
+>   - 1060 wouldn't load: rc stores `MENU "MEMO"` with its quotes (error 1814). `prune_rc.py` now writes a dialog's `MENU` unquoted.
+>   - The group box " Vendor " is " Customer ".
+> - **`gl/port/ArInvoiceEntry.{h,cpp}`** (task 4), modal (D16), on `ApInvoiceEntry`'s pattern:
+>   - **Enter on the customer** fills the short name, the AR, sales and VAT accounts, the VAT rate, terms and VIN, and the due date (invoice date + terms; a typed one is kept). With no customer, Add or Enter shows the customer list (Cust.).
+>   - **A product line** is a quantity at a unit price, or an amount typed with no price. Its account starts as the customer's sales account and can be changed per line (spec §4.1).
+>   - **Add** checks the invoice number, dates, period, document, the AR, VAT and line accounts (strings 6091, 6090, 6089), the rate, and duplicates (D6, naming the voucher). No "Sample Entry": a line needs an amount.
+>   - **The Distribution List** shows all the lines. Double-clicking a product line fills it back for changing; a computed line says it's computed. **Delete** asks (6098) and recomputes.
+>   - **New and Close** ask to keep a voucher made in this session (1056); No removes only that voucher (D5).
+>   - Top / Bottom / Next / Previous go over the open vouchers only; picking another kind in the voucher list says why it can't be changed.
+>   - **Memo** (TARMemo on 1060): Save keeps the text, Quit or Esc don't, and Enter makes a new line (the original's Enter saved). It needs the voucher on file (6088).
+>   - Print is hidden until the reports (S6-M6).
+> - **Wire** (task 5): 5045 in `ManilaGL.cpp`, out of the AR not-ported list; `/checkres` loads 1053 and 1060; `StressAr` opens the entry screen too.
+> - **Tests** (task 6): three cases. Spec §10's 3 × 1,100.00; a second, typed line; replacing and deleting lines (totals and balance each time); posted and cancelled vouchers refused; `DeleteArVoucher` touching only its voucher; the memo. `gl_tests`: 152 cases (`[ar]` 11).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (123 s). Driven in the app, on a scratch copy with the fixture, by messages to its own windows:
+>   - C001 and Enter: CITYHOSP, 111101, 410001-10, 260007, 10 %, 30 days, due 12/14/26;
+>   - S-2001, 3 × 1,100.00: voucher 7, Cr sales 3,000.00, Cr VAT 300.00, Dr AR 3,300.00 (the exit criterion);
+>   - P100 picked: price 4.25, with MR001 and DR001; 10 of them: 38.64 + 3.86, total 3,342.50; then 220.00 typed: 3,562.50;
+>   - line 2 picked from the list (its quantity, price, codes) and changed to 20: 3,605.00; line 1 deleted: 305.00, balanced;
+>   - the VAT line picked: "computed"; New: asks to keep;
+>   - S-2001 (open voucher 7) and S-1003 (posted 3) refused; S-1006 (cancelled 6) allowed as voucher 8; Close, No: only 8 removed;
+>   - reopened: Top 1, Next 2, Next 7, Next stays at 7, Previous 2; Close without asking;
+>   - Memo with no voucher: 6088; voucher 1's memo saved, then a change quit unsaved.
+>
+>   Screenshots checked the screen, the Distribution List and the memo.
 
 **Goal:** sales invoices can be entered, product line by product line, always balanced.
 

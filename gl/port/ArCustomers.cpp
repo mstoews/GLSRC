@@ -35,6 +35,7 @@
 
 #include "Accounts.h"   // TrimText
 #include "Ar.h"
+#include "ArInvoiceEntry.h"
 #include "Globals.h"
 #include "MainDialog.h"
 #include "MasterTables.h"   // SeekCode
@@ -494,7 +495,7 @@ int StressAr(int times)
         HANDLE self = GetCurrentProcess();
         return static_cast<int>(GetGuiResources(self, GR_GDIOBJECTS) + GetGuiResources(self, GR_USEROBJECTS));
     };
-    auto openAll = [] { return RunArCustomers(nullptr, true) != -1; };
+    auto openAll = [] { return RunArCustomers(nullptr, true) != -1 && RunArInvoiceEntry(nullptr, true) != -1; };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();
     for (int i = 0; i < times; ++i)

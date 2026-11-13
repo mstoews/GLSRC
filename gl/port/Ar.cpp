@@ -591,6 +591,122 @@ ComputedSale ComputeSale(const std::vector<ArLine>& productLines, int vatRate, c
     return c;
 }
 
+// ---- invoice entry ---------------------------------------------------------------------
+
+namespace {
+
+std::vector<SaleEntry> saleEntries(const std::vector<ArLine>& lines)
+{
+    std::vector<SaleEntry> out;
+    for (const ArLine& l : lines) {
+        if (l.role != ArLineRole::Sales) continue;
+        SaleEntry e;
+        e.descript = l.descript;
+        e.medrep = l.medrep;
+        e.drcode = l.drcode;
+        e.product = l.product;
+        e.account = l.account;
+        e.qty = l.qty;
+        e.price = l.price;
+        e.gross = l.gross;
+        out.push_back(e);
+    }
+    return out;
+}
+
+long saveComputed(cb4sqlite::Code4& code, ArVoucher header, const std::vector<SaleEntry>& entries,
+                  const ApAccount& vat)
+{
+    std::vector<ArLine> in;
+    for (const SaleEntry& e : entries) {
+        ArLine l;
+        l.descript = TrimText(e.descript).empty() ? AccountName(code, e.account) : e.descript;
+        l.medrep = e.medrep;
+        l.drcode = e.drcode;
+        l.product = e.product;
+        l.account = e.account;
+        l.qty = e.qty;
+        l.price = e.price;
+        l.gross = e.gross;
+        in.push_back(l);
+    }
+    SaleAccounts accounts;
+    accounts.vat = vat;
+    accounts.ar = header.account;
+    accounts.vatText = AccountName(code, vat);
+    accounts.arText = AccountName(code, header.account);
+    const ComputedSale c = ComputeSale(in, header.vatRate, accounts);
+    header.total = c.total;
+    header.vatAmount = c.vat;
+    return SaveArVoucher(code, header, c.lines);
+}
+
+} // namespace
+
+long SaveSaleLine(cb4sqlite::Code4& code, ArVoucher header, const SaleEntry& entry, const ApAccount& vat)
+{
+    std::vector<SaleEntry> entries;
+    const std::optional<ArVoucher> onFile = header.number > 0 ? FindArVoucher(code, header.number) : std::nullopt;
+    if (onFile) {
+        if (onFile->mode != ar_mode::kOpen) return 0;
+        header.mode = onFile->mode;
+        header.memo = onFile->memo;   // the screen has no memo: keep it
+        entries = saleEntries(LoadArLines(code, header.number));
+    } else {
+        header.number = 0;
+        header.mode = ar_mode::kOpen;
+    }
+    if (entry.line >= 1 && entry.line <= static_cast<int>(entries.size()))
+        entries[static_cast<size_t>(entry.line - 1)] = entry;
+    else
+        entries.push_back(entry);
+    return saveComputed(code, header, entries, vat);
+}
+
+bool DeleteSaleLine(cb4sqlite::Code4& code, long number, int line, const ApAccount& vat)
+{
+    const std::optional<ArVoucher> v = FindArVoucher(code, number);
+    if (!v || v->mode != ar_mode::kOpen) return false;
+    std::vector<SaleEntry> entries = saleEntries(LoadArLines(code, number));
+    if (line < 1 || line > static_cast<int>(entries.size())) return false;
+    entries.erase(entries.begin() + (line - 1));
+    saveComputed(code, *v, entries, vat);
+    return true;
+}
+
+bool DeleteArVoucher(cb4sqlite::Code4& code, long number)
+{
+    const std::optional<ArVoucher> v = FindArVoucher(code, number);
+    if (!v || v->mode != ar_mode::kOpen) return false;
+    cb4sqlite::Transaction tx(code);
+    {
+        Data4 d(&code, "ar_btch");
+        Field4 batchno(d, "batchno");
+        if (seekBatch(d, batchno, number)) {
+            d.deleteRec();
+            d.pack();
+        }
+        d.close();
+    }
+    deleteRows(code, "ar_btchd", number);
+    deleteRows(code, "ar_linex", number);
+    tx.commit();
+    return true;
+}
+
+bool SaveArMemo(cb4sqlite::Code4& code, long number, const std::string& memo)
+{
+    Data4 d(&code, "ar_btch");
+    Field4 batchno(d, "batchno");
+    const bool found = seekBatch(d, batchno, number);
+    if (found) {
+        Field4(d, "memofield").assign(memo.c_str());
+        d.flush();
+    }
+    d.close();
+    return found;
+}
+
 // ---- the ledger rows ---------------------------------------------------------------------
 
 std::vector<ArOpenItem> LoadArOpenItems(cb4sqlite::Code4& code)

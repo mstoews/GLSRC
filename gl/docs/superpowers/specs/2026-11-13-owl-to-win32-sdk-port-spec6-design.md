@@ -86,6 +86,7 @@ So `gl/src` is a work-in-progress revision. This spec ports **what the source me
 - **The duplicate check** seeks `AR_DIST`, so it only catches **posted** invoices.
 - A zero quantity and amount offers "Enter Sample Entry?", which writes a zero sales line.
 - The screen is **modeless**, unlike AP's.
+- **Memo** (1100, on `gl_new.rc`'s template) edits the voucher's `MEMOFIELD` in dialog 1060, with a File / Edit menu (`MEMO`); Save keeps it, Quit doesn't. Picking a product fills its average price. (Found in S6-M2.)
 
 ### 2.4 Posting, cancelling, the transfer
 
