@@ -40,6 +40,8 @@ For the Spec #2 voucher screens, the fixture also has:
 - **Archive:** `gl_distb` is empty.
 
 For the Spec #3 reports (S3-M2), it also has a year of activity on 14 more accounts (bank 102201, equipment and depreciation, a loan, share capital, sales, cost of sales, salaries in depts 10 and 20, rent, interest, tax, and 999000 Suspense): twelve posted journals in periods 1–7 with their `gl_dist` lines, one period-6 movement with no lines (F2 marks it `*`), one deleted `gl_dist` line, and prior-year and budget amounts on the income accounts. `make_dev_fixture.py`'s `FINANCE_*` tables list them. Every account satisfies `curr_bal = openbal + period1..12`.
+For Spec #5 (Accounts Payable, S5-M0) it also has three vendors (V001 a company with 12 % VAT and 1 % W/H, V002 an individual with 2 % W/H, V003 with neither), six invoice vouchers (1 and 2 open, 3 posted and unpaid, 4 cancelled, 5 cancelled the original's way, 6 posted and paid by cheque 5001, printed but not cleared), one open cash voucher, and AP's journal for them, not yet transferred to the GL, so no GL balance includes it. `make_dev_fixture.py`'s `accounts_payable()` lists the figures.
+
 - **`GL.INI`:** `[PERIOD] BATCHNO=99`.
 
 To regenerate the `.dbf` files after editing them, run `python3 gl/test/dev-fixture/make_dev_fixture.py`.

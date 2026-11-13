@@ -78,7 +78,7 @@ done
 echo "gl_tests"
 G=""
 # The portable gl/port sources gl_tests links (keep in step with gl_tests.vcxproj).
-for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/MasterTables.cpp "$ROOT"/gl/port/Assets.cpp "$ROOT"/gl/port/Vouchers.cpp "$ROOT"/gl/port/CompanyFiles.cpp \
+for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/MasterTables.cpp "$ROOT"/gl/port/Ap.cpp "$ROOT"/gl/port/Assets.cpp "$ROOT"/gl/port/Vouchers.cpp "$ROOT"/gl/port/CompanyFiles.cpp \
          "$ROOT"/gl/port/reports/ReportContext.cpp "$ROOT"/gl/port/reports/SampleReport.cpp \
          "$ROOT"/gl/port/reports/Balances.cpp "$ROOT"/gl/port/reports/TrialBalances.cpp \
          "$ROOT"/gl/port/reports/StatementLayout.cpp "$ROOT"/gl/port/reports/Statements.cpp \
