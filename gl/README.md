@@ -81,7 +81,7 @@ DIR=D:\GL\company.db
 | `GL.INI` | `[GLACCTS]` `LEFT` `TOP` `RIGHT` `BOTTOM` `FIELD1`–`FIELD3` `QUERY` | the account list's position (saved on close), its three columns (field numbers, default 1–3), and its row filter (default `.NOT. DELETED()`) |
 | `GL.INI` | `[GLDEPT]`, `[GL_MEDRP]`, `[GL_DRCOD]`, `[GL_ITEMM]`, same keys | the same for the Department, Medical Rep, Doctor and Product lists |
 
-## What runs (Specs #1 to #4)
+## What runs (Specs #1 to #5)
 
 - **Frame:**
   - the MANILA menu and the toolbar (hover over a button for its name);
@@ -182,15 +182,15 @@ DIR=D:\GL\company.db
 - **Receipts/Payments > Bank Reconciliation** lists the cheques not yet cleared. Double-click one: **Clear** it (printed cheques only) with the date it cleared, or **Void** it: its invoices are open again, and its payment is undone (its journal rows removed, or reversed with new rows dated the void if they have gone to the General Ledger).
 - **Maintenance > Purge Paid Payables** deletes the cleared invoices paid before a date, and their cheques. Nothing open, unpaid or uncleared is touched.
 - **The AP cycle:** enter the invoice (or cash voucher), post it, create the cheques, print them, confirm them, Update AR and AP, post the GL voucher; clear the cheques from the bank statement; purge the cleared ones now and then.
-- **Reports**: see [Reports](#reports).
+- **Reports**, the AP ones (Reporting > Accounts Payable, and some on Transactions and Receipts/Payments) among them: see [Reports](#reports). They are in the report list too.
 - **Help > About.**
 - **Everything else:**
-  - Accounts Payable and Accounts Receivable commands, and their reports, show a "not yet ported" message naming the spec that brings them.
+  - Accounts Receivable commands and their reports show a "not yet ported" message naming the spec that brings them (Spec #6).
   - Other General Ledger commands say they are not part of Spec #1.
 
 ## Reports
 
-Spec #3 replaced the Crystal Reports runtime with the port's own report engine. Every General Ledger report opens in a **preview** window of its own; none goes straight to the printer.
+Spec #3 replaced the Crystal Reports runtime with the port's own report engine. Every General Ledger, fixed-asset and Accounts Payable report opens in a **preview** window of its own; none goes straight to the printer.
 
 ### The reports
 
@@ -210,6 +210,22 @@ Spec #3 replaced the Crystal Reports runtime with the port's own report engine. 
 | Voucher Entry's **Print** | the voucher's slip, in a window over the dialog | none |
 | Fixed Assets > **Fixed assets listing** | the asset register by type at the current period: cost, salvage, monthly and accumulated depreciation, book value; disposed assets with their date sold. It ends with a check of the register against the ledger, account by account | none |
 | Fixed Assets > **Fixed asset types** | each type with its asset, expense and accumulated-depreciation accounts | none |
+| Transactions > Voucher Reports > **Invoice Pre-Posting Report**, **Cash Pre-Posting Report** | the open purchase (or cash) vouchers, each with its lines and totals | none |
+| Reporting > Accounts Payable > **AP Voucher Detail**, **Cash Voucher Detail** | the current period's vouchers, every state, with their lines | none |
+| Reporting > Accounts Payable > **Voucher Status** | a line per purchase voucher of the current period with its state; the total leaves out the cancelled | none |
+| Reporting > Accounts Payable > **Invoice Posting Journal** | the posted purchase vouchers' expense, VAT and W/H lines, and what each charged to AP | none |
+| Reporting > Accounts Payable > **Vendor List** | every vendor with address, accounts, terms and rates | none |
+| Reporting > Accounts Payable > **Open Payables Detail** (also Accounts > Vendor Inquiry Report) | the unpaid invoices (held, open, forced) by vendor, with what each owes | none |
+| Reporting > Accounts Payable > **Aged Payables 30-60-90** | the unpaid invoices by days past due, as at today: current (up to 30), 31-60, 61-90, over 90 | none |
+| Reporting > Accounts Payable > **Cash Requirement** | the unpaid invoices by days to their due date: up to 10 (overdue included), 11-20, 21-30, over 30 | none |
+| Reporting > Accounts Payable > **Accounts Payable Register** | every open item by vendor: amount, W/H, paid, date paid, cheque, balance, state | none |
+| Receipts/Payments > **Pre-payment List** | the unpaid invoices with their order numbers | none |
+| Receipts/Payments > **Print Cheques** | the cheques made and not yet printed, one a page | none |
+| Receipts/Payments > **Cheque Payment Detail** | per cheque, the invoices it pays: amount, VAT, W/H, net payment | none |
+| Reporting > Accounts Payable > **Cash Cheque Summary** | the current period's cash vouchers paid by cheque, less W/H | none |
+| Reporting > Accounts Payable > **VAT: AP Vouchers**, **VAT: General Ledger** | the VAT lines of the period's posted AP vouchers; the General Ledger lines on the VAT account (Company Profile, VATR) | none |
+| Reporting > Accounts Payable > **Withholding Tax** | the W/H lines of the period's posted AP vouchers, by W/H account | none |
+| Reporting > Accounts Payable > **AP Journal Summary**, **AP Journal Detail**, **AP Journal: Cash**, **AP Journal: Invoices and Payments** | AP's journal for the General Ledger: what waits for Update AR and AP, by account; the current period's rows, all or by type | none |
 
 A report with options asks for them first and keeps them until the program exits. The reports read the books and change nothing.
 

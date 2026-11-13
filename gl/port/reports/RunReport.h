@@ -78,9 +78,10 @@ void RunDoctorCodesListing(fx::MdiFrame& frame);
 void RunFixedAssetListing(fx::MdiFrame& frame);
 void RunFixedAssetTypes(fx::MdiFrame& frame);
 
-// The AP reports (ApReports.h, spec #5 7): 4091 Cheques (S5-M6), the cheques
-// made and not yet printed. No options.
-void RunApCheques(fx::MdiFrame& frame);
+// The AP reports (ApReports.h, spec #5 7): runs the report of command `id`
+// (1049 ... 8078, 4091 Cheques), straight to the preview, as the originals had
+// no options. False if `id` isn't an AP report.
+bool RunApReport(fx::MdiFrame& frame, WORD id);
 
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,

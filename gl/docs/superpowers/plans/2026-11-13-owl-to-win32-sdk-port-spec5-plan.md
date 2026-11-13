@@ -476,6 +476,26 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 7 — Reports, report list, clean-up
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Reports** (task 2): `gl/port/reports/ApReports.{h,cpp}`, 22 builders over `Ap.h`'s records, in cents, plus M6's cheques.
+>   - Shared layouts: vouchers with their lines (1078, 1081, 8077, 8078); the journal by account (8068 a line each; 8069, 8075, 8076 in detail); the aged layout (1062, 1064), its buckets from `DaysBetween` (new in `Ap.h`) as at the report's date.
+>   - 1063 (AP_AGEDC) runs 1062. The tax reports 8067 and 8071 read the AP vouchers' own VAT and W/H lines, per invoice; 8072 reads `gl_btchd` on `GL_SETAT` VATR's account.
+>   - Landscape: 1060, 1062, 1064, 1077, 4092, 8072, 8073, and the journal's detail.
+> - **Wire** (task 3):
+>   - `RunApReport(frame, id)` (`RunReport.{h,cpp}`) runs any AP report from a table of command and builder; `ManilaGL::OnCommand` tries it before the "not ported" message. `RunApCheques` went into it.
+>   - `kApReports` is gone; 1082 and 1990 (adjustments) aren't ported, as the spec says.
+>   - The report list has the 22 AP reports.
+>   - `/stress` opens every AP report from the same table.
+>   - Menu labels (`prune_rc.py`): `MENU_EDITS` `remove` and `rename` can name the item's text when two items share an ID. 4091's "Customer Sales Statements" copy is removed; 4092 becomes "Cheque Payment Detail"; 1060's "Vendor Summary" copy is removed and the other is "Vendor List"; 8069 is "AP Journal Detail", with 8068, 1049 and 1065 after it; the other AP report labels name their reports (and "Reqister" is spelt right).
+>   - Found: 8075 and 8076 ran the cash and AP journals as their labels said; the spec said otherwise and is corrected.
+> - **Fixture:** regenerated for the menu (`ACCESSM` 110 rows); every other table identical.
+> - **Tests** (task 4), 3 cases. `gl_tests`: 140 cases.
+>   - `DaysBetween` and `ApAsAtDate`.
+>   - Every report on the fixture: a cell per column; the open vouchers and their balance; Voucher Status's total; the posting journal without AP lines; three vendors; what's owed (4,900.00) the same in 1061, 1058, 1077, 1062 and 1064, the aged buckets adding to it and moving with the date; the payment detail; the cash cheque summary; the VAT and W/H lines; the journal's totals; after posting, the empty pre-posting reports and 8075's cash rows.
+>   - **The columns fit** (task 6): each report laid out on A4 with the engine's own fonts measured by GDI (`GdiMeasure`), before and after posting: no text is cut and no number prints "###". It found two (Voucher Status's total label; 8073's vendor and reference), both fixed (8073 is landscape). This replaces printing each to PDF by hand: the preview and the printer draw the same pages.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0 in both; `/stress` 0. In a scratch copy of the app, each of the 22 menu commands (posted to the frame) opened its preview with the right title.
+> - **Not checked:** the reports on the deployed company's data; printing to paper.
+
 **Goal:** the AP reports print; the module is complete in the menus, the checks and the README.
 
 ### Tasks

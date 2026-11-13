@@ -57,7 +57,8 @@ MENUS = ['MANILA', 'GLE', 'GLSUB']
 # in it (a number, or a symbol from the legacy headers or gl/port/PortIds.h),
 # and must match exactly one item there, or the script stops:
 #   (menu, 'rename', id, '"&New text"')         replaces the item's text
-#   (menu, 'remove', id)                        drops the item
+#   (menu, 'remove', id[, '"&Text"'])           drops the item (the one with that text, if two share the ID)
+#   (menu, 'rename', id, '"&New"', '"&Old"')     renames the item with that ID and text
 #   (menu, 'insert_after', id, '"&Text", ID')   adds MENUITEM "&Text", ID after it
 #   (menu, 'set_id', id, 'NEW_ID', '"&Text"')   gives the item with that ID and text a new ID
 # Items the port adds take IDs from gl/port/PortIds.h, which gl.rc #includes.
@@ -78,6 +79,30 @@ MENU_EDITS = [
     # Spec #5 S5-M6: Confirm Printed replaces Set Cheque Numbers (D9); Purge goes on the menu (spec 6.4).
     ('MANILA', 'rename', '8074', '"Confirm Printed &Cheques..."'),
     ('MANILA', 'insert_after', '1068', '"Purge &Paid Payables...", 1066'),
+    # Spec #5 7 (S5-M7): the AP report labels. 4091 was on Receipts/Payments
+    # twice, once as "Customer Sales Statements"; 4092, "Customer Statement
+    # Detail", is the cheques' Payment Detail; 1060 was on Reporting twice;
+    # 8069 is the journal's detail. 8068, 1049 and 1065 join the menu beside it.
+    ('MANILA', 'remove', '4091', '"Customer &Sales Statements..."'),
+    ('MANILA', 'rename', '4092', '"Cheque Payment &Detail..."'),
+    ('MANILA', 'remove', '1060', '"Vendor &Summary"'),
+    ('MANILA', 'rename', '1060', '"&Vendor List..."'),
+    ('MANILA', 'rename', '1061', '"&Open Payables Detail..."', '"&Detailed open payment"'),
+    ('MANILA', 'rename', '1077', '"&Accounts Payable Register..."'),
+    ('MANILA', 'rename', '8069', '"AP &Journal Detail..."'),
+    ('MANILA', 'insert_after', '8069', '"AP Journal S&ummary...", 8068'),
+    ('MANILA', 'insert_after', '8068', '"&Invoice Posting Journal...", 1049'),
+    ('MANILA', 'insert_after', '1049', '"Voucher S&tatus...", 1065'),
+    ('MANILA', 'rename', '1062', '"Aged &Payables 30-60-90..."'),
+    ('MANILA', 'rename', '1064', '"&Cash Requirement..."'),
+    ('MANILA', 'rename', '8072', '"VAT: &General Ledger..."'),
+    ('MANILA', 'rename', '8067', '"VAT: AP &Vouchers..."'),
+    ('MANILA', 'rename', '8071', '"&Withholding Tax..."'),
+    ('MANILA', 'rename', '8073', '"Cash Che&que Summary..."'),
+    ('MANILA', 'rename', '8077', '"AP V&oucher Detail..."'),
+    ('MANILA', 'rename', '8078', '"Cash Voucher D&etail..."'),
+    ('MANILA', 'rename', '8075', '"AP Journal: Ca&sh..."'),
+    ('MANILA', 'rename', '8076', '"AP Journal: Invoices and Pay&ments..."'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
@@ -424,9 +449,12 @@ def apply_menu_edits(r):
         if edit[0].upper() != r['name'].upper():
             continue
         op, target = edit[1], edit[2]
+        # The item's text, where two items share an ID.
+        text = edit[4] if op in ('set_id', 'rename') and len(edit) > 4 else \
+            edit[3] if op == 'remove' and len(edit) > 3 else None
         hits = [i for i, l in enumerate(lines)
                 if (m := MENU_ITEM.match(l)) and key(m.group(3)) == key(target)
-                and (op != 'set_id' or m.group(2) == edit[4])]
+                and (text is None or m.group(2) == text)]
         if len(hits) != 1:
             sys.exit(f'menu edit {edit}: {len(hits)} items with ID {target} in {r["name"]}')
         i = hits[0]

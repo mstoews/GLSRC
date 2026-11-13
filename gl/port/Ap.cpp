@@ -802,6 +802,20 @@ std::string AddDays(const std::string& yyyymmdd, int days)
     return buf;
 }
 
+long DaysBetween(const std::string& from, const std::string& to)
+{
+    auto days = [](const std::string& ymd, long long& out) {
+        const std::string t = TrimText(ymd);
+        if (t.size() != 8 || t.find_first_not_of("0123456789") != std::string::npos) return false;
+        out = daysFromCivil(std::atoi(t.substr(0, 4).c_str()), static_cast<unsigned>(std::atoi(t.substr(4, 2).c_str())),
+                            static_cast<unsigned>(std::atoi(t.substr(6, 2).c_str())));
+        return true;
+    };
+    long long a = 0, b = 0;
+    if (!days(from, a) || !days(to, b)) return 0;
+    return static_cast<long>(b - a);
+}
+
 std::string AccountName(cb4sqlite::Code4& code, const ApAccount& account)
 {
     if (account.empty()) return {};

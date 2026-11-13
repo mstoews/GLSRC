@@ -252,10 +252,42 @@ void RunFixedAssetTypes(fx::MdiFrame& frame)
     RunReport(frame, {}, [](const ReportContext& ctx) { return FixedAssetTypesListing(cb, ctx); });
 }
 
-void RunApCheques(fx::MdiFrame& frame)
+namespace {
+
+using ApBuilder = rpt::Report (*)(cb4sqlite::Code4&, const ReportContext&);
+
+struct ApReportEntry {
+    WORD id;
+    ApBuilder build;
+};
+
+// The AP reports by command (spec #5 7). 1063 (AP_AGEDC.RPT) was the same
+// report as 1062, so it runs it.
+const ApReportEntry kApReportTable[] = {
+    {1078, ApInvoicePrePosting}, {1081, ApCashPrePosting},
+    {8077, ApInvoiceVoucherDetail}, {8078, ApCashVoucherDetail},
+    {1065, ApVoucherStatus}, {1049, ApPostingJournal},
+    {1060, ApVendorList}, {1061, ApOpenPayables},
+    {1062, ApAgedPayables}, {1063, ApAgedPayables}, {1064, ApCashRequirement},
+    {1077, ApRegister}, {1058, ApPrepayments},
+    {4091, ApCheques}, {4092, ApPaymentDetail}, {8073, ApCashChequeSummary},
+    {8067, ApVatAp}, {8072, ApVatGl}, {8071, ApWithholding},
+    {8068, ApJournalSummary}, {8069, ApJournalDetail},
+    {8075, ApJournalCash}, {8076, ApJournalInvoices},
+};
+
+}   // namespace
+
+bool RunApReport(fx::MdiFrame& frame, WORD id)
 {
-    EnsureApTables(cb);
-    RunReport(frame, {}, [](const ReportContext& ctx) { return ApCheques(cb, ctx); });
+    for (const ApReportEntry& r : kApReportTable)
+        if (r.id == id) {
+            EnsureApTables(cb);
+            const ApBuilder build = r.build;
+            RunReport(frame, {}, [build](const ReportContext& ctx) { return build(cb, ctx); });
+            return true;
+        }
+    return false;
 }
 
 int StressReports(int times)
@@ -294,11 +326,15 @@ int StressReports(int times)
         [](const ReportContext& ctx) { return DoctorCodesListing(cb, ctx); },
         [](const ReportContext& ctx) { return FixedAssetListing(cb, ctx); },
         [](const ReportContext& ctx) { return FixedAssetTypesListing(cb, ctx); },
-        [](const ReportContext& ctx) { return ApCheques(cb, ctx); },
     };
+    EnsureApTables(cb);
     auto round = [&] {
         for (const ReportBuilder& b : builders)
             if (!stressOnce(frame, b)) return false;
+        for (const ApReportEntry& r : kApReportTable) {
+            const ApBuilder build = r.build;
+            if (!stressOnce(frame, [build](const ReportContext& ctx) { return build(cb, ctx); })) return false;
+        }
         return true;
     };
     int growth = -1;
