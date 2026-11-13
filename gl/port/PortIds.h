@@ -23,6 +23,7 @@
 #define IDD_TB_OPTIONS          20001   // Trial Balance / Distribution Trial Balance options (S3-M2)
 #define IDD_STMT_OPTIONS        20002   // Income Statement / Balance Sheet / Cash Flow options (S3-M3)
 #define IDD_STMT_LAYOUT         20003   // Accounts > Statement Layout (S3-M4)
+#define IDD_AP_CONFIRM          20004   // Receipts/Payments > Confirm Printed Cheques (spec #5 6.2, D9, S5-M6)
 
 // ---- controls --------------------------------------------------------------
 
@@ -65,6 +66,14 @@
 
 #define IDC_FA_SUMMARY          20130   // Disposal (1001): cost, accumulated depreciation, book value (S4-M4)
 #define IDC_FA_DELETE           20131   // Disposal (1001): Delete, for an asset never depreciated
+
+#define IDC_APC_GRID            20170   // Confirm Printed Cheques (S5-M6): the cheques made, not yet printed (a tbSpread)
+#define IDC_APC_FROM            20171   //   the range to confirm
+#define IDC_APC_TO              20172
+#define IDC_APC_NEWNO           20173   //   Renumber: the selected cheque's new number
+#define IDC_APC_RENUMBER        20174
+#define IDC_AP_VOID             20175   // Clear Cancel Cheque (1051, S5-M6): Void, added in code
+#define IDC_AP_PURGEDATE        20176   // Purge Paid Payables (1048, S5-M6): the date, added in code
 
 #define IDC_FRAME_TOOLBAR       20160   // the frame's toolbar (UI refresh spec 4.3; ManilaGL.cpp)
 #define IDC_FRAME_STATUS        20161   // the frame's status bar (UI refresh spec 4.4)

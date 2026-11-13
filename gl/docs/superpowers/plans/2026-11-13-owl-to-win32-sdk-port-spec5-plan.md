@@ -410,6 +410,49 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 6 — Cheques, Bank Reconciliation, Void, Purge
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.5 holds. Further findings:
+>   - **`AP_REQST.CLEARED` "0" means cleared** (`Tapreqst::bCleared`), and `AddCheque` writes "1" for a new cheque. So the deployed cheques, all "1", aren't cleared; the design said they were, and is corrected. `LoadCheques` reads "0" as cleared, and `CreateCheques` writes "1".
+>   - Set Cheque Numbers (`TPrintCheques`, 1157) zapped `AP_REQST`, renumbered every "P" item, and marked them all "V" on Verify.
+>   - Bank Reconciliation (`TAPPayment`, 1046) listed only "P" items; its 1051 cleared one and closed every table.
+>   - Purge (`TAPPurgeBatch`, 1048) deleted the "P" items.
+> - **`Ap.h`** (task 2):
+>   - `ChequeState` (P / V / C, from the cheque's items) and `LoadChequesIn` (cheques in a state, with payee and stub);
+>   - `AmountInWords`;
+>   - `ConfirmPrinted(from, to)`;
+>   - `RenumberCheque` (an unconfirmed cheque, to an unused number: the cheque, its items and its journal rows);
+>   - `ClearCheque` (printed only: "C" on its items, CLEARED "0", the date in the reference);
+>   - `VoidCheque`, one transaction: the items back to "O"; waiting payment rows deleted; transferred ones reversed with new rows dated the void, in its open period; the cheque row deleted;
+>   - `PurgeCandidates` / `PurgePaid` (cleared items paid before a date, and their emptied cheques).
+> - **The cheque** (task 3): `gl/port/reports/ApReports.{h,cpp}` `ApCheques`, on Spec #3's engine.
+>   - One slip a page (the engine's slip mode starts each on a new page): number, date, payee and address, amount, bank.
+>   - The amount in words on a full-width line under it.
+>   - The stub (voucher, invoice, date, reference, amount, W/H, paid) and its total.
+>   - `RunApCheques` runs it for 4091, which left `kApReports`; it joins `/stress`'s report builders.
+> - **Screens** (task 4), in `ApPayments.{h,cpp}`:
+>   - **Confirm Printed Cheques** (8074) is a dialog of the port's own, `IDD_AP_CONFIRM` in `port.rc`, since 1157 has room for one number. It lists the cheques waiting, confirms a range (defaulting to all), and renumbers the selected cheque.
+>   - **Bank Reconciliation** (1046) lists the cheques not cleared, Made or Printed. Double-click opens 1051, "Clear or Void Cheque N": Clear, Void (a button added in code), Close, and the date.
+>   - **Purge Paid Payables** (1048): a date control is added in code over 3031, and its label becomes "Cleared and paid before:". The list shows what goes; Purge asks, then deletes.
+>   - `prune_rc.py`: 1046, 1051 and 1048 added. A menu edit renames 8074 "Confirm Printed Cheques…" (D9), and another puts "Purge Paid Payables…" (1066) on Maintenance after Year End.
+> - **Wire** (task 5): 4091, 8074, 6085 and 1066; out of `kApCommands` / `kApReports`. `/checkres` loads 1046, 1051, 1048 and `IDD_AP_CONFIRM`; `StressAp` opens the three screens.
+> - **Fixture:** regenerated for the menu (`ACCESSM` 109 rows); every other table identical.
+> - **Tests** (task 6), 2 cases. `gl_tests`: 137 cases.
+>   - `AmountInWords`.
+>   - The whole cycle: the fixture's cheque printed; cheque 5002 made, in the report (slip, words, stub); Renumber refused for a used number, a printed cheque, a missing one, then 5002 → 5010 everywhere.
+>   - Clear refused until confirmed, then cleared (CLEARED "0", the date), and Void refused for it.
+>   - Void of 5001 before the transfer (2 rows removed, invoice 6 open again).
+>   - Void of 5011 after the transfer (refused for a closed period, then 2 rows reversed, dated the void, in period 7).
+>   - Purge: only 5010's two items and the cheque.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (75 s). Driven in the app (window messages only), checked in the database:
+>   - post, then Create Cheques (5002 V001 1,887.00; 5003 V002 4,900.00);
+>   - Print Cheques' preview, 2 pages;
+>   - Confirm 5002–5003 ("2 cheque(s) confirmed printed");
+>   - Bank Reconciliation: 5002 cleared; 5001 voided (invoice 6 open, 2 rows removed);
+>   - Purge before 12/31/2026: "2 invoice(s) and 1 cheque(s) purged", the uncleared cheques kept.
+>
+>   Screenshots found a blank third page (an explicit page break as well as the slip's), the amount in words clipped in the slip, and clipped columns; all fixed.
+> - **Q6** is still the spec's assumption: plain paper.
+
 **Goal:** the payment cycle closes.
 
 ### Tasks

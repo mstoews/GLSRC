@@ -119,11 +119,16 @@ const DialogCase kDialogs[] = {
     // Spec #5 S5-M5.
     {1045, L"Create Cheques (TAPCreatePayment)", true, Pics::Main, {1121}},
     {1066, L"Hold or Force (TAPHoldForce)", false},
+    // Spec #5 S5-M6.
+    {1046, L"Bank Reconciliation (TAPPayment)", true, Pics::Main},
+    {1051, L"Clear Cancel Cheque (TAPSetChequeNumber)", false},
+    {1048, L"Purge Paid Payables (TAPPurgeBatch)", true, Pics::Main},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
     {IDD_STMT_OPTIONS, L"Financial statement options (port.rc, S3-M3)", false},
     {IDD_STMT_LAYOUT, L"Statement Layout (port.rc, S3-M4)", false},   // its grid is IDC_SL_GRID, not ID_DISTLIST
+    {IDD_AP_CONFIRM, L"Confirm Printed Cheques (port.rc, S5-M6)", false},   // its grid is IDC_APC_GRID
 };
 
 void applyPictures(HWND dlg, const DialogCase& d)

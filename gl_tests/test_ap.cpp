@@ -16,6 +16,7 @@
 
 #include "Ap.h"
 #include "Vouchers.h"
+#include "reports/ApReports.h"
 
 #include <string>
 #include <vector>
@@ -985,4 +986,116 @@ TEST_CASE("Create Cheques: what's due, Hold / Force, one cheque per vendor (S5-M
     REQUIRE(r2.cheques.size() == 1);
     CHECK(r2.cheques[0].vendor == "V002");
     CHECK(r2.cheques[0].amount == 490000);
+}
+
+TEST_CASE("AmountInWords (the cheque)", "[ap]")
+{
+    CHECK(AmountInWords(188700) == "One thousand eight hundred eighty-seven and 00/100");
+    CHECK(AmountInWords(0) == "Zero and 00/100");
+    CHECK(AmountInWords(2105) == "Twenty-one and 05/100");
+    CHECK(AmountInWords(1234567) == "Twelve thousand three hundred forty-five and 67/100");
+    CHECK(AmountInWords(100000000) == "One million and 00/100");
+    CHECK(AmountInWords(1100000099) == "Eleven million and 99/100");
+    CHECK(AmountInWords(11500) == "One hundred fifteen and 00/100");
+}
+
+TEST_CASE("Cheques: confirm, renumber, clear, void, purge (S5-M6, D8, D9)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    // The fixture's cheque 5001 (V003, 1,200.00) is printed, not cleared.
+    CHECK(ChequeState(db.code, 5001) == ap_payment::kPrinted);
+    CHECK(LoadChequesIn(db.code, ap_payment::kPaid).empty());
+    REQUIRE(LoadChequesIn(db.code, "").size() == 1);
+
+    // Make cheque 5002 for V001's invoices 1 and 2.
+    PostApVouchers(db.code, ApKind::Invoice);
+    SetPaymentControl(db.code, 3, ap_payment::kHeld);
+    const ApAccount bank{"102101", ""};
+    REQUIRE(CreateCheques(db.code, "20261111", "20261020", bank, 5002).cheques.size() == 1);
+    CHECK(ChequeState(db.code, 5002) == ap_payment::kPaid);
+    auto toPrint = LoadChequesIn(db.code, ap_payment::kPaid);
+    REQUIRE(toPrint.size() == 1);
+    CHECK(toPrint[0].payee.name == "Office Supplies Co.");
+    CHECK(toPrint[0].lines.size() == 2);
+    CHECK_FALSE(LoadCheques(db.code)[1].cleared);
+
+    // The cheque report: one slip, the stub, the total.
+    const rpt::Report report = ApCheques(db.code, ReportContext{});
+    REQUIRE(!report.rows.empty());
+    CHECK(report.rows[0].kind == rpt::RowKind::Slip);
+    REQUIRE(report.rows.size() > 1);
+    CHECK(report.rows[1].kind == rpt::RowKind::Note);
+    CHECK(report.rows[1].text == "The sum of One thousand eight hundred eighty-seven and 00/100");
+
+    // Renumber the spoiled 5002: not to a number in use; then to 5010, everywhere.
+    CHECK(RenumberCheque(db.code, 5002, 5001) == RenumberResult::NumberUsed);
+    CHECK(RenumberCheque(db.code, 5001, 5020) == RenumberResult::NotMade);   // printed already
+    CHECK(RenumberCheque(db.code, 5099, 5020) == RenumberResult::NotFound);
+    CHECK(RenumberCheque(db.code, 5002, 5010) == RenumberResult::Renumbered);
+    CHECK(ChequeState(db.code, 5010) == ap_payment::kPaid);
+    CHECK(ChequeState(db.code, 5002).empty());
+    int rows5010 = 0;
+    for (const JournalRow& j : LoadJournal(db.code)) {
+        CHECK(j.cheque != "5002");
+        if (j.cheque == "5010") ++rows5010;
+    }
+    CHECK(rows5010 == 4);
+
+    // Clear needs it printed; confirm, then clear.
+    CHECK(ClearCheque(db.code, 5010, "20261030") == ClearResult::NotPrinted);
+    CHECK(ConfirmPrinted(db.code, 5000, 5099) == 1);
+    CHECK(ChequeState(db.code, 5010) == ap_payment::kPrinted);
+    CHECK(ClearCheque(db.code, 5010, "20261030") == ClearResult::Cleared);
+    CHECK(ChequeState(db.code, 5010) == ap_payment::kCleared);
+    CHECK(ClearCheque(db.code, 5010, "20261030") == ClearResult::AlreadyCleared);
+    for (const Cheque& c : LoadCheques(db.code))
+        if (c.number == 5010) {
+            CHECK(c.cleared);
+            CHECK(c.reference == "Cleared 20261030");
+        }
+    CHECK(VoidCheque(db.code, 5010, "20261030").result == VoidResult::Cleared);
+
+    // Void 5001 before the transfer: its waiting payment rows go, invoice 6 is open again.
+    const VoidOutcome v = VoidCheque(db.code, 5001, "20261030");
+    CHECK(v.result == VoidResult::Voided);
+    CHECK(v.itemsReopened == 1);
+    CHECK(v.rowsRemoved == 2);
+    CHECK(v.rowsReversed == 0);
+    CHECK(ChequeState(db.code, 5001).empty());
+    bool open6 = false;
+    for (const PaymentItem& p : PaymentItems(db.code, "20261231"))
+        if (p.item.batchno == 6) open6 = p.owed == 120000;
+    CHECK(open6);
+
+    // Pay invoice 6 again (5011), transfer, then void: the rows are reversed, dated the void.
+    SetPaymentControl(db.code, 3, ap_payment::kHeld);
+    REQUIRE(CreateCheques(db.code, "20261231", "20261020", bank, 5011).cheques.size() == 1);
+    TransferAp(db.code, 99);
+    CHECK(VoidCheque(db.code, 5011, "20260915").result == VoidResult::ClosedPeriod);   // period 6 is closed
+    const VoidOutcome v2 = VoidCheque(db.code, 5011, "20261030");
+    CHECK(v2.result == VoidResult::Voided);
+    CHECK(v2.rowsRemoved == 0);
+    CHECK(v2.rowsReversed == 2);
+    std::int64_t bankDr = 0, apCr = 0;
+    for (const JournalRow& j : LoadJournal(db.code))
+        if (j.cheque == "5011" && j.mode == "1") {
+            CHECK(j.date == "20261030");
+            CHECK(j.period == 7);
+            if (j.account.account == "102101") bankDr += j.debit;
+            if (j.account.account == "221002") apCr += j.credit;
+        }
+    CHECK(bankDr == 120000);
+    CHECK(apCr == 120000);
+
+    // Purge: only the cleared items paid before the date (5010's two), and their cheque.
+    CHECK(PurgeCandidates(db.code, "20261020").empty());   // paid on the 20th, not before
+    const auto candidates = PurgeCandidates(db.code, "20261231");
+    REQUIRE(candidates.size() == 2);
+    const PurgeOutcome o = PurgePaid(db.code, "20261231");
+    CHECK(o.items == 2);
+    CHECK(o.cheques == 1);
+    for (const Cheque& c : LoadCheques(db.code)) CHECK(c.number != 5010);
+    for (const OpenItem& i : LoadOpenItems(db.code)) CHECK(i.paymentCtl != ap_payment::kCleared);
+    CHECK(LoadOpenItems(db.code).size() == 2);   // invoices 3 (held) and 6 (open again)
 }

@@ -399,7 +399,8 @@ struct Cheque {   // ap_reqst
     std::string vendor, reference, date;
     ApAccount bank;            // BANKACCT / BANKDEPT
     std::int64_t amount = 0;   // AMOUNTPAID
-    bool cleared = false;      // CLEARED "1" (the deployed rows)
+    bool cleared = false;      // CLEARED "0": the original's Tapreqst::bCleared. New cheques get "1" (AddCheque),
+                               // so the deployed rows, all "1", aren't cleared; blank isn't either
 };
 
 struct JournalRow {   // ap_jsum
@@ -480,3 +481,81 @@ struct CreateChequesResult {
 // Cheque Numbers.)
 CreateChequesResult CreateCheques(cb4sqlite::Code4& code, const std::string& dueBy, const std::string& payDate,
                                   const ApAccount& bank, long firstNumber);
+
+// ---- cheques: print, confirm, clear, void, purge (spec #5 6.2-6.4, D8, D9; plan S5-M6) ------
+
+// A cheque's state, from its open items: "P" made (not yet printed), "V"
+// printed, "C" cleared; "" when it has no items (purged, or a deployed
+// cheque whose items are gone).
+std::string ChequeState(cb4sqlite::Code4& code, long cheque);
+
+struct ChequeLine {   // an invoice the cheque pays: the stub
+    long batchno = 0;
+    std::string invoiceNo, invoiceDate, reference;
+    std::int64_t amount = 0, wh = 0, paid = 0;
+};
+
+struct ChequeToPrint {
+    Cheque cheque;
+    std::string state;          // ChequeState
+    Vendor payee;               // the vendor (its number only, if not on file)
+    std::vector<ChequeLine> lines;
+};
+
+// The cheques in a state ("P": made, to print; "V": printed, to clear), in
+// number order, with their payees and stubs; "" for every cheque not cleared.
+std::vector<ChequeToPrint> LoadChequesIn(cb4sqlite::Code4& code, const std::string& state);
+
+// 1887.00 -> "One thousand eight hundred eighty-seven and 00/100".
+std::string AmountInWords(std::int64_t cents);
+
+// Confirm Printed (8074, D9; TPrintCheques::Verify marked every "P" at
+// once): the cheques numbered `from`..`to` that are made, not yet printed,
+// become printed ("V"). Returns how many cheques.
+int ConfirmPrinted(cb4sqlite::Code4& code, long from, long to);
+
+enum class RenumberResult { Renumbered, NotFound, NotMade, NumberUsed };
+
+// A spoiled cheque, not yet confirmed printed, takes a new number: on the
+// cheque, its items and its journal rows (D9; Set Cheque Numbers renumbered
+// every cheque, printed ones included, and rebuilt AP_REQST).
+RenumberResult RenumberCheque(cb4sqlite::Code4& code, long from, long to);
+
+enum class ClearResult { Cleared, NotFound, NotPrinted, AlreadyCleared };
+
+// Bank Reconciliation's clear (TAPSetChequeNumber::Ok): a printed cheque's
+// items become "C", and AP_REQST.CLEARED "0". `date` is when it cleared,
+// kept in the cheque's REFERENCE ("Cleared yyyymmdd"): AP_REQST has no field
+// for it. (The original listed only unprinted cheques, so a printed one
+// could never be cleared; and it closed its own tables after one.)
+ClearResult ClearCheque(cb4sqlite::Code4& code, long cheque, const std::string& date);
+
+enum class VoidResult { Voided, NotFound, Cleared, ClosedPeriod };
+
+struct VoidOutcome {
+    VoidResult result = VoidResult::NotFound;
+    int itemsReopened = 0;
+    int rowsRemoved = 0;     // waiting journal rows deleted
+    int rowsReversed = 0;    // transferred rows reversed with new rows
+};
+
+// Void (new, spec 6.3): a cheque made or printed, not cleared. Its items go
+// back to "O" (no cheque, nothing paid); its payment rows still waiting are
+// deleted, and those already transferred are reversed by new rows (Dr bank,
+// Cr AP), dated `voidDate` in its open period; the cheque row goes. One
+// transaction.
+VoidOutcome VoidCheque(cb4sqlite::Code4& code, long cheque, const std::string& voidDate);
+
+struct PurgeOutcome {
+    int items = 0;
+    int cheques = 0;
+};
+
+// Purge Paid Payables (1066, D8): the cleared items ("C") paid before
+// `before`, and the cheques left with no items, are deleted. Nothing open,
+// made or printed is touched (the original deleted the "P" rows: the
+// unfinished ones). One transaction.
+PurgeOutcome PurgePaid(cb4sqlite::Code4& code, const std::string& before);
+
+// What PurgePaid would delete: the cleared items paid before `before`.
+std::vector<OpenItem> PurgeCandidates(cb4sqlite::Code4& code, const std::string& before);

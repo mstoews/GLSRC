@@ -46,7 +46,10 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1030',   # Spec #5 S5-M3: Update AR and AP
            '1044',   # Spec #5 S5-M4: Cash voucher entry
            '1045',   # Spec #5 S5-M5: Create Cheques (only in gl.rc)
-           '1066']   # Spec #5 S5-M5: Hold or Force
+           '1066',   # Spec #5 S5-M5: Hold or Force
+           '1046',   # Spec #5 S5-M6: Bank Reconciliation
+           '1051',   # Spec #5 S5-M6: Clear Cancel Cheque
+           '1048']   # Spec #5 S5-M6: Purge Paid Payables
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -72,6 +75,9 @@ MENU_EDITS = [
     ('MANILA', 'insert_after', '10076', '"Voucher &List...", CM_VOUCHER_LIST'),
     # Spec #5 D7 (S5-M3): Recover for purchase vouchers, beside the GL's.
     ('MANILA', 'insert_after', '10122', '"Recover P&urchase Voucher...", CM_AP_RECOVER'),
+    # Spec #5 S5-M6: Confirm Printed replaces Set Cheque Numbers (D9); Purge goes on the menu (spec 6.4).
+    ('MANILA', 'rename', '8074', '"Confirm Printed &Cheques..."'),
+    ('MANILA', 'insert_after', '1068', '"Purge &Paid Payables...", 1066'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)

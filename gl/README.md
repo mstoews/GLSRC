@@ -177,7 +177,11 @@ DIR=D:\GL\company.db
   - The list shows the posted invoices due by the **Due Date**, and any forced, with what each still owes (the amount less the W/H withheld). **Set Date** refreshes it for another date; **View All** shows every open item, paid ones included, with its state (H held, O open, F forced, P cheque made, V printed, C cleared).
   - **Double-click an invoice** to hold it (it isn't paid until released), force it (paid even if not yet due) or open it again. An invoice already in a payment can't be changed.
   - **Create**, with the bank chosen and the **Starting Cheque No** (the next free one is filled in): one cheque per vendor for its open invoices due and its forced ones. Each invoice is marked paid with its cheque; the payment's GL entry (Dr AP, Cr the bank) goes in AP's journal, dated the **Pay Date**, in that date's period, which must be open. A cheque number already used is refused.
-- **The AP cycle so far:** enter the invoice (or cash voucher), post it, create the cheques, Update AR and AP, then post the GL voucher. Printing cheques and the bank reconciliation come with S5-M6.
+- **Receipts/Payments > Print Cheques** previews the cheques made and not yet printed, one a page: the cheque number and date, the payee and address, the amount in figures and words, the bank, and a stub of the invoices it pays. Print them from the preview, on plain paper.
+- **Receipts/Payments > Confirm Printed Cheques** lists the cheques made and not yet confirmed. Enter the range that printed correctly and **Confirm**; they can't be renumbered after that. A spoiled cheque: select it, enter its new number and **Renumber** (the number moves to its invoices and journal), then print it again.
+- **Receipts/Payments > Bank Reconciliation** lists the cheques not yet cleared. Double-click one: **Clear** it (printed cheques only) with the date it cleared, or **Void** it: its invoices are open again, and its payment is undone (its journal rows removed, or reversed with new rows dated the void if they have gone to the General Ledger).
+- **Maintenance > Purge Paid Payables** deletes the cleared invoices paid before a date, and their cheques. Nothing open, unpaid or uncleared is touched.
+- **The AP cycle:** enter the invoice (or cash voucher), post it, create the cheques, print them, confirm them, Update AR and AP, post the GL voucher; clear the cheques from the bank statement; purge the cleared ones now and then.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

@@ -156,7 +156,7 @@ Checked against the deployed company (`dbf/`):
 - **Everything else is test data from March 1995:**
   - 9 invoice vouchers, all period 2, with references like "SAMPLE INVOICE" and "Sample cheque printing";
   - 1 cash voucher ("TEST INVOICE NO. 1");
-  - 3 cheques (29145–29147), all marked cleared.
+  - 3 cheques (29145–29147). Their `AP_REQST.CLEARED` is "1", which the original's `Tapreqst::bCleared` reads as *not* cleared (it means cleared when "0"; `AddCheque` writes "1" for a new cheque). Six of the invoices they paid are marked "C" in `AP_DIST` (found in S5-M6).
 - **The 40 `AP_JSUM` rows were transferred:** their effect is in the GL balances. For example, 102101 is −36,500.00, and 711000 clinical-trial samples is 16,000.00.
 - **No AP-typed line is in `GL_DIST`.**
 
@@ -270,7 +270,7 @@ Maintenance > **Update AR and AP**:
 ### 6.3 Bank Reconciliation (6085, 1046)
 
 - **The list:** the printed cheques not yet cleared, by bank.
-- **Clear:** double-click one, or select several, to clear it ("C", `AP_REQST.CLEARED`), with the clearing date.
+- **Clear:** double-click one to clear it: its invoices get "C" and `AP_REQST.CLEARED` "0" (the original's meaning), with the clearing date kept in the cheque's reference (`AP_REQST` has no date field for it).
 - **Void a cheque (new):** for a cheque not cleared. It reverses the payment's `AP_JSUM` rows (or, if transferred, writes reversing rows) and returns its invoices to "O".
 
 ### 6.4 Purge (1066)

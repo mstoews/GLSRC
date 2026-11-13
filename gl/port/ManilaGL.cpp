@@ -55,12 +55,9 @@ constexpr wchar_t kGleProp[] = L"GL.UseGle";
 // the other handlers in gl_man.h's "Accounts Payable" / "Accounts
 // Receivable" sections are AP / AR. Everything else is General Ledger.
 const WORD kApCommands[] = {
-    1066,  // APPurgeAccts     ID_PURGEACCTS
     1084,  // APPostAdj        ID_APPOSTADJ
     4046,  // APDelVendors     ID_DELVENDOR
     4047,  // APModVendors     ID_MODVENDOR
-    6085,  // APPayment        ID_PAYMENT
-    8074,  // APChequeAP       CM_CHEQUE_AP
     8079,  // AccountsPayable  CM_ACCOUNT_PAYABLE (an empty handler in gl.cpp)
 };
 const WORD kArCommands[] = {
@@ -84,7 +81,7 @@ constexpr WORD kFixedAssetTypes = 1020;
 // The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5).
 const WORD kApReports[] = {
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
-    4091, 4092,
+    4092,
     8067, 8068, 8069, 8071, 8072, 8073, 8075, 8076, 8077, 8078,
 };
 const WORD kArReports[] = {
@@ -282,6 +279,18 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());
+        return true;
+    case 4091:                             // Print Cheques (AP_CHEQ.RPT): the cheques made, to print (S5-M6)
+        RunApCheques(*this);
+        return true;
+    case 8074:                             // TManilaGL::APChequeAP: Confirm Printed Cheques (S5-M6, D9)
+        RunApConfirmCheques(hwnd());
+        return true;
+    case 6085:                             // TManilaGL::APPayment: Bank Reconciliation (S5-M6)
+        RunApBankReconciliation(hwnd());
+        return true;
+    case 1066:                             // TManilaGL::APPurgeAccts: Maintenance > Purge Paid Payables (S5-M6)
+        RunApPurge(hwnd());
         return true;
     case 1057:                             // TManilaGL::APCreateGLSlip: Receipts/Payments > Create Cheques (S5-M5)
         RunApCreateCheques(hwnd());

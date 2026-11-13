@@ -68,6 +68,7 @@
     <ClInclude Include="..\gl\port\reports\AccountReports.h" />
     <ClInclude Include="..\gl\port\reports\VoucherReports.h" />
     <ClInclude Include="..\gl\port\reports\MasterReports.h" />
+    <ClInclude Include="..\gl\port\reports\ApReports.h" />
     <ClInclude Include="..\gl\port\reports\AssetReports.h" />
   </ItemGroup>
   <ItemGroup>
@@ -104,6 +105,7 @@
     <ClCompile Include="..\gl\port\reports\AccountReports.cpp" />
     <ClCompile Include="..\gl\port\reports\VoucherReports.cpp" />
     <ClCompile Include="..\gl\port\reports\MasterReports.cpp" />
+    <ClCompile Include="..\gl\port\reports\ApReports.cpp" />
     <ClCompile Include="..\gl\port\reports\AssetReports.cpp" />
   </ItemGroup>
   <ItemGroup>
