@@ -21,6 +21,8 @@
 #include <iterator>
 #include <string>
 
+#include "../PortIds.h"     // CM_AR_STATEMENTS
+
 #include "../LegacyIds.h"   // last: see LegacyIds.h
 
 namespace {
@@ -72,6 +74,21 @@ const ListedReport kReports[] = {
     {8069, L"AP Journal Detail"},
     {8075, L"AP Journal: Cash"},
     {8076, L"AP Journal: Invoices and Payments"},
+    {4063, L"AR Sales Pre-Posting"},              // spec #6 7
+    {4073, L"AR Sales Voucher Detail"},
+    {4070, L"AR Voucher Status"},
+    {4056, L"Customer List"},
+    {4058, L"Customer Summary"},
+    {4057, L"Open Receivables Detail"},
+    {4060, L"Accounts Receivable Register"},
+    {4068, L"Aged Receivables 30-60-90"},
+    {4061, L"Collections Forecast"},
+    {4076, L"Receipts Register"},
+    {4071, L"VAT: Sales"},
+    {4072, L"VAT: General Ledger (output VAT)"},
+    {4074, L"AR Journal Summary"},
+    {4075, L"AR Journal Detail"},
+    {CM_AR_STATEMENTS, L"Customer Statements"},
 };
 
 class ReportListDialog : public fx::Dialog {

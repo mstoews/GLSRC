@@ -79,8 +79,10 @@ constexpr WORD kFixedAssetTypes = 1020;
 // The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5), the
 // AP reports with Spec #5 (S5-M7, RunApReport; 1082 and 1990, the adjustment
 // reports, aren't: there are no adjustments, spec #5 7).
+// The AR reports with Spec #6 (S6-M6, RunArReport); 8137 (ar_cust.rpt) existed
+// nowhere and nothing called it: not ported (spec #6 7).
 const WORD kArReports[] = {
-    4056, 4057, 4060, 4061, 4063, 4068, 4069, 4070, 4071, 4072, 4073, 4074, 4075, 4076, 8137,
+    8137,
 };
 
 template <size_t N>
@@ -441,6 +443,7 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         break;
     }
     if (!ctl && RunApReport(*this, id)) return true;   // the AP reports, 4091 Print Cheques among them (spec #5 7)
+    if (!ctl && RunArReport(*this, id)) return true;   // the AR reports (spec #6 7)
     if (ctl || id >= 0xFF00) return false;   // child-window IDs: DefFrameProc
     NotPorted(id);
     return true;

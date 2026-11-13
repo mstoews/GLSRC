@@ -83,6 +83,11 @@ void RunFixedAssetTypes(fx::MdiFrame& frame);
 // no options. False if `id` isn't an AP report.
 bool RunApReport(fx::MdiFrame& frame, WORD id);
 
+// The AR reports (ArReports.h, spec #6 7): runs the report of command `id`
+// (4056 ... 4076, CM_AR_STATEMENTS), straight to the preview. False if `id`
+// isn't an AR report.
+bool RunArReport(fx::MdiFrame& frame, WORD id);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5, then every original report), pages through it at every zoom, and closes it. Returns the GDI + USER

@@ -41,6 +41,7 @@ For the Spec #2 voucher screens, the fixture also has:
 
 For the Spec #3 reports (S3-M2), it also has a year of activity on 14 more accounts (bank 102201, equipment and depreciation, a loan, share capital, sales, cost of sales, salaries in depts 10 and 20, rent, interest, tax, and 999000 Suspense): twelve posted journals in periods 1–7 with their `gl_dist` lines, one period-6 movement with no lines (F2 marks it `*`), one deleted `gl_dist` line, and prior-year and budget amounts on the income accounts. `make_dev_fixture.py`'s `FINANCE_*` tables list them. Every account satisfies `curr_bal = openbal + period1..12`.
 For Spec #5 (Accounts Payable, S5-M0) it also has three vendors (V001 a company with 12 % VAT and 1 % W/H, V002 an individual with 2 % W/H, V003 with neither), six invoice vouchers (1 and 2 open, 3 posted and unpaid, 4 cancelled, 5 cancelled the original's way, 6 posted and paid by cheque 5001, printed but not cleared), one open cash voucher, and AP's journal for them, not yet transferred to the GL, so no GL balance includes it. `make_dev_fixture.py`'s `accounts_payable()` lists the figures.
+For Spec #6 (Accounts Receivable, S6-M0) it also has three customers (C001 a hospital with 10 % VAT and 30 days' terms, C002 a doctor with 10 % VAT, C003 a pharmacy with no VAT and cash terms), six sales vouchers (1 and 2 open, 3 posted and owed in full, 4 posted and partly received, 5 posted and settled, 6 cancelled), two receipts, and AR's journal for them, not yet transferred. `make_dev_fixture.py`'s `accounts_receivable()` lists the figures.
 
 - **`GL.INI`:** `[PERIOD] BATCHNO=99`.
 
@@ -172,7 +173,7 @@ DIR=D:\GL\company.db
 - **Transactions > Post Voucher > Purchase Vouchers** (1047) lists the open invoice vouchers. **OK** posts them all; double-clicking one posts just that one. Posting writes the invoice's open item (ready to pay) and its journal for the General Ledger. A voucher out of balance by a cent, with no lines, or using an account not in the chart is refused with a message.
 - **Transactions > Cancel Voucher > Purchase Vouchers** (1043) lists the open invoice vouchers. Double-click one and confirm: it is kept, marked cancelled.
 - **Transactions > Recover Purchase Voucher** (1015) lists the posted invoice vouchers. Double-click one and confirm to reopen it for editing, removing its open item and journal. A voucher whose journal has gone to the General Ledger, or whose invoice is in a payment, can't be recovered.
-- **Maintenance > Update AR and AP** (1030): AP's posted journal becomes one open General Ledger voucher per period, dated the period's end, with its lines netted by account ("Accounts Payable GL Update"). Post it with Transactions > Post Voucher > General Ledger Voucher. A closed period's rows wait. To undo a transfer before posting, cancel its GL voucher: the rows wait again. (The AR half comes with Spec #6.)
+- **Maintenance > Update AR and AP** (1030): AP's posted journal, then AR's, each becomes one open General Ledger voucher per period, dated the period's end, with its lines netted by account ("Accounts Payable GL Update", "Accounts Receivable GL Update"). Post them with Transactions > Post Voucher > General Ledger Voucher. A closed period's rows wait. To undo a transfer before posting, cancel its GL voucher: the rows wait again.
 - **Receipts/Payments > Create Cheques** (1045): pays the invoices due.
   - The list shows the posted invoices due by the **Due Date**, and any forced, with what each still owes (the amount less the W/H withheld). **Set Date** refreshes it for another date; **View All** shows every open item, paid ones included, with its state (H held, O open, F forced, P cheque made, V printed, C cleared).
   - **Double-click an invoice** to hold it (it isn't paid until released), force it (paid even if not yet due) or open it again. An invoice already in a payment can't be changed.
@@ -182,15 +183,30 @@ DIR=D:\GL\company.db
 - **Receipts/Payments > Bank Reconciliation** lists the cheques not yet cleared. Double-click one: **Clear** it (printed cheques only) with the date it cleared, or **Void** it: its invoices are open again, and its payment is undone (its journal rows removed, or reversed with new rows dated the void if they have gone to the General Ledger).
 - **Maintenance > Purge Paid Payables** deletes the cleared invoices paid before a date, and their cheques. Nothing open, unpaid or uncleared is touched.
 - **The AP cycle:** enter the invoice (or cash voucher), post it, create the cheques, print them, confirm them, Update AR and AP, post the GL voucher; clear the cheques from the bank statement; purge the cleared ones now and then.
-- **Reports**, the AP ones (Reporting > Accounts Payable, and some on Transactions and Receipts/Payments) among them: see [Reports](#reports). They are in the report list too.
+- **Accounts > Sales Customers** (1052, Spec #6): the Accounts Receivable customers.
+  - **Fields:** number, short name and name, address and ship-to address, phone and fax; under **Options** (1063), the AR, sales and VAT accounts, the VAT rate, terms, contact and VIN.
+  - **New** fills in the default accounts (Company Profile > Account Setup: AR, SALE, VATP). Options works before a new customer is first saved.
+  - **Add** checks the names, the rate and the accounts against the chart; a wrong account opens Options on it. **Delete** is refused while the customer has sales vouchers, open items or receipts.
+- **Transactions > Sales Invoice Vouchers** (1053): a customer's invoice.
+  - **The header:** type the customer and press Enter to fill in the accounts, VAT rate, terms and due date; then the invoice number, the document and the period.
+  - **Each Add** saves a product line: a quantity at a unit price (picking a product fills its price), or an amount typed, VAT included, on the customer's sales account or another. The VAT and AR lines are recomputed from all the product lines, so the voucher always balances.
+  - **The Distribution List** shows every line; double-click a product line to change it or Delete it. **Memo** keeps a note on the voucher.
+  - The same customer's invoice number can't be entered twice. **New and Close** ask whether to keep a voucher made in this session; No removes only that voucher.
+- **Transactions > Post Voucher > Sales Voucher** (1061) posts the open sales vouchers (all with Post, or one by double-click): each gets its open item, owed in full, and its journal. **Cancel Voucher > Sales Invoice Voucher** (1054) marks one cancelled, keeping it. **Recover Sales Voucher** reopens a posted one whose journal is still waiting and which has no receipt.
+- **Transactions > Clear Receipts** (1156): what customers pay.
+  - The list shows the invoices with something owed (**View All**: every one). Double-click one to record a receipt (1155): the amount (what's owed is filled in), the date and the bank.
+  - **In full**, **Partial** (the rest stays owed) or **Discount** (the rest is written off as an early-payment discount, split into sales and VAT at the invoice's rate). A short amount with no box ticked asks which.
+  - Each receipt goes in AR's journal at once (Dr bank, Dr sales and VAT for a discount, Cr AR), dated the receipt, in its period, which must be open.
+  - **Receipts** lists the selected invoice's receipts and reverses the latest (a receipt entered by mistake, a bounced cheque): removed if still waiting, reversed with new rows dated today if it has gone to the General Ledger.
+- **Maintenance > Purge Received Receivables** (1062) deletes the settled invoices last received before a date, with their receipts (all with Purge, or one by double-click). Nothing owed is touched, and the vouchers and journal stay.
+- **The AR cycle:** enter the invoice, post it, record the receipts as they come in, Update AR and AP, post the GL voucher; purge the settled ones now and then.
+- **Reports**, the AP and AR ones (Reporting > Accounts Payable and Accounts Receivable, and some on Transactions and Receipts/Payments) among them: see [Reports](#reports). They are in the report list too.
 - **Help > About.**
-- **Everything else:**
-  - Accounts Receivable commands and their reports show a "not yet ported" message naming the spec that brings them (Spec #6).
-  - Other General Ledger commands say they are not part of Spec #1.
+- **Everything else:** other General Ledger commands say they are not part of Spec #1.
 
 ## Reports
 
-Spec #3 replaced the Crystal Reports runtime with the port's own report engine. Every General Ledger, fixed-asset and Accounts Payable report opens in a **preview** window of its own; none goes straight to the printer.
+Spec #3 replaced the Crystal Reports runtime with the port's own report engine. Every General Ledger, fixed-asset, Accounts Payable and Accounts Receivable report opens in a **preview** window of its own; none goes straight to the printer.
 
 ### The reports
 
@@ -226,6 +242,18 @@ Spec #3 replaced the Crystal Reports runtime with the port's own report engine. 
 | Reporting > Accounts Payable > **VAT: AP Vouchers**, **VAT: General Ledger** | the VAT lines of the period's posted AP vouchers; the General Ledger lines on the VAT account (Company Profile, VATR) | none |
 | Reporting > Accounts Payable > **Withholding Tax** | the W/H lines of the period's posted AP vouchers, by W/H account | none |
 | Reporting > Accounts Payable > **AP Journal Summary**, **AP Journal Detail**, **AP Journal: Cash**, **AP Journal: Invoices and Payments** | AP's journal for the General Ledger: what waits for Update AR and AP, by account; the current period's rows, all or by type | none |
+| Transactions > Voucher Reports > **Sales Pre-Posting report** | the open sales vouchers, each with its lines and totals | none |
+| Reporting > Accounts Receivable > **Customer List** | every customer with address, accounts, terms and VAT rate | none |
+| Reporting > Accounts Receivable > **Customer Summary** | a line per customer: invoiced, received, discounts, owed | none |
+| Reporting > Accounts Receivable > **Open Receivables Detail** (also Accounts > Customer Inquiry Report) | what's owed, by customer | none |
+| Reporting > Accounts Receivable > **Accounts Receivable Register** | every open item by customer with its receipts: amount, received, discount, bank, owed, state | none |
+| Reporting > Accounts Receivable > **Voucher Status**, **Sales Voucher Detail** | the current period's sales vouchers, a line each with its state (the total leaves out the cancelled), or with their lines | none |
+| Reporting > Accounts Receivable > **Receipts Register** | the current period's receipts: invoice, bank, amount, discount | none |
+| Reporting > Accounts Receivable > **Aged Receivables 30-60-90** | what's owed by days past due, as at today: current (up to 30, and not yet due), 31-60, 61-90, over 90 | none |
+| Reporting > Accounts Receivable > **Collections Forecast** | what's owed by days to its due date: up to 10 (overdue included), 11-20, 21-30, over 30 | none |
+| Reporting > Accounts Receivable > **VAT: General Ledger**, **VAT: Sales Vouchers** | the General Ledger lines on the output VAT account (Company Profile, VATP); the output VAT of the period's posted sales vouchers, less the VAT of receipts' discounts | none |
+| Reporting > Accounts Receivable > **AR Journal Summary**, **AR Journal Detail** | AR's journal for the General Ledger: what waits for Update AR and AP, by account; the current period's rows (AR invoices, RC receipts) | none |
+| Reporting > Accounts Receivable > **Customer Statements** | per customer owing, the address and the open items, one a page | none |
 
 A report with options asks for them first and keeps them until the program exits. The reports read the books and change nothing.
 

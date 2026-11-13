@@ -87,6 +87,7 @@
 #define CM_VOUCHER_LIST         20503   // Transactions > Voucher List: every voucher in an MDI grid (VoucherBrowser.h)
 #define CM_AP_RECOVER           20504   // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3; ApPosting.h)
 #define CM_AR_RECOVER           20505   // Transactions > Recover Sales Voucher (spec #6 D7, S6-M3; ArPosting.h)
+#define CM_AR_STATEMENTS        20506   // Reporting > Accounts Receivable > Customer Statements (spec #6 7, S6-M6)
 
 // ---- strings ---------------------------------------------------------------
 
