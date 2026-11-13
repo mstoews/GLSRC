@@ -10,6 +10,7 @@
 #include "DepreciationRun.h"
 #include "FixedAssetDisposal.h"
 #include "MasterData.h"
+#include "VoucherBrowser.h"
 #include "VoucherEntry.h"
 #include "VoucherPosting.h"
 #include "TransactionInquiry.h"
@@ -273,6 +274,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
         RunVoucherEntry(hwnd());
         return true;
+    case CM_VOUCHER_LIST:                  // Transactions > Voucher List (VoucherBrowser.h)
+        OpenVoucherBrowser(*this);
+        return true;
     case CM_PRIOR:                         // TGlWindow::GLPrior: Transactions > Prior Period Entry
         RunPriorPeriodEntry(hwnd());
         return true;
@@ -428,6 +432,10 @@ bool ManilaGL::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT&)
         if (menu)
             EnableMenuItem(menu, CM_STATEMENT_LAYOUT,
                            MF_BYCOMMAND | ((GetMenuState(menu, ID_ACCTADD, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
+        // The voucher list opens Voucher Entry: behind its access.
+        if (menu)
+            EnableMenuItem(menu, CM_VOUCHER_LIST,
+                           MF_BYCOMMAND | ((GetMenuState(menu, ID_MODBATCH, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
         return false;        // DefFrameProc too
     }
     case WM_MENUSELECT:

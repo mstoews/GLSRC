@@ -59,6 +59,8 @@ MENU_EDITS = [
     ('GLSUB', 'set_id', '3068', 'CM_REPORT_LIST', '"&Custom Report..."'),
     # Spec #3 6.4 (S3-M4): Accounts > Statement Layout, after the Chart of Accounts Report.
     ('MANILA', 'insert_after', '10071', '"Statement &Layout...", CM_STATEMENT_LAYOUT'),
+    # Transactions > Voucher List: every voucher in an MDI grid (gl/port/VoucherBrowser.h).
+    ('MANILA', 'insert_after', '10076', '"Voucher &List...", CM_VOUCHER_LIST'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)

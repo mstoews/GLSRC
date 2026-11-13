@@ -85,7 +85,7 @@ long iniBatchno()
 
 class VoucherEntry : public MainDialog {
 public:
-    VoucherEntry(bool prior, bool closeAtOnce) : prior_(prior), closeAtOnce_(closeAtOnce) {}
+    VoucherEntry(bool prior, bool closeAtOnce, long start = 0) : prior_(prior), closeAtOnce_(closeAtOnce), start_(start) {}
 
 protected:
     bool OnInitDialog() override;
@@ -121,6 +121,7 @@ private:
 
     bool prior_;
     bool closeAtOnce_;
+    long start_;                   // the voucher to show on opening (the voucher browser); 0: a new one
     std::string mode_;
     bool transaction_ = false;     // bTransaction: a voucher was created and not yet confirmed
 
@@ -191,6 +192,7 @@ bool VoucherEntry::OnInitDialog()
     SelectCode(kProducts, productCodes_, {});
     SelectCode(kDoctors, doctorCodes_, {});
     SetFocus(GetDlgItem(hwnd(), kPeriod));
+    if (start_ > 0) ShowVoucher(start_);
     if (closeAtOnce_) PostMessageW(hwnd(), WM_COMMAND, IDCANCEL, 0);
     return false;   // focus set
 }
@@ -590,15 +592,15 @@ void VoucherEntry::ToggleToolBox()   // TGLBatchEntry::ShowToolBox
 
 } // namespace
 
-INT_PTR RunVoucherEntry(HWND frame)
+INT_PTR RunVoucherEntry(HWND frame, long voucher)
 {
-    VoucherEntry dlg(false, false);
+    VoucherEntry dlg(false, false, voucher);
     return dlg.DoModal(1013, frame);
 }
 
-INT_PTR RunPriorPeriodEntry(HWND frame)
+INT_PTR RunPriorPeriodEntry(HWND frame, long voucher)
 {
-    VoucherEntry dlg(true, false);
+    VoucherEntry dlg(true, false, voucher);
     return dlg.DoModal(1013, frame);
 }
 
