@@ -5,8 +5,11 @@
 
 #include "AccountReports.h"
 #include "ApReports.h"
+#include "ArReports.h"
 #include "AssetReports.h"
 #include "../Ap.h"       // EnsureApTables
+#include "../Ar.h"       // EnsureArTables
+#include "../PortIds.h"  // CM_AR_STATEMENTS
 #include "../Assets.h"   // EnsureAssetTables
 #include "MasterReports.h"
 #include "ReportOptions.h"
@@ -276,6 +279,17 @@ const ApReportEntry kApReportTable[] = {
     {8075, ApJournalCash}, {8076, ApJournalInvoices},
 };
 
+// The AR reports by command (spec #6 7). 4061 printed the aged report again
+// and 4069 (ID_ARRETAINED, on no menu) the forecast: both run the forecast.
+const ApReportEntry kArReportTable[] = {
+    {4063, ArSalesPrePosting}, {4073, ArSalesVoucherDetail}, {4070, ArVoucherStatus},
+    {4056, ArCustomerList}, {4058, ArCustomerSummary}, {4057, ArOpenReceivables},
+    {4060, ArRegister}, {4068, ArAgedReceivables}, {4061, ArCollectionsForecast},
+    {4069, ArCollectionsForecast}, {4076, ArReceiptsRegister}, {4071, ArVatSales},
+    {4072, ArVatGl}, {4074, ArJournalSummary}, {4075, ArJournalDetail},
+    {CM_AR_STATEMENTS, ArStatements},
+};
+
 }   // namespace
 
 bool RunApReport(fx::MdiFrame& frame, WORD id)
@@ -283,6 +297,18 @@ bool RunApReport(fx::MdiFrame& frame, WORD id)
     for (const ApReportEntry& r : kApReportTable)
         if (r.id == id) {
             EnsureApTables(cb);
+            const ApBuilder build = r.build;
+            RunReport(frame, {}, [build](const ReportContext& ctx) { return build(cb, ctx); });
+            return true;
+        }
+    return false;
+}
+
+bool RunArReport(fx::MdiFrame& frame, WORD id)
+{
+    for (const ApReportEntry& r : kArReportTable)
+        if (r.id == id) {
+            EnsureArTables(cb);
             const ApBuilder build = r.build;
             RunReport(frame, {}, [build](const ReportContext& ctx) { return build(cb, ctx); });
             return true;
@@ -328,10 +354,15 @@ int StressReports(int times)
         [](const ReportContext& ctx) { return FixedAssetTypesListing(cb, ctx); },
     };
     EnsureApTables(cb);
+    EnsureArTables(cb);
     auto round = [&] {
         for (const ReportBuilder& b : builders)
             if (!stressOnce(frame, b)) return false;
         for (const ApReportEntry& r : kApReportTable) {
+            const ApBuilder build = r.build;
+            if (!stressOnce(frame, [build](const ReportContext& ctx) { return build(cb, ctx); })) return false;
+        }
+        for (const ApReportEntry& r : kArReportTable) {
             const ApBuilder build = r.build;
             if (!stressOnce(frame, [build](const ReportContext& ctx) { return build(cb, ctx); })) return false;
         }

@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 to M5 built)
+**Plan status:** In progress (S6-M0 to M6 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -376,6 +376,28 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 6 — Reports, report list, clean-up
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): the AR handlers in `ap_repts.cpp` each printed one `.RPT`: 4056 `_vend`, 4057 `_detl`, 4060 `_bala`, 4061 and 4068 both `_agedc`, 4069 (`ID_ARRETAINED`, on no menu) `_agedr`, 4070 `_bstat`, 4071 `_vatap`, 4072 `_vatgl`, 4073 `_btchd`, 4074 (`ID_GLSUMMARY`) `_jsum`, 4075 (`ID_GLDETAIL`) `_jsumd`, 4076 `_recei` (nowhere), 8137 `_cust` (nowhere). 4058 had no handler, as the spec says.
+> - **`gl/port/reports/ArReports.{h,cpp}`** (task 2): the 15 reports of §7, on `ApReports`' pattern (voucher-with-lines, aged and journal layouts), over `Ar.h`'s records in cents. "Owed" is the open item's `REMAINDER`, so a discount settles an invoice without being received.
+>   - Customer Summary adds a Discounts column: invoiced = received + discounts + owed.
+>   - The Register shows each item's receipts beneath it.
+>   - VAT: Sales adds each receipt discount's VAT (a debit).
+>   - The statements are slips, one customer a page.
+> - **`RunReport.cpp`** (task 3): `kArReportTable` and `RunArReport` (4069 runs the forecast too); `StressReports` loops it after AP's. `ManilaGL.cpp` calls `RunArReport` after `RunApReport`. `kArReports` (the not-ported list) keeps only 8137.
+> - **`ReportList.cpp`** (task 4): the 15 AR entries.
+> - **`prune_rc.py`** (task 5): Reporting > Accounts Receivable names each report it runs.
+>   - Renamed: Customer Detail → Customer List; "Reqister" → Register; Overdue payments → Aged Receivables; Aged cash requirement → Collections Forecast.
+>   - 4074 and 4075 swapped back to AR Journal Summary and Detail.
+>   - Added: Sales Voucher Detail (4073), Receipts Register (4076), VAT: General Ledger (4072), VAT: Sales Vouchers (4071) and Customer Statements (`CM_AR_STATEMENTS` 20506).
+>   - 8137 was on no menu. The status-bar strings 4071-4075 are shared with dialog messages (4072 is "The field %s must be completed"), so they're left.
+> - **README** (task 6): the AR screens of M1-M5 (the "not yet ported" line goes), the AR fixture, Update AR and AP's AR half, and the AR reports' rows.
+> - **Tests** (task 7): two cases.
+>   - **The fixture:** every report's shape. The pre-posting totals 4,620.00 each way; status and detail match the period's vouchers. Summary, open items, register and both aged reports total 2,800.00 owed, and the aged buckets add to it. The receipts register shows 1,300.00, VAT: Sales 300.00 and the journal summary 5,400.00 each way; there are two statements. After a discount receipt, the summary adds up and VAT: Sales shows 9.09.
+>   - **A4:** every column fits, before and after posting and a discount (`GdiMeasure`).
+>
+>   `gl_tests`: 162 cases (`[ar]` 21).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (163 s, the AR reports paged through at every zoom). In the app, on a scratch copy with the fixture, each of the 16 commands (4063, 4073, 4070, 4056, 4058, 4057, 4060, 4068, 4061, 4069, 4076, 4071, 4072, 4074, 4075, 20506) posted to the frame opened its preview. Screenshots checked the Register, the aged report and a statement.
 
 **Goal:** the AR reports of spec §7 preview and print, from the report list and the menu.
 

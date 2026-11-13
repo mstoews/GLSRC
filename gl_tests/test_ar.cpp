@@ -18,8 +18,16 @@
 #include "Accounts.h"   // TrimText
 #include "Ar.h"
 #include "Vouchers.h"   // the transfer's GL vouchers
+#include "reports/ArReports.h"
+#include "reports/ReportContext.h"
+
+#include "report/Layout.h"
+#ifdef _WIN32
+#include "report/win32/Gdi.h"
+#endif
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1117,3 +1125,174 @@ TEST_CASE("PurgeReceived: settled items received before a date, with their recei
     CHECK(FindArVoucher(db.code, 3)->mode == ar_mode::kPosted);
     CHECK(ArPurgeCandidates(db.code, "20261101").empty());
 }
+
+// ---- the reports (S6-M6) -------------------------------------------------------------------
+
+namespace {
+
+int arRowsOf(const rpt::Report& r, rpt::RowKind kind)
+{
+    int n = 0;
+    for (const rpt::Row& row : r.rows) n += row.kind == kind;
+    return n;
+}
+
+// The last Total row's amount in column `col` (-1 if there isn't one).
+std::int64_t arTotalAt(const rpt::Report& r, size_t col)
+{
+    for (auto it = r.rows.rbegin(); it != r.rows.rend(); ++it)
+        if (it->kind == rpt::RowKind::Total) return col < it->cells.size() ? it->cells[col].value : -1;
+    return -1;
+}
+
+void arCheckShape(const rpt::Report& r)
+{
+    INFO(r.title);
+    CHECK(!r.rows.empty());
+    for (const rpt::Row& row : r.rows)
+        if (row.kind == rpt::RowKind::Detail || row.kind == rpt::RowKind::GroupFooter ||
+            row.kind == rpt::RowKind::Total)
+            CHECK(row.cells.size() == r.columns.size());
+}
+
+using ArBuilder = rpt::Report (*)(cb4sqlite::Code4&, const ReportContext&);
+const ArBuilder kArReports[] = {ArSalesPrePosting, ArSalesVoucherDetail, ArVoucherStatus, ArCustomerList,
+                                ArCustomerSummary, ArOpenReceivables, ArRegister, ArAgedReceivables,
+                                ArCollectionsForecast, ArReceiptsRegister, ArVatSales, ArVatGl, ArJournalSummary,
+                                ArJournalDetail, ArStatements};
+
+} // namespace
+
+TEST_CASE("The AR reports on the fixture (S6-M6, D14)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    REQUIRE(ctx.currentPeriod == 7);
+    for (ArBuilder build : kArReports) arCheckShape(build(db.code, ctx));
+
+    const auto vouchers = LoadArVouchers(db.code);
+
+    // 4063: the open vouchers (1, 2), each balanced: 3,300.00 + 1,320.00.
+    const rpt::Report pre = ArSalesPrePosting(db.code, ctx);
+    CHECK(arRowsOf(pre, rpt::RowKind::GroupHeader) == 2);
+    CHECK(arTotalAt(pre, 3) == 462000);
+    CHECK(arTotalAt(pre, 4) == 462000);
+
+    // 4073 and 4070: the period's vouchers, every state; the status total leaves out the cancelled.
+    int inPeriod = 0;
+    std::int64_t total = 0;
+    for (const ArVoucher& v : vouchers)
+        if (v.period == 7) {
+            ++inPeriod;
+            if (!v.cancelled()) total += v.total;
+        }
+    CHECK(inPeriod > 0);
+    CHECK(arRowsOf(ArSalesVoucherDetail(db.code, ctx), rpt::RowKind::GroupHeader) == inPeriod);
+    const rpt::Report status = ArVoucherStatus(db.code, ctx);
+    CHECK(arRowsOf(status, rpt::RowKind::Detail) == inPeriod);
+    CHECK(arTotalAt(status, 5) == total);
+
+    // 4056: every customer.
+    CHECK(arRowsOf(ArCustomerList(db.code, ctx), rpt::RowKind::Detail) == 3);
+
+    // 4058: invoiced = received + discounts + owed: 4,100.00 = 1,300.00 + 0 + 2,800.00.
+    const rpt::Report summary = ArCustomerSummary(db.code, ctx);
+    CHECK(arRowsOf(summary, rpt::RowKind::Detail) == 3);
+    CHECK(arTotalAt(summary, 2) == 410000);
+    CHECK(arTotalAt(summary, 3) == 130000);
+    CHECK(arTotalAt(summary, 5) == 280000);
+
+    // 4057: what's owed: 3 (2,200.00) and 4 (600.00); 5 is settled.
+    const rpt::Report open = ArOpenReceivables(db.code, ctx);
+    CHECK(arRowsOf(open, rpt::RowKind::Detail) == 2);
+    CHECK(arTotalAt(open, 5) == 280000);
+
+    // 4060: every open item and its receipts.
+    const rpt::Report reg = ArRegister(db.code, ctx);
+    CHECK(arRowsOf(reg, rpt::RowKind::Detail) == 5);   // 3 items, 2 receipts
+    CHECK(arTotalAt(reg, 3) == 410000);
+    CHECK(arTotalAt(reg, 4) == 130000);
+    CHECK(arTotalAt(reg, 7) == 280000);
+
+    // 4068 and 4061: the buckets add to what's owed. As at 10 Nov, 3 (due 4 Nov)
+    // and 4 (due 7 Nov) are under 30 days late: Current; and overdue: the first column.
+    for (const rpt::Report& a : {ArAgedReceivables(db.code, ctx), ArCollectionsForecast(db.code, ctx)}) {
+        INFO(a.title);
+        std::int64_t buckets = 0;
+        for (size_t k = 2; k <= 5; ++k) buckets += arTotalAt(a, k);
+        CHECK(buckets == arTotalAt(a, 6));
+        CHECK(arTotalAt(a, 6) == 280000);
+        CHECK(arTotalAt(a, 2) == 280000);
+    }
+
+    // 4076: the period's two receipts.
+    const rpt::Report receipts = ArReceiptsRegister(db.code, ctx);
+    CHECK(arRowsOf(receipts, rpt::RowKind::Detail) == 2);
+    CHECK(arTotalAt(receipts, 6) == 130000);
+
+    // 4071: the posted vouchers' VAT lines (3: 200.00, 4: 100.00; 5 has none).
+    const rpt::Report vat = ArVatSales(db.code, ctx);
+    CHECK(arRowsOf(vat, rpt::RowKind::Detail) == 2);
+    CHECK(arTotalAt(vat, 6) == 30000);
+
+    // 4074: the waiting journal, balanced; 4075: the period's, by account.
+    const rpt::Report sum = ArJournalSummary(db.code, ctx);
+    CHECK(arTotalAt(sum, 2) == 540000);
+    CHECK(arTotalAt(sum, 3) == 540000);
+    const rpt::Report det = ArJournalDetail(db.code, ctx);
+    CHECK(arRowsOf(det, rpt::RowKind::Detail) == 12);
+    CHECK(arTotalAt(det, 6) == arTotalAt(det, 7));
+
+    // Statements: one per customer owing (C001, C002), each a slip.
+    const rpt::Report st = ArStatements(db.code, ctx);
+    CHECK(st.slipMode);
+    CHECK(arRowsOf(st, rpt::RowKind::Slip) == 2);
+
+    // A discount shows in the summary, the register and the VAT report.
+    REQUIRE(RecordReceipt(db.code, 3, "20261025", {"102101", ""}, 210000, true).discount == 10000);
+    const rpt::Report summary2 = ArCustomerSummary(db.code, ctx);
+    CHECK(arTotalAt(summary2, 3) == 340000);
+    CHECK(arTotalAt(summary2, 4) == 10000);
+    CHECK(arTotalAt(summary2, 5) == 60000);
+    CHECK(arTotalAt(summary2, 2) == arTotalAt(summary2, 3) + arTotalAt(summary2, 4) + arTotalAt(summary2, 5));
+    CHECK(arTotalAt(ArRegister(db.code, ctx), 5) == 10000);
+    const rpt::Report vat2 = ArVatSales(db.code, ctx);
+    CHECK(arTotalAt(vat2, 5) == 909);   // the discount's VAT: round(100.00 x 10 / 110)
+}
+
+#ifdef _WIN32
+// Laid out on A4 with the engine's fonts measured by GDI: no text cut short,
+// no number or date printed as "###" (plan S6-M6 task 7).
+TEST_CASE("The AR reports' columns fit A4 (S6-M6)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    rpt::win32::GdiMeasure measure;
+    auto check = [&](const rpt::Report& r) {
+        INFO(r.title);
+        std::set<std::string> printed;
+        for (const rpt::Page& page : rpt::Layout(r, rpt::PageSetup::A4(r.orientation), measure))
+            for (const rpt::TextOp& t : page.texts) {
+                CHECK(t.text.find("###") == std::string::npos);
+                printed.insert(t.text);
+            }
+        for (const rpt::Row& row : r.rows) {
+            if (row.kind == rpt::RowKind::GroupHeader && !row.text.empty()) {
+                INFO(row.text);
+                CHECK(printed.count(row.text) == 1);
+            }
+            for (const rpt::Cell& c : row.cells)
+                if (c.type == rpt::CellType::Text && !c.text.empty()) {
+                    INFO(c.text);
+                    CHECK(printed.count(c.text) == 1);
+                }
+        }
+    };
+    for (ArBuilder build : kArReports) check(build(db.code, ctx));
+    PostArVouchers(db.code);   // more rows of every kind
+    REQUIRE(RecordReceipt(db.code, 3, "20261025", {"102101", ""}, 210000, true, "Cheque 1001").settled);
+    for (ArBuilder build : kArReports) check(build(db.code, ctx));
+}
+#endif

@@ -82,7 +82,7 @@ for f in "$ROOT"/gl_tests/*.cpp "$ROOT"/gl/port/Accounts.cpp "$ROOT"/gl/port/Mas
          "$ROOT"/gl/port/reports/ReportContext.cpp "$ROOT"/gl/port/reports/SampleReport.cpp \
          "$ROOT"/gl/port/reports/Balances.cpp "$ROOT"/gl/port/reports/TrialBalances.cpp \
          "$ROOT"/gl/port/reports/StatementLayout.cpp "$ROOT"/gl/port/reports/Statements.cpp \
-         "$ROOT"/gl/port/reports/AccountReports.cpp "$ROOT"/gl/port/reports/VoucherReports.cpp          "$ROOT"/gl/port/reports/MasterReports.cpp "$ROOT"/gl/port/reports/AssetReports.cpp "$ROOT"/gl/port/reports/ApReports.cpp; do
+         "$ROOT"/gl/port/reports/AccountReports.cpp "$ROOT"/gl/port/reports/VoucherReports.cpp          "$ROOT"/gl/port/reports/MasterReports.cpp "$ROOT"/gl/port/reports/AssetReports.cpp "$ROOT"/gl/port/reports/ApReports.cpp "$ROOT"/gl/port/reports/ArReports.cpp; do
   o="$OUT/g_$(basename "$f" .cpp).o"; compile "$f" "$o" $CATCH -I"$ROOT/gl/port" -I"$ROOT/gl_tests"; G="$G $o"
 done
 # shellcheck disable=SC2086

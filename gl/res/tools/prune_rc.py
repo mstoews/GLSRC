@@ -92,6 +92,22 @@ MENU_EDITS = [
     # Spec #6 D11 (S6-M5): AR's purge moves from Transactions to beside AP's, renamed for what it does.
     ('MANILA', 'remove', '4062', '"Purge C&leared Accounts..."'),
     ('MANILA', 'insert_after', '1066', '"Purge Recei&ved Receivables...", 4062'),
+    # Spec #6 7 (S6-M6): Reporting > Accounts Receivable names each report it runs; 4074 and 4075
+    # were swapped; 4073, 4076, 4071, 4072 and the statements join it.
+    ('MANILA', 'rename', '4056', '"&Customer List..."', '"&Customer Detail..."'),
+    ('MANILA', 'rename', '4058', '"Customer &Summary..."', '"&Customer Summary..."'),
+    ('MANILA', 'rename', '4057', '"&Open Receivables Detail..."', '"&Detailed open receivables..."'),
+    ('MANILA', 'rename', '4060', '"&Accounts Receivable Register..."', '"&Accounts Receivable Reqister..."'),
+    ('MANILA', 'rename', '4070', '"Voucher S&tatus..."', '"&Voucher status report..."'),
+    ('MANILA', 'insert_after', '4070', '"Sales Voucher D&etail...", 4073'),
+    ('MANILA', 'insert_after', '4073', '"Receipts Re&gister...", 4076'),
+    ('MANILA', 'rename', '4068', '"Aged &Receivables 30-60-90..."', '"&Overdue payments 30-60-90..."'),
+    ('MANILA', 'rename', '4061', '"Co&llections Forecast..."', '"&Aged cash requirement..."'),
+    ('MANILA', 'insert_after', '4061', '"VAT: &General Ledger...", 4072'),
+    ('MANILA', 'insert_after', '4072', '"VAT: Sales &Vouchers...", 4071'),
+    ('MANILA', 'rename', '4074', '"AR Journal S&ummary..."', '"Detail of AR Voucher Entries..."'),
+    ('MANILA', 'rename', '4075', '"AR &Journal Detail..."', '"Summary of AR Entries..."'),
+    ('MANILA', 'insert_after', '4075', '"Customer State&ments...", CM_AR_STATEMENTS'),
     # Spec #5 7 (S5-M7): the AP report labels. 4091 was on Receipts/Payments
     # twice, once as "Customer Sales Statements"; 4092, "Customer Statement
     # Detail", is the cheques' Payment Detail; 1060 was on Reporting twice;
