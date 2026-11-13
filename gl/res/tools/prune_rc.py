@@ -288,20 +288,44 @@ def new_font(line, dialog):
 # the control by `dw` dialog units. Key: (dialog, control), the control being
 # its ID as written in the template, or, for the -1 labels, its quoted text.
 # Control None widens the dialog itself. Keep each entry to a few units, with
-# a comment saying what /checkres reported.
+# a comment saying what /checkres reported. A value is `dw`, or a tuple
+# (dw, dh) that also makes the control `dh` units taller, or (dw, dh, '"Text"')
+# that also replaces its text, for a label with no room to grow into.
 PATCHES = {
     # ('1010', '2021'): 4,   # e.g.: "&Retained earnings", text 78 px, room 72 px
+    # Medical Reps (1006) and Doctor Codes (1040): the field starts 5 units
+    # after the label, so "Postal Code/Zip Code" (wraps to 30 px, room 15 px)
+    # can't grow; the company is in Manila, where it is a postal code.
+    ('1006', '"Postal Code/Zip Code"'): (0, 0, '"Postal Code"'),
+    ('1040', '"Postal Code/Zip Code"'): (0, 0, '"Postal Code"'),
+    ('1006', '"Credit Limit"'): 15,   # wraps to 30 px high, room 15 px; its field is at x 55
+    ('1040', '"Credit Limit"'): 15,   # the same
+    # Voucher Entry (1013), FONT 8.
+    ('1013', '"Description"'): 3,     # text 59 px, room 57 px
+    ('1013', '"Date"'): (5, 2),       # text 13 px high, room 11 px; its field is at x 211
+    ('1013', '"Cheque No."'): 4,      # wraps to 26 px high, room 20 px; its field is at x 50
+    # Recover / Post (1015): the voucher number is at x 250.
+    ('1015', '"Posting Voucher Number :"'): 16,   # wraps to 30 px high, room 15 px
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)
 applied = set()
 
 
-def widen(nums, dw):
-    """nums: 'x, y, w, h[, rest]' -> w + dw."""
+def widen(nums, dw, dh=0):
+    """nums: 'x, y, w, h[, rest]' -> w + dw, h + dh."""
     parts = [p.strip() for p in nums.split(',')]
     parts[2] = str(int(parts[2]) + dw)
+    parts[3] = str(int(parts[3]) + dh)
     return ', '.join(parts)
+
+
+def patch_of(value):
+    """A PATCHES value -> (dw, dh, new text or None)."""
+    if isinstance(value, int):
+        return value, 0, None
+    dw, dh, *text = value
+    return dw, dh, text[0] if text else None
 
 
 def patch_dialog(name, lines):
@@ -317,13 +341,13 @@ def patch_dialog(name, lines):
             for key in (cid.strip(), text):
                 if (name, key) not in PATCHES:
                     continue
-                dw = PATCHES[(name, key)]
+                dw, dh, new_text = patch_of(PATCHES[(name, key)])
                 if kind.upper() == 'CONTROL':   # "class", style, x, y, w, h
                     cls, style, nums = rest.split(',', 2)
-                    rest = f'{cls},{style}, {widen(nums, dw)}'
+                    rest = f'{cls},{style}, {widen(nums, dw, dh)}'
                 else:                           # x, y, w, h[, style]
-                    rest = widen(rest, dw)
-                l = f'{indent}{kind} {text}, {cid}, {rest}'
+                    rest = widen(rest, dw, dh)
+                l = f'{indent}{kind} {new_text or text}, {cid}, {rest}'
                 applied.add((name, key))
                 break
         out.append(new_font(l, name))
