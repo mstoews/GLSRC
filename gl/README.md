@@ -155,6 +155,12 @@ DIR=D:\GL\company.db
   3. Print the Fixed Assets Listing: its check against the ledger should agree.
 
   To undo a run before posting, cancel its voucher. After disposing of an asset, record the entry Disposal gives in Voucher Entry, so the check agrees again.
+- **Accounts > Purchase Vendors** (1041, Spec #5): the Accounts Payable vendors.
+  - **Fields:** number, short name and name, address, phone and fax, contact, VAT number, VAT % and W/H %, company or individual, terms, discount, the vendor's AP account and VAT account, medical rep.
+  - **New** fills in the default AP account (Company Profile > Account Setup, AP) and VAT account (VATR).
+  - **Add** checks the required fields, the type (company or individual: it chooses the W/H account), the rates, and the accounts against the chart; it updates an existing vendor after asking.
+  - **Delete** is refused while the vendor has vouchers, open items or cheques, naming one.
+  - Typing a number and pressing Enter (or **Set Data**) shows the vendor; **Search** shows the list (`GL.INI [AP_VEND]`).
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

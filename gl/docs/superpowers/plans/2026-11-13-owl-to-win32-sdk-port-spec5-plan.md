@@ -126,6 +126,37 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 1 — Vendors (1041)
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.2 holds. `SetData` seeks `GetField(ID_VENDORNO) == 0`, a boolean, so it never finds the vendor. `Ok` checks only the number and the names; it never checks the accounts, and keeps the last type when neither radio button is set. Further findings in dialog 1041:
+>   - **The labels don't match the fields:** 4009 (`ID_VENDORCONTACT`) is labelled "TIN No."; 1039 (the VIN) "VAT No."; 5111, beside "VIN No.", is read by nothing. `ID_VENDORTEL` and `ID_VENDORSTATUS` aren't in the template. The deployed vendors use `CONTACT` (3 of 130) and never `VIN`.
+>   - **Two default buttons:** Add and Delete are both 32785, so the dialog took Delete as its default, and **Enter asked to delete the vendor**.
+>   - **`RADIOBUTTON … BS_AUTORADIOBUTTON`** is 0xD, `BS_SPLITBUTTON` on Win32: Individual and Company drew as split buttons that never show a check.
+>   - String 6017, the original's "not found", says "Customer number not found."
+> - **`prune_rc.py`** (task 2): 1041 added. A `RADIOBUTTON` with `BS_AUTORADIOBUTTON` is now written `AUTORADIOBUTTON` (only 1041 has one). `/checkres` found "W/H Tax percentage" 1 px too wide, with its field right after it: `PATCHES` renames it "W/H %", like the "VAT %" beside it (the patch can now replace text, from S5-M0's fixes).
+> - **`gl/port/ApVendors.{h,cpp}`** (task 3), the Spec #2 / #4 master-data pattern:
+>   - **Enter on the number**, or Set Data, shows the vendor (D12). A new number moves on to the short name.
+>   - **Add** runs `Ap.h`'s new `CheckVendor`, then asks before updating an existing vendor (6037). It keeps the vendor shown after an update and clears after adding, as the original.
+>     - The checks: string 8101 naming the field; a type is required; rates must be 0–99; the AP account must be in the chart; a VAT account must be in the chart, and is required with a VAT rate.
+>   - **Delete** asks (6034), then calls `DeleteVendor`. That refuses while the vendor has an invoice or cash voucher (cancelled ones too), an open item or a cheque, naming it (D12).
+>   - **New** fills in `GL_SETAT` AP and VATR (D12).
+>   - **Search** opens the list (`GL.INI [AP_VEND]`; Vendor, Short Name, Name). Top / Bottom / Next / Previous stop at the ends.
+>   - **The template's flaws, fixed in code:**
+>     - 4009 is labelled "Contact"; 5111 and its label are hidden.
+>     - Add is the default button (`DM_SETDEFID`), and Delete loses the default style.
+>     - The pictures: New uses 4057's icon and Search 4054's, so no icon is added; `/checkres`'s `DialogCase` gained `borrowedPics` for that.
+> - **Wire** (task 4): 4045 (`ID_ADDVENDOR`) in `ManilaGL.cpp`, out of `kApCommands`; `/checkres` loads 1041; `/stress` has an AP step, `StressAp`, which later screens join.
+> - **Tests** (task 5): `CheckVendor` (each refusal; the deployed odd types "R" and "X" refused) and `DeleteVendor` (by invoice, by a cancelled voucher, by a cash voucher; not found; deleted, leaving the others). `gl_tests`: 125 cases.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (68 s, every step). Driven in the app (a scratch copy with the fixture, typing at the screen):
+>   - New shows 221002 / 148000;
+>   - V001 and Enter: shown, Company checked;
+>   - Delete V001: asks, then "invoice voucher 1 is theirs";
+>   - V002 and Enter: Individual, W/H 2, terms 15; Next: V003;
+>   - adding V004 without a name names the field; without a type, the type message; with AP 999999, the account message; then added and cleared;
+>   - V004 and Enter shows what was saved; Delete removes it (no vouchers);
+>   - changing V002's city asks 6037, and Yes saves only that.
+>
+>   Screenshots checked the labels, the radio buttons and the defaults. Found while driving: the screen's pictures and the default button, both fixed above.
+
 **Goal:** vendors can be maintained.
 
 ### Tasks

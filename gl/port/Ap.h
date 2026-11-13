@@ -116,6 +116,28 @@ std::optional<Vendor> FindVendor(cb4sqlite::Code4& code, const std::string& numb
 // vendor gets them blank, and a replaced one keeps them.
 bool SaveVendor(cb4sqlite::Code4& code, const Vendor& v);
 
+// What Vendors' Add refuses (plan S5-M1), in the order the screen checks it.
+// `field` names the input to put the focus on.
+enum class VendorField { None, Number, ShortName, Name, Type, VatRate, WhRate, ApAccount, VatAccount };
+struct VendorProblem {
+    VendorField field = VendorField::None;
+    enum class Kind {
+        Required,       // string 8101, naming the field (TAPVendorAdd::Ok's szEnterError)
+        NoType,         // neither Individual nor Company: the W/H account depends on it
+        BadRate,        // a rate outside 0-99 (the fields are N2)
+        BadAccount,     // the account and dept aren't in the chart (the original never checked)
+        VatAccountNeeded,   // a VAT rate with no VAT account: invoices would book VAT nowhere
+    } kind = Kind::Required;
+};
+std::optional<VendorProblem> CheckVendor(cb4sqlite::Code4& code, const Vendor& v);
+
+// TAPVendorAdd::Delete, refusing a vendor still in use (D12): any invoice or
+// cash voucher (cancelled ones too: they're the record), open item or cheque.
+// `usedBy` describes the first found ("invoice voucher 1", "cheque 5001").
+// Otherwise the record is deleted and the table packed, as the original.
+enum class DeleteVendorResult { Deleted, NotFound, InUse };
+DeleteVendorResult DeleteVendor(cb4sqlite::Code4& code, const std::string& number, std::string* usedBy = nullptr);
+
 // ---- vouchers ---------------------------------------------------------------------
 
 enum class ApKind { Invoice, Cash };   // ap_btch / ap_cash

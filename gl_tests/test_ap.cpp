@@ -395,3 +395,95 @@ TEST_CASE("EnsureApTables creates the tables in an empty company", "[ap]")
     CHECK(LoadApLines(db.code, ApKind::Invoice, 1).size() == 2);
     CHECK(EnsureApTables(db.code) == 0);   // the tables exist now
 }
+
+TEST_CASE("CheckVendor: what Vendors' Add refuses (S5-M1)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    Vendor v = *FindVendor(db.code, "V001");
+    CHECK_FALSE(CheckVendor(db.code, v));
+
+    auto refused = [&](Vendor x) { return CheckVendor(db.code, x); };
+    using K = VendorProblem::Kind;
+    {
+        Vendor x = v;
+        x.number = " ";
+        CHECK(refused(x)->field == VendorField::Number);
+        CHECK(refused(x)->kind == K::Required);
+    }
+    {
+        Vendor x = v;
+        x.shortName.clear();
+        CHECK(refused(x)->field == VendorField::ShortName);
+    }
+    {
+        Vendor x = v;
+        x.name.clear();
+        CHECK(refused(x)->field == VendorField::Name);
+    }
+    {
+        Vendor x = v;
+        x.type.clear();   // the deployed vendors have types like "R" and "X"
+        CHECK(refused(x)->kind == K::NoType);
+        x.type = "R";
+        CHECK(refused(x)->kind == K::NoType);
+    }
+    {
+        Vendor x = v;
+        x.vatRate = 100;
+        CHECK(refused(x)->field == VendorField::VatRate);
+        x.vatRate = 12;
+        x.whRate = -1;
+        CHECK(refused(x)->field == VendorField::WhRate);
+    }
+    {
+        Vendor x = v;
+        x.ap = {"999999", ""};
+        CHECK(refused(x)->field == VendorField::ApAccount);
+        CHECK(refused(x)->kind == K::BadAccount);
+        x.ap = {"221002", "10"};   // 221002 has no dept 10
+        CHECK(refused(x)->field == VendorField::ApAccount);
+    }
+    {
+        Vendor x = v;
+        x.vat = {"999999", ""};
+        CHECK(refused(x)->field == VendorField::VatAccount);
+        x.vat = {};
+        CHECK(refused(x)->kind == K::VatAccountNeeded);   // VAT 12 % with nowhere to book it
+        x.vatRate = 0;
+        CHECK_FALSE(refused(x));                           // no VAT, no VAT account: fine
+    }
+}
+
+TEST_CASE("DeleteVendor refuses a vendor in use (D12)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    std::string usedBy;
+    CHECK(DeleteVendor(db.code, "V001", &usedBy) == DeleteVendorResult::InUse);
+    CHECK(usedBy == "invoice voucher 1");
+    CHECK(DeleteVendor(db.code, "V003", &usedBy) == DeleteVendorResult::InUse);
+    CHECK(usedBy == "invoice voucher 4");   // cancelled vouchers count: they're the record
+    CHECK(DeleteVendor(db.code, "V999") == DeleteVendorResult::NotFound);
+
+    Vendor n;
+    n.number = "V004";
+    n.name = "Unused";
+    SaveVendor(db.code, n);
+    CHECK(DeleteVendor(db.code, "V004") == DeleteVendorResult::Deleted);
+    CHECK_FALSE(FindVendor(db.code, "V004"));
+    CHECK(LoadVendors(db.code).size() == 3);   // the others stay
+
+    // A cash voucher alone keeps a vendor too.
+    Vendor c;
+    c.number = "V005";
+    c.name = "Cash only";
+    SaveVendor(db.code, c);
+    ApVoucher k;
+    k.kind = ApKind::Cash;
+    k.vendor = "V005";
+    k.mode = ap_mode::kOpen;
+    SaveApVoucher(db.code, k, {});
+    CHECK(DeleteVendor(db.code, "V005", &usedBy) == DeleteVendorResult::InUse);
+    CHECK(usedBy == "cash voucher 2");
+}
