@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 to M6 built)
+**Plan status:** Built (S6-M0 to M7 task 1); the walkthrough with a witness (M7 task 2) is the user's
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -421,6 +421,23 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 
 1. **`gl/docs/superpowers/specs/2026-11-13-spec6-acceptance.md`**, in the Spec #5 sheet's shape, with spec §10's checks, the fixture's figures and the `sqlite3` queries that produce them; a `gl_tests` case that makes the same entries and checks every figure.
 2. Release build check, the walkthrough with a witness, triage, sign-off.
+
+> **As built (2026-11-14; task 1).**
+> - **The sheet** (`specs/2026-11-13-spec6-acceptance.md`) has spec §10's checks as 9 criteria on one copy of the fixture, in order:
+>   1. customer C004 added through Options (the fixture's SALE needs a dept), changed, deleted, and C001 refused;
+>   2. voucher 7 (3 × 1,100.00: Cr 3,000.00, Cr 300.00, Dr 3,300.00; a second line and its delete; S-1001 and S-1003 refused);
+>   3. cancel 2, post 1 and 7, recover and repost 7, 4 refused;
+>   4. the transfer (AP's GL voucher 104, AR's 105: 5 lines, 10,700.00; the Trial Balance before and after);
+>   5. receipts (1 in full, two partials on 7, 3 with a 110.00 discount, too much on 4);
+>   6. reversals (a waiting one removed, a transferred one reversed today) and the second transfer (106 and 107 when today is in period 8);
+>   7. purge (vouchers 1 and 5);
+>   8. the reports (3,400.00 owed; the summary 6,600.00 = 3,090.00 + 110.00 + 3,400.00);
+>   9. regression.
+>
+>   It ends with the known gaps G1–G6 and the triage and sign-off tables.
+> - **Its figures are tested:** `gl_tests` "The Spec #6 acceptance walkthrough's figures" makes the same entries through the functions the screens call. It checks every amount, voucher and receipt number, the GL balances after each transfer (111101 ends at the fixture's 8,200.00 plus the 3,400.00 owed), and the output of each `sqlite3` query on the sheet, as the shell prints it. The reversals are dated 11/14/26, in period 8, as the screen dates them today. `gl_tests`: 163 cases (`[ar]` 22).
+> - **Checked on the dev machine:** Debug and Release `/W4 /WX` clean; `gl_tests` (163), `cb4sqlite_tests` (77) and `report_tests` (17) pass. `gl.exe` hasn't changed since S6-M6, whose `/checkres` and `/stress` passed.
+> - **Task 2**, the walkthrough with a witness on a fresh machine, triage and sign-off, is the user's.
 
 ---
 
