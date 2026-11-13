@@ -1296,3 +1296,237 @@ TEST_CASE("The AR reports' columns fit A4 (S6-M6)", "[ar]")
     for (ArBuilder build : kArReports) check(build(db.code, ctx));
 }
 #endif
+
+// ---- the acceptance walkthrough (S6-M7) ---------------------------------------------------
+
+namespace {
+
+// A query's rows as the sqlite3 shell prints them: columns joined by "|".
+std::vector<std::string> arShell(cb4sqlite::Code4& code, const char* sql)
+{
+    std::vector<std::string> out;
+    cb4sqlite::Query q(code, sql);
+    while (q.next()) {
+        std::string row;
+        for (int c = 0; c < q.columns(); ++c) row += (c ? "|" : "") + q.text(c);
+        out.push_back(row);
+    }
+    return out;
+}
+
+double arBalance(cb4sqlite::Code4& code, const char* account, const char* dept = "")
+{
+    cb4sqlite::Query q(code, "SELECT curr_bal FROM glaccts WHERE trim(account) = ?1 AND coalesce(trim(dept), '') = ?2");
+    q.bindText(1, account);
+    q.bindText(2, dept);
+    REQUIRE(q.next());
+    return q.number(0);
+}
+
+using Rows = std::vector<std::string>;
+
+} // namespace
+
+// The figures of specs/2026-11-13-spec6-acceptance.md, criteria 1-8, in the
+// sheet's order on one copy of the fixture, through the functions the screens
+// call. The sheet quotes these numbers; if one changes, change the sheet.
+TEST_CASE("The Spec #6 acceptance walkthrough's figures", "[ar][acceptance]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    EnsureApTables(db.code);
+    const ApAccount bank{"102101", ""}, vat{"260007", ""};
+
+    // 1. Customers: C004 added (the default sales account needs a dept), changed; C001 refused; C004 deleted.
+    Customer c;
+    c.number = "C004";
+    c.shortName = "EASTCLINIC";
+    c.name = "East Clinic";
+    c.address1 = "5 East Road";
+    c.ar = {"111101", ""};
+    c.sales = {"410001", ""};
+    c.vat = vat;
+    c.vatRate = 10;
+    c.terms = 15;
+    const auto problem = CheckCustomer(db.code, c);
+    REQUIRE(problem);
+    CHECK(problem->field == CustomerField::SalesAccount);
+    c.sales = {"410001", "20"};
+    CHECK_FALSE(CheckCustomer(db.code, c));
+    REQUIRE(SaveCustomer(db.code, c));
+    c.terms = 45;
+    CHECK_FALSE(SaveCustomer(db.code, c));
+    CHECK(FindCustomer(db.code, "C004")->terms == 45);
+    std::string usedBy;
+    CHECK(DeleteCustomer(db.code, "C001", &usedBy) == DeleteCustomerResult::InUse);
+    CHECK(usedBy == "sales voucher 1");
+    CHECK(DeleteCustomer(db.code, "C004") == DeleteCustomerResult::Deleted);
+    CHECK(arShell(db.code, "select count(*) from ar_cust where _deleted=0") == Rows{"3"});
+
+    // 2. Voucher 7: C001 S-2001, 10/20/26, 3 x 1,100.00; a typed 220.00 line, then deleted.
+    ArVoucher h;
+    h.customer = "C001";
+    h.invoiceNo = "S-2001";
+    h.reference = "Saline, 3 cases";
+    h.invoiceDate = h.date = "20261020";
+    h.dueDate = AddDays(h.invoiceDate, 30);
+    h.period = 7;
+    h.terms = 30;
+    h.vatRate = 10;
+    h.account = {"111101", ""};
+    SaleEntry e;
+    e.account = {"410001", "10"};
+    e.qty = 300;
+    e.price = 110000;
+    const long seven = SaveSaleLine(db.code, h, e, vat);
+    REQUIRE(seven == 7);
+    CHECK(FindArVoucher(db.code, 7)->dueDate == "20261119");
+    auto lines = LoadArLines(db.code, 7);
+    REQUIRE(lines.size() == 3);
+    CHECK(lines[0].credit == 300000);
+    CHECK(lines[1].credit == 30000);
+    CHECK(lines[2].debit == 330000);
+    h.number = 7;
+    SaleEntry t;
+    t.account = {"410001", "10"};
+    t.gross = 22000;
+    REQUIRE(SaveSaleLine(db.code, h, t, vat) == 7);
+    lines = LoadArLines(db.code, 7);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[1].credit == 20000);
+    CHECK(lines[2].credit == 32000);
+    CHECK(lines[3].debit == 352000);
+    REQUIRE(DeleteSaleLine(db.code, 7, 2, vat));
+    CHECK(arShell(db.code, "select payable, vatamt, duedate from ar_btch where batchno=7") == Rows{"3300.0|300.0|20261119"});
+    CHECK(DuplicateArInvoice(db.code, "C001", "S-1001", 0) == 1);   // open voucher 1
+    CHECK(DuplicateArInvoice(db.code, "C001", "S-1003", 0) == 3);   // posted voucher 3
+    CHECK(DuplicateArInvoice(db.code, "C001", "S-1006", 0) == 0);   // cancelled voucher 6: allowed
+
+    // 3. Cancel 2; post all (1 and 7); recover 7, post it again; 4 can't be recovered.
+    REQUIRE(CancelArVoucher(db.code, 2) == ApCancelResult::Cancelled);
+    CHECK(arShell(db.code, "select trim(mode) from ar_btch where batchno=2") == Rows{"X"});
+    ApPostResult posted = PostArVouchers(db.code);
+    CHECK(posted.posted == std::vector<long>{1, 7});
+    CHECK(posted.refused.empty());
+    CHECK(RecoverArVoucher(db.code, 7) == ArRecoverResult::Recovered);
+    CHECK(PostArVouchers(db.code, 7).posted == std::vector<long>{7});
+    CHECK(arShell(db.code, "select batchno, trim(paymentctl), remainder from ar_dist where _deleted=0 order by batchno") ==
+          Rows{"1|O|3300.0", "3|O|2200.0", "4|R|600.0", "5|C|0.0", "7|O|3300.0"});
+    CHECK(arShell(db.code, "select trim(mode), count(*) from ar_jsum where _deleted=0 and batchno=7 and trim(type)='AR' "
+                           "group by 1") == Rows{"1|3"});
+    CHECK(RecoverArVoucher(db.code, 4) == ArRecoverResult::Received);
+
+    // 4. Update AR and AP: AP's GL voucher 104, then AR's 105; post 105.
+    int apWaiting = 0, arWaiting = 0;
+    for (const JournalRow& j : LoadJournal(db.code)) apWaiting += j.mode == "1";
+    for (const JournalRow& j : LoadArJournal(db.code)) arWaiting += j.mode == "1";
+    CHECK(apWaiting == 7);
+    CHECK(arWaiting == 18);
+    const ApTransferResult ap = TransferAp(db.code, 99);
+    REQUIRE(ap.vouchers.size() == 1);
+    CHECK(ap.vouchers[0].glVoucher == 104);
+    const ApTransferResult ar = TransferAr(db.code, 99);
+    REQUIRE(ar.vouchers.size() == 1);
+    CHECK(ar.vouchers[0].glVoucher == 105);
+    CHECK(ar.vouchers[0].lines == 5);
+    CHECK(ar.vouchers[0].debit == 1070000);
+    CHECK(ar.vouchers[0].rows == 18);
+    REQUIRE(PostVoucher(db.code, 105).posted.size() == 1);
+    CHECK(arShell(db.code, "select date, period, debit, credit, trim(mode), trim(reference) from gl_btch where batchno=105") ==
+          Rows{"20261031|7|10700.0|10700.0|0|Accounts Receivable GL Update"});
+    CHECK(arShell(db.code, "select trim(mode), count(*) from ar_jsum where _deleted=0 group by 1") == Rows{"2|18"});
+    CHECK(arShell(db.code, "select batchno, trim(mode) from ar_btch where _deleted=0 order by batchno") ==
+          Rows{"1|2", "2|X", "3|2", "4|2", "5|2", "6|X", "7|2"});
+    CHECK(arBalance(db.code, "111101") == Approx(17600.0));
+    CHECK(arBalance(db.code, "102101") == Approx(14050.0));
+    CHECK(arBalance(db.code, "410001", "10") == Approx(-8800.0));
+    CHECK(arBalance(db.code, "410001", "20") == Approx(-1000.0));
+    CHECK(arBalance(db.code, "260007") == Approx(-1350.0));
+    CHECK(RecoverArVoucher(db.code, 7) == ArRecoverResult::Transferred);
+    CHECK(TransferAr(db.code, 99).vouchers.empty());
+
+    // 5. Receipts: 1 in full; two partials on 7; 3 with a discount; too much on 4.
+    ReceiptOutcome o = RecordReceipt(db.code, 1, "20261028", bank, 330000, false, "Cheque 1001");
+    CHECK(o.number == 3);
+    CHECK(o.settled);
+    o = RecordReceipt(db.code, 7, "20261029", bank, 100000, false, "Cheque 1002");
+    CHECK(o.number == 4);
+    CHECK_FALSE(o.settled);
+    o = RecordReceipt(db.code, 7, "20261030", bank, 50000, false, "Cheque 1003");
+    CHECK(o.number == 5);
+    CHECK(arShell(db.code, "select amountpaid, remainder, trim(paymentctl) from ar_dist where batchno=7") ==
+          Rows{"1500.0|1800.0|R"});
+    o = RecordReceipt(db.code, 3, "20261029", bank, 209000, true, "Cheque 1004");
+    CHECK(o.number == 6);
+    CHECK(o.discount == 11000);
+    CHECK(o.settled);
+    CHECK(arShell(db.code, "select trim(account), trim(dept), debit, credit from ar_jsum where _deleted=0 and trim(type)='RC' "
+                           "and trim(cheque)='6' order by _rowid") ==
+          Rows{"102101||2090.0|0.0", "410001|10|100.0|0.0", "260007||10.0|0.0", "111101||0.0|2200.0"});
+    CHECK(RecordReceipt(db.code, 4, "20261030", bank, 70000, false).result == ReceiptResult::TooMuch);
+
+    // 6. Reversals, dated "today" as the screen dates them: 11/14/26, in period 8. 7's latest
+    // (waiting) is removed; 4's (the fixture's receipt 1, transferred in #4) is reversed in period 8.
+    REQUIRE(ReverseReceipt(db.code, 7, "20261114") == ReverseResult::Reversed);
+    CHECK(arShell(db.code, "select amountpaid, remainder, trim(paymentctl), datepaid from ar_dist where batchno=7") ==
+          Rows{"1000.0|2300.0|R|20261029"});
+    REQUIRE(ReverseReceipt(db.code, 4, "20261114") == ReverseResult::Reversed);
+    CHECK(arShell(db.code, "select trim(account), debit, credit, date, trim(period), trim(mode) from ar_jsum where "
+                           "_deleted=0 and batchno=4 and trim(type)='RC' order by _rowid") ==
+          Rows{"102101|500.0|0.0|20261020|7|2", "111101|0.0|500.0|20261020|7|2", "102101|0.0|500.0|20261114|8|1",
+               "111101|500.0|0.0|20261114|8|1"});
+    CHECK(arShell(db.code, "select amountpaid, remainder, trim(paymentctl) from ar_dist where batchno=4") ==
+          Rows{"0.0|1100.0|O"});
+    CHECK(arShell(db.code, "select rcptno, batchno, amount, discount from ar_rcpt where _deleted=0 order by rcptno") ==
+          Rows{"2|5|800.0|0.0", "3|1|3300.0|0.0", "4|7|1000.0|0.0", "6|3|2090.0|110.0"});
+    CHECK(NextReceiptNumber(db.code) == 7);
+    // Period 7: receipts 3, 4 and 6; period 8: the reversal.
+    const ApTransferResult ar2 = TransferAr(db.code, 99);
+    REQUIRE(ar2.vouchers.size() == 2);
+    CHECK(ar2.vouchers[0].period == 7);
+    CHECK(ar2.vouchers[0].glVoucher == 106);
+    CHECK(ar2.vouchers[0].lines == 4);
+    CHECK(ar2.vouchers[0].debit == 650000);
+    CHECK(ar2.vouchers[0].rows == 8);
+    CHECK(ar2.vouchers[1].period == 8);
+    CHECK(ar2.vouchers[1].glVoucher == 107);
+    CHECK(ar2.vouchers[1].lines == 2);
+    CHECK(ar2.vouchers[1].debit == 50000);
+    CHECK(ar2.vouchers[1].rows == 2);
+    CHECK(arShell(db.code, "select batchno, date, period, debit from gl_btch where batchno in (106, 107) order by batchno") ==
+          Rows{"106|20261031|7|6500.0", "107|20261130|8|500.0"});
+    REQUIRE(PostVoucher(db.code, 106).posted.size() == 1);
+    REQUIRE(PostVoucher(db.code, 107).posted.size() == 1);
+    CHECK(arBalance(db.code, "111101") == Approx(11600.0));   // the fixture's 8,200.00 + the 3,400.00 owed
+    CHECK(arBalance(db.code, "102101") == Approx(19940.0));
+    CHECK(arBalance(db.code, "410001", "10") == Approx(-8700.0));
+    CHECK(arBalance(db.code, "260007") == Approx(-1340.0));
+
+    // 7. Purge before 10/29/26: 1 and 5, with their receipts; 3 (settled on the 29th) stays.
+    CHECK(ArPurgeCandidates(db.code, "20261028").size() == 1);   // 5 only
+    const ArPurgeOutcome purged = PurgeReceived(db.code, "20261029");
+    CHECK(purged.items == 2);
+    CHECK(purged.receipts == 2);
+    CHECK(arShell(db.code, "select batchno, trim(paymentctl), remainder from ar_dist where _deleted=0 order by batchno") ==
+          Rows{"3|C|0.0", "4|O|1100.0", "7|R|2300.0"});
+    CHECK(arShell(db.code, "select count(*) from ar_rcpt where _deleted=0") == Rows{"2"});
+
+    // 8. Reports: 3,400.00 owed; the summary adds up; the aged buckets add to it; nothing waits.
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    CHECK(arTotalAt(ArOpenReceivables(db.code, ctx), 5) == 340000);
+    const rpt::Report summary = ArCustomerSummary(db.code, ctx);
+    CHECK(arTotalAt(summary, 2) == 660000);
+    CHECK(arTotalAt(summary, 3) == 309000);
+    CHECK(arTotalAt(summary, 4) == 11000);
+    CHECK(arTotalAt(summary, 5) == 340000);
+    for (const rpt::Report& a : {ArAgedReceivables(db.code, ctx), ArCollectionsForecast(db.code, ctx)}) {
+        std::int64_t buckets = 0;
+        for (size_t k = 2; k <= 5; ++k) buckets += arTotalAt(a, k);
+        CHECK(buckets == 340000);
+        CHECK(arTotalAt(a, 6) == 340000);
+    }
+    CHECK(arRowsOf(ArStatements(db.code, ctx), rpt::RowKind::Slip) == 2);   // C001 (voucher 7), C002 (voucher 4)
+    const rpt::Report waiting = ArJournalSummary(db.code, ctx);
+    CHECK(arRowsOf(waiting, rpt::RowKind::Detail) == 0);
+    CHECK(arRowsOf(ArReceiptsRegister(db.code, ctx), rpt::RowKind::Detail) == 2);   // receipts 4 and 6 (2 and 3 purged)
+}
