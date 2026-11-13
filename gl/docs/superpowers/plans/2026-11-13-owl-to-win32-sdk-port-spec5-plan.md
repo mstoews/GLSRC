@@ -524,6 +524,25 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 1. **`gl/docs/superpowers/specs/2026-11-13-spec5-acceptance.md`**, in the Spec #4 sheet's shape, with spec §10's checks, the fixture's expected figures and the `sqlite3` queries that produce them.
 2. Release build check, the walkthrough with a witness, triage, sign-off.
 
+> **As built (2026-11-13; task 1).**
+> - **The sheet** has the 11 criteria of spec §10 on one copy of the fixture, in order:
+>   - vendor V004 added, changed, deleted, and V001 refused;
+>   - invoice 7 (1,120.00, then a second line and its delete);
+>   - cancel 2, post, recover and repost 7;
+>   - cash voucher 2 (250.00) and the cancel of cash 1;
+>   - the transfer (GL voucher 104, 7 lines, 8,690.00, and the Trial Balance before and after);
+>   - Create Cheques (hold 3, force 7: cheque 5002, 2,220.00);
+>   - print, renumber to 5003, confirm;
+>   - clear 5003, void 5001 (reversed) and transfer again (GL voucher 105, 1,020.00);
+>   - purge;
+>   - the reports (6,100.00 owed);
+>   - regression.
+>
+>   It ends with the known gaps G1–G6 and the triage and sign-off tables.
+> - **Its figures are tested:** `gl_tests` "The Spec #5 acceptance walkthrough's figures" makes the same entries through the functions the screens call. It checks every amount, voucher number and message count, and the output of each of the sheet's 14 `sqlite3` queries, as the shell prints it. `gl_tests`: 141 cases (`[ap]` 27).
+> - **Checked on the dev machine:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0. `gl.exe` hasn't changed since S5-M7, whose `/stress` passed.
+> - **Task 2**, the walkthrough with a witness on a fresh machine, triage and sign-off, is the user's.
+
 ---
 
 ## Cross-cutting

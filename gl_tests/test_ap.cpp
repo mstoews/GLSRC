@@ -1334,3 +1334,235 @@ TEST_CASE("The AP reports' columns fit A4 (S5-M7)", "[ap]")
     for (Builder build : all) check(build(db.code, ctx));
 }
 #endif
+
+// ---- the acceptance walkthrough (S5-M8) ---------------------------------------------------
+
+namespace {
+
+// A query's rows as the sqlite3 shell prints them: columns joined by "|".
+std::vector<std::string> shell(Code4& code, const char* sql)
+{
+    std::vector<std::string> out;
+    cb4sqlite::Query q(code, sql);
+    while (q.next()) {
+        std::string row;
+        for (int c = 0; c < q.columns(); ++c) row += (c ? "|" : "") + q.text(c);
+        out.push_back(row);
+    }
+    return out;
+}
+
+} // namespace
+
+// The figures of specs/2026-11-13-spec5-acceptance.md, criteria 1-9, in the
+// sheet's order on one copy of the fixture, through the functions the screens
+// call. The sheet quotes these numbers; if one changes, change the sheet.
+TEST_CASE("The Spec #5 acceptance walkthrough's figures", "[ap][acceptance]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const VoucherAccounts apAcc{{"148000", ""}, {"260004", ""}, {"221002", ""}, "", "", ""};
+    const VoucherAccounts cashAcc{{"148000", ""}, {"260004", ""}, {"102101", ""}, "", "", ""};
+    const ApAccount bank{"102101", ""};
+
+    // 1. Vendors: add V004, change it, find it; V001 can't be deleted, V004 can.
+    Vendor v;
+    v.number = "V004";
+    v.shortName = "STATIONERY";
+    v.name = "Stationery Mart";
+    v.type = "C";
+    v.ap = {"221002", ""};
+    v.vat = {"148000", ""};
+    v.terms = 15;
+    v.vatRate = 12;
+    v.whRate = 1;
+    CHECK_FALSE(CheckVendor(db.code, v));
+    REQUIRE(SaveVendor(db.code, v));
+    v.terms = 30;
+    CHECK_FALSE(SaveVendor(db.code, v));   // replaced
+    CHECK(FindVendor(db.code, "V004")->terms == 30);
+    std::string usedBy;
+    CHECK(DeleteVendor(db.code, "V001", &usedBy) == DeleteVendorResult::InUse);
+    CHECK(usedBy == "invoice voucher 1");
+    CHECK(DeleteVendor(db.code, "V004") == DeleteVendorResult::Deleted);
+
+    // 2. Invoice 7: V001 INV-1004, 10/20/26, 501000 1,120.00; a second line 751000 560.00, then deleted.
+    ApVoucher h;
+    h.vendor = "V001";
+    h.vendorName = "Office Supplies Co.";
+    h.invoiceNo = "INV-1004";
+    h.reference = "Toner";
+    h.invoiceDate = h.date = "20261020";
+    h.dueDate = AddDays(h.invoiceDate, 30);
+    h.period = 7;
+    h.terms = 30;
+    h.vatRate = 12;
+    h.whRate = 1;
+    h.account = {"221002", ""};
+    ExpenseEntry e;
+    e.account = {"501000", ""};
+    e.gross = 112000;
+    const long seven = SaveExpenseLine(db.code, h, e, TaxMode::F, apAcc);
+    REQUIRE(seven == 7);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 7)->dueDate == "20261119");
+    auto lines = LoadApLines(db.code, ApKind::Invoice, 7);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[0].debit == 100000);
+    CHECK(lines[1].debit == 12000);
+    CHECK(lines[2].credit == 1000);
+    CHECK(lines[3].credit == 111000);
+    h.number = 7;
+    ExpenseEntry e2;
+    e2.account = {"751000", ""};
+    e2.gross = 56000;
+    REQUIRE(SaveExpenseLine(db.code, h, e2, TaxMode::F, apAcc) == 7);
+    lines = LoadApLines(db.code, ApKind::Invoice, 7);
+    REQUIRE(lines.size() == 5);
+    CHECK(lines[0].debit == 100000);   // 1,120.00 / 1.12
+    CHECK(lines[1].debit == 50000);    // 560.00 / 1.12
+    CHECK(lines[2].debit == 18000);    // VAT 180.00
+    CHECK(lines[3].credit == 1500);    // W/H 15.00
+    CHECK(lines[4].credit == 166500);  // AP 1,665.00
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 7)->payable == 168000);
+    REQUIRE(DeleteExpenseLine(db.code, ApKind::Invoice, 7, 2, TaxMode::F, apAcc));
+    lines = LoadApLines(db.code, ApKind::Invoice, 7);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[3].credit == 111000);
+    CHECK(DuplicateInvoice(db.code, "V001", "INV-1001")->number == 1);
+    CHECK(shell(db.code, "select payable, vatamt, rebateamt, duedate from ap_btch where batchno=7") == std::vector<std::string>{"1120.0|120.0|-10.0|20261119"});
+
+    // 3. Cancel 2; post (1 and 7); recover 7; post 7 alone.
+    CHECK(CancelApVoucher(db.code, ApKind::Invoice, 2) == ApCancelResult::Cancelled);
+    CHECK(PostApVouchers(db.code, ApKind::Invoice).posted == std::vector<long>{1, 7});
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 7)->mode == ap_mode::kPosted);
+    CHECK(LoadOpenItems(db.code).size() == 4);   // 1, 3, 6, 7
+    CHECK(journalOf(db.code, "AP", 7).size() == 4);
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 7) == ApRecoverResult::Recovered);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 7)->mode == ap_mode::kOpen);
+    CHECK(LoadOpenItems(db.code).size() == 3);
+    CHECK(journalOf(db.code, "AP", 7).empty());
+    CHECK(PostApVouchers(db.code, ApKind::Invoice, 7).posted == std::vector<long>{7});
+    CHECK(shell(db.code, "select batchno, trim(paymentctl) from ap_dist where _deleted=0 order by batchno") == std::vector<std::string>{"1|O", "3|O", "6|V", "7|O"});
+    CHECK(shell(db.code, "select trim(mode) from ap_btch where batchno=2") == std::vector<std::string>{"X"});
+    CHECK(shell(db.code, "select trim(mode), count(*) from ap_jsum where _deleted=0 and batchno=7 and trim(type)='AP' group by 1") == std::vector<std::string>{"1|4"});
+
+    // 4. Cash voucher 2: V003 INV-3003, cheque 000124, 751000 250.00; cancel cash 1; post.
+    ApVoucher c;
+    c.kind = ApKind::Cash;
+    c.vendor = "V003";
+    c.vendorName = "City Landlord Inc.";
+    c.invoiceNo = "INV-3003";
+    c.reference = "Parking";
+    c.invoiceDate = c.date = c.dueDate = "20261021";
+    c.period = 7;
+    c.account = bank;
+    c.cheque = "000124";
+    ExpenseEntry ce;
+    ce.account = {"751000", ""};
+    ce.gross = 25000;
+    REQUIRE(SaveExpenseLine(db.code, c, ce, TaxMode::F, cashAcc) == 2);
+    const auto cashLines = LoadApLines(db.code, ApKind::Cash, 2);
+    REQUIRE(cashLines.size() == 2);
+    CHECK(cashLines[1].account.account == "102101");
+    CHECK(cashLines[1].credit == 25000);
+    CHECK(CancelApVoucher(db.code, ApKind::Cash, 1) == ApCancelResult::Cancelled);
+    CHECK(PostApVouchers(db.code, ApKind::Cash).posted == std::vector<long>{2});
+    CHECK(shell(db.code, "select batchno, trim(mode) from ap_cash where _deleted=0 order by batchno") == std::vector<std::string>{"1|X", "2|0"});
+    CHECK(shell(db.code, "select trim(account), debit, credit, trim(cheque) from ap_jsum where _deleted=0 and trim(type)='CA' order by _rowid") == std::vector<std::string>{"751000|250.0|0.0|000124", "102101|0.0|250.0|000124"});
+
+    // 5. Update AR and AP: GL voucher 104; post it.
+    int waiting = 0;
+    for (const JournalRow& j : LoadJournal(db.code)) waiting += j.mode == "1";
+    CHECK(waiting == 17);
+    const double ap0 = glBalance(db.code, "221002"), bank0 = glBalance(db.code, "102101"),
+                 vat0 = glBalance(db.code, "148000"), wh0 = glBalance(db.code, "260004");
+    CHECK(ap0 == Approx(-4100.0));
+    CHECK(bank0 == Approx(12750.0));
+    CHECK(vat0 == Approx(310.0));
+    CHECK(wh0 == Approx(-120.0));
+    const double cos0 = glBalance(db.code, "501000"), rent0 = glBalance(db.code, "751000"),
+                 sal0 = glBalance(db.code, "731000", "20");
+    CHECK(cos0 == Approx(6400.0));
+    CHECK(rent0 == Approx(1200.0));
+    CHECK(sal0 == Approx(1500.0));
+    const ApTransferResult t = TransferAp(db.code, 99);
+    REQUIRE(t.vouchers.size() == 1);
+    CHECK(t.vouchers[0].glVoucher == 104);
+    CHECK(t.vouchers[0].period == 7);
+    CHECK(t.vouchers[0].lines == 7);
+    CHECK(t.vouchers[0].rows == 17);
+    CHECK(t.vouchers[0].debit == 869000);
+    CHECK(t.vouchers[0].credit == 869000);
+    REQUIRE(PostVoucher(db.code, t.vouchers[0].glVoucher).posted.size() == 1);
+    CHECK(shell(db.code, "select date, period, debit, credit, trim(mode), trim(reference) from gl_btch where batchno=104") == std::vector<std::string>{"20261031|7|8690.0|8690.0|0|Accounts Payable GL Update"});
+    CHECK(shell(db.code, "select trim(mode), count(*) from ap_jsum where _deleted=0 group by 1") == std::vector<std::string>{"2|17"});
+    // The Trial Balance moves by the vouchers: 221002 carries the unpaid invoices 1, 3 and 7.
+    CHECK(glBalance(db.code, "221002") == Approx(ap0 - 7120.0));
+    CHECK(glBalance(db.code, "102101") == Approx(bank0 - 1450.0));
+    CHECK(glBalance(db.code, "148000") == Approx(vat0 + 240.0));
+    CHECK(glBalance(db.code, "260004") == Approx(wh0 - 120.0));
+    CHECK(glBalance(db.code, "501000") == Approx(cos0 + 2000.0));
+    CHECK(glBalance(db.code, "751000") == Approx(rent0 + 1450.0));
+    CHECK(glBalance(db.code, "731000", "20") == Approx(sal0 + 5000.0));
+
+    // 6. Create Cheques by 11/05/26, paid 10/30/26, from 5002: hold 3, force 7.
+    const auto due = PaymentItems(db.code, "20261105");
+    REQUIRE(due.size() == 2);   // 1 (due 11/04) and 3 (due 10/16)
+    CHECK(due[0].item.batchno == 1);
+    CHECK(due[1].item.batchno == 3);
+    REQUIRE(SetPaymentControl(db.code, 3, ap_payment::kHeld));
+    REQUIRE(SetPaymentControl(db.code, 7, ap_payment::kForced));
+    const auto made = CreateCheques(db.code, "20261105", "20261030", bank, 5002);
+    REQUIRE(made.status == CreateChequesStatus::Created);
+    REQUIRE(made.cheques.size() == 1);
+    CHECK(made.cheques[0].number == 5002);
+    CHECK(made.cheques[0].amount == 222000);
+    CHECK(made.cheques[0].items == 2);
+    CHECK(made.period == 7);
+    CHECK(shell(db.code, "select cheque, trim(vendorno), amountpaid, datepaid, trim(cleared) from ap_reqst where _deleted=0 order by cheque") == std::vector<std::string>{"5001|V003|1200.0|20261015|", "5002|V001|2220.0|20261030|1"});
+    CHECK(shell(db.code, "select batchno, trim(paymentctl), chequeno from ap_dist where _deleted=0 order by batchno") == std::vector<std::string>{"1|P|5002", "3|H|0", "6|V|5001", "7|P|5002"});
+
+    // 7. The cheque report holds 5002; renumber it 5003; confirm.
+    CHECK(LoadChequesIn(db.code, ap_payment::kPaid).size() == 1);
+    CHECK(AmountInWords(222000) == "Two thousand two hundred twenty and 00/100");
+    CHECK(RenumberCheque(db.code, 5002, 5003) == RenumberResult::Renumbered);
+    CHECK(ConfirmPrinted(db.code, 5003, 5003) == 1);
+
+    // 8. Clear 5003 on 10/31/26; void 5001 on 10/31/26 (transferred: reversed); transfer again.
+    CHECK(ClearCheque(db.code, 5003, "20261031") == ClearResult::Cleared);
+    const VoidOutcome vo = VoidCheque(db.code, 5001, "20261031");
+    CHECK(vo.result == VoidResult::Voided);
+    CHECK(vo.itemsReopened == 1);
+    CHECK(vo.rowsRemoved == 0);
+    CHECK(vo.rowsReversed == 2);
+    CHECK(shell(db.code, "select trim(account), debit, credit, date, trim(mode) from ap_jsum where _deleted=0 and trim(cheque)='5001' order by _rowid") == std::vector<std::string>{"221002|1200.0|0.0|20261015|2", "102101|0.0|1200.0|20261015|2", "221002|0.0|1200.0|20261031|1", "102101|1200.0|0.0|20261031|1"});
+    CHECK(shell(db.code, "select cheque, trim(cleared), trim(reference) from ap_reqst where _deleted=0 order by cheque") == std::vector<std::string>{"5003|0|Cleared 20261031"});
+    const ApTransferResult t2 = TransferAp(db.code, 99);
+    REQUIRE(t2.vouchers.size() == 1);
+    CHECK(t2.vouchers[0].glVoucher == 105);
+    CHECK(t2.vouchers[0].lines == 2);
+    CHECK(t2.vouchers[0].rows == 6);   // 5003's payment (4) and 5001's reversal (2)
+    CHECK(t2.vouchers[0].debit == 102000);
+    REQUIRE(PostVoucher(db.code, t2.vouchers[0].glVoucher).posted.size() == 1);
+    CHECK(glBalance(db.code, "221002") == Approx(-10200.0));   // invoices 3 and 6 unpaid, net of the opening -4,100.00
+    CHECK(glBalance(db.code, "102101") == Approx(10280.0));
+
+    // 9. Purge before 12/31/26: 5003's two invoices and the cheque.
+    const PurgeOutcome po = PurgePaid(db.code, "20261231");
+    CHECK(po.items == 2);
+    CHECK(po.cheques == 1);
+    CHECK(shell(db.code, "select batchno, trim(paymentctl) from ap_dist where _deleted=0 order by batchno") == std::vector<std::string>{"3|H", "6|O"});
+    CHECK(shell(db.code, "select count(*) from ap_reqst where _deleted=0") == std::vector<std::string>{"0"});
+
+    // 10. What's owed: 3 (held) and 6 (open again).
+    std::int64_t owed = 0;
+    for (const OpenItem& i : LoadOpenItems(db.code))
+        if (i.paymentCtl == ap_payment::kHeld || i.paymentCtl == ap_payment::kOpen) owed += AmountOwed(i);
+    CHECK(owed == 610000);
+    CHECK(LoadOpenItems(db.code).size() == 2);
+    CHECK(LoadCheques(db.code).empty());
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    const rpt::Report aged = ApAgedPayables(db.code, ctx);
+    CHECK(totalAt(aged, 6) == owed);
+    CHECK(totalAt(aged, 2) + totalAt(aged, 3) + totalAt(aged, 4) + totalAt(aged, 5) == owed);
+}
