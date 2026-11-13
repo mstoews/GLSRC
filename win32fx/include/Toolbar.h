@@ -3,7 +3,9 @@
 // controls toolbar (ToolbarWindow32) with flat icon buttons and tooltips. It
 // replaced the original TToolBar, a dialog of tbSuperBtn buttons (1032).
 //
-// A thin wrapper, as StatusBar: the control has its own window procedure.
+// A thin wrapper, as StatusBar: the control has its own window procedure,
+// subclassed only to draw the bar's edge: a 2 px white border and a 2 px gap
+// on every side, so the buttons sit in the middle of the bar.
 // Each button shows the modern icon for a bitmap ID (LoadModernIcon, "P<id>")
 // and sends a command: a click arrives at the parent as WM_COMMAND with the
 // command, BN_CLICKED and the bar's HWND. A frame that tells menu commands from
