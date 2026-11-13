@@ -891,3 +891,98 @@ TEST_CASE("Cash vouchers: entry with a bank, post, transfer, cancel (S5-M4, D10)
     CHECK(FindApVoucher(db.code, ApKind::Cash, 1)->cancelled());
     CHECK(CancelApVoucher(db.code, ApKind::Cash, n) == ApCancelResult::NotOpen);
 }
+
+TEST_CASE("Create Cheques: what's due, Hold / Force, one cheque per vendor (S5-M5, D8, D9)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    CHECK(NextChequeNumber(db.code) == 5002);   // after the fixture's 5001
+    CHECK(OpenPeriodOf(db.code, "20261020") == 7);
+    CHECK(OpenPeriodOf(db.code, "20260915") == 0);   // period 6 is closed
+
+    // Due by 2026-10-31: invoice 3 (V002, 5,000.00 less 100.00 W/H). Invoice 6 is paid.
+    auto due = PaymentItems(db.code, "20261031");
+    REQUIRE(due.size() == 1);
+    CHECK(due[0].item.batchno == 3);
+    CHECK(due[0].owed == 490000);
+    CHECK(due[0].vendorName == "SANTOS");
+    CHECK(PaymentItems(db.code, "20261031", true).size() == 2);   // View All: the paid one too
+    CHECK(PaymentItems(db.code, "20261031", true)[1].owed == 0);
+
+    // Post invoices 1 (due 11-04, owes 1,110.00) and 2 (due 11-11, owes 777.00).
+    PostApVouchers(db.code, ApKind::Invoice);
+    CHECK(PaymentItems(db.code, "20261105").size() == 2);   // 1 and 3
+    // Force invoice 2 (not yet due): listed. Hold invoice 3: listed, not paid.
+    CHECK(SetPaymentControl(db.code, 2, ap_payment::kForced));
+    CHECK(SetPaymentControl(db.code, 3, ap_payment::kHeld));
+    CHECK_FALSE(SetPaymentControl(db.code, 6, ap_payment::kOpen));   // in a payment (4010)
+    CHECK_FALSE(SetPaymentControl(db.code, 1, "P"));
+    due = PaymentItems(db.code, "20261105");
+    REQUIRE(due.size() == 3);
+
+    const ApAccount bank{"102101", ""};
+    // Refusals first: nothing is written.
+    CHECK(CreateCheques(db.code, "20261105", "20261020", {"999999", ""}, 5002).status == CreateChequesStatus::BadBank);
+    CHECK(CreateCheques(db.code, "20261105", "20260915", bank, 5002).status == CreateChequesStatus::ClosedPeriod);
+    const auto clash = CreateCheques(db.code, "20261105", "20261020", bank, 5001);
+    CHECK(clash.status == CreateChequesStatus::BadNumber);
+    CHECK(clash.clash == 5001);
+    CHECK(CreateCheques(db.code, "20261105", "20261020", bank, 0).status == CreateChequesStatus::BadNumber);
+    CHECK(LoadCheques(db.code).size() == 1);
+
+    // Create: V001's invoices 1 (due) and 2 (forced) on one cheque, 5002; invoice 3 is held.
+    const auto r = CreateCheques(db.code, "20261105", "20261020", bank, 5002);
+    REQUIRE(r.status == CreateChequesStatus::Created);
+    CHECK(r.period == 7);
+    REQUIRE(r.cheques.size() == 1);
+    CHECK(r.cheques[0].number == 5002);
+    CHECK(r.cheques[0].vendor == "V001");
+    CHECK(r.cheques[0].amount == 111000 + 77700);
+    CHECK(r.cheques[0].items == 2);
+
+    const auto cheques = LoadCheques(db.code);
+    REQUIRE(cheques.size() == 2);
+    CHECK(cheques[1].number == 5002);
+    CHECK(cheques[1].amount == 188700);
+    CHECK(cheques[1].date == "20261020");
+    CHECK(cheques[1].bank.account == "102101");
+    CHECK_FALSE(cheques[1].cleared);
+    for (const OpenItem& i : LoadOpenItems(db.code)) {
+        if (i.batchno == 1 || i.batchno == 2) {
+            CHECK(i.paymentCtl == ap_payment::kPaid);
+            CHECK(i.cheque == 5002);
+            CHECK(i.bank.account == "102101");
+            CHECK(i.datePaid == "20261020");
+            CHECK(i.paid == (i.batchno == 1 ? 111000 : 77700));
+        }
+        if (i.batchno == 3) CHECK(i.paymentCtl == ap_payment::kHeld);
+    }
+    // The payment's journal: Dr AP / Cr the bank per invoice, dated the payment, period 7, with the cheque.
+    std::int64_t apDr = 0, bankCr = 0;
+    int rows = 0;
+    for (const JournalRow& j : LoadJournal(db.code)) {
+        if (j.cheque != "5002") continue;
+        ++rows;
+        CHECK(j.date == "20261020");
+        CHECK(j.period == 7);
+        CHECK(j.type == "AP");
+        CHECK(j.mode == "1");
+        if (j.account.account == "221002") apDr += j.debit;
+        if (j.account.account == "102101") bankCr += j.credit;
+    }
+    CHECK(rows == 4);
+    CHECK(apDr == 188700);
+    CHECK(bankCr == 188700);
+
+    // Paid: Recover refuses it; the next number moves on; nothing more is due.
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 1) == ApRecoverResult::Paid);
+    CHECK(NextChequeNumber(db.code) == 5003);
+    CHECK(CreateCheques(db.code, "20261105", "20261020", bank, 5003).status == CreateChequesStatus::NothingDue);
+
+    // Released, invoice 3 goes on the next run, with its own cheque.
+    CHECK(SetPaymentControl(db.code, 3, ap_payment::kOpen));
+    const auto r2 = CreateCheques(db.code, "20261105", "20261020", bank, 5003);
+    REQUIRE(r2.cheques.size() == 1);
+    CHECK(r2.cheques[0].vendor == "V002");
+    CHECK(r2.cheques[0].amount == 490000);
+}

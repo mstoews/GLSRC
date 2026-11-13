@@ -415,3 +415,68 @@ struct JournalRow {   // ap_jsum
 std::vector<OpenItem> LoadOpenItems(cb4sqlite::Code4& code);   // in voucher order
 std::vector<Cheque> LoadCheques(cb4sqlite::Code4& code);       // in cheque order
 std::vector<JournalRow> LoadJournal(cb4sqlite::Code4& code);   // in table order
+
+// ---- payments: Create Cheques (spec #5 6.1, D8, D9; plan S5-M5) ---------------------------
+
+// What a posted invoice still owes: its amount less the W/H withheld (F mode:
+// REBATEAMT is negative). In T mode the W/H was debited, so the whole amount.
+std::int64_t AmountOwed(const OpenItem& item);
+
+struct PaymentItem {
+    OpenItem item;
+    std::string vendorName;   // VDSHORT, or VDNAME when blank
+    std::int64_t owed = 0;    // AmountOwed
+};
+
+// Create Cheques' list (TAPCreatePayment::DistList): the open items held,
+// open or forced (H, O, F) due by `dueBy` (yyyymmdd), and the forced ones
+// whatever their due date; with `all`, every item, paid ones included (View
+// All). In vendor order, then voucher order.
+std::vector<PaymentItem> PaymentItems(cb4sqlite::Code4& code, const std::string& dueBy, bool all = false);
+
+// TAPHoldForce::Ok: sets the open item of invoice voucher `batchno` to H, O
+// or F. Refused (false) for an item already in a payment (P, V, C: string
+// 4010) or not on file.
+bool SetPaymentControl(cb4sqlite::Code4& code, long batchno, const std::string& control);
+
+// The next cheque number: the highest on a cheque or an open item, + 1.
+long NextChequeNumber(cb4sqlite::Code4& code);
+
+// The open accounting period whose dates hold `yyyymmdd` (gl_pds STATUS
+// "0"), or 0 if none (closed, or no such dates).
+int OpenPeriodOf(cb4sqlite::Code4& code, const std::string& yyyymmdd);
+
+struct ChequeMade {
+    long number = 0;
+    std::string vendor, vendorName;
+    std::int64_t amount = 0;
+    int items = 0;
+};
+
+enum class CreateChequesStatus {
+    Created,
+    NothingDue,
+    BadBank,           // the bank isn't in the chart (string 4007)
+    BadNumber,         // the first number is 0, or a number it would use is already a cheque's
+    ClosedPeriod,      // the payment date isn't in an open period
+};
+
+struct CreateChequesResult {
+    CreateChequesStatus status = CreateChequesStatus::NothingDue;
+    std::vector<ChequeMade> cheques;
+    int period = 0;
+    long clash = 0;    // BadNumber: the number already used
+};
+
+// TAPCreatePayment::Ok and CreateGLEntry, corrected (D8, D9), in one
+// transaction: the open items due by `dueBy` (O) and the forced ones (F),
+// grouped by vendor, one cheque each, numbered from `firstNumber` in vendor
+// order, all drawn on `bank`. Each cheque goes in ap_reqst (not cleared);
+// each item gets the cheque, the amount owed as paid, the payment date, the
+// bank, and "P"; and its journal gets Dr its AP account / Cr the bank for
+// the amount owed, TYPE "AP", the invoice voucher's number, dated the
+// payment date, in that date's period, with the cheque number. (The original
+// dated these rows by the invoice and numbered the cheques only later, in Set
+// Cheque Numbers.)
+CreateChequesResult CreateCheques(cb4sqlite::Code4& code, const std::string& dueBy, const std::string& payDate,
+                                  const ApAccount& bank, long firstNumber);

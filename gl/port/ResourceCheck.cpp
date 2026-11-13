@@ -116,6 +116,9 @@ const DialogCase kDialogs[] = {
     {1030, L"Update AR and AP (TGLAPUpdate)", false, Pics::Main},
     // Spec #5 S5-M4.
     {1044, L"Cash voucher entry (TAPCashEntry)", false, Pics::Main, {1121}, {{3043, 4054}}},
+    // Spec #5 S5-M5.
+    {1045, L"Create Cheques (TAPCreatePayment)", true, Pics::Main, {1121}},
+    {1066, L"Hold or Force (TAPHoldForce)", false},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

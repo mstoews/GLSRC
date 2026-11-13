@@ -33,6 +33,7 @@
 #include "Accounts.h"   // TrimText
 #include "Ap.h"
 #include "ApInvoiceEntry.h"
+#include "ApPayments.h"
 #include "ApPosting.h"
 #include "ApTransfer.h"
 #include "Globals.h"
@@ -387,7 +388,7 @@ int StressAp(int times)
                RunApPost(nullptr, ApKind::Invoice, true) != -1 && RunApCancel(nullptr, ApKind::Invoice, true) != -1 &&
                RunApRecover(nullptr, ApKind::Invoice, true) != -1 && RunApTransfer(nullptr, true) != -1 &&
                RunApCashEntry(nullptr, true) != -1 && RunApPost(nullptr, ApKind::Cash, true) != -1 &&
-               RunApCancel(nullptr, ApKind::Cash, true) != -1;
+               RunApCancel(nullptr, ApKind::Cash, true) != -1 && RunApCreateCheques(nullptr, true) != -1;
     };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();

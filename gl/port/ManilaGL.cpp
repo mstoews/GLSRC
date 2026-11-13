@@ -4,6 +4,7 @@
 #include "ManilaGL.h"
 
 #include "ApInvoiceEntry.h"
+#include "ApPayments.h"
 #include "ApPosting.h"
 #include "ApTransfer.h"
 #include "ApVendors.h"
@@ -54,7 +55,6 @@ constexpr wchar_t kGleProp[] = L"GL.UseGle";
 // the other handlers in gl_man.h's "Accounts Payable" / "Accounts
 // Receivable" sections are AP / AR. Everything else is General Ledger.
 const WORD kApCommands[] = {
-    1057,  // APCreateGLSlip   ID_GLSLIP
     1066,  // APPurgeAccts     ID_PURGEACCTS
     1084,  // APPostAdj        ID_APPOSTADJ
     4046,  // APDelVendors     ID_DELVENDOR
@@ -282,6 +282,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());
+        return true;
+    case 1057:                             // TManilaGL::APCreateGLSlip: Receipts/Payments > Create Cheques (S5-M5)
+        RunApCreateCheques(hwnd());
         return true;
     case 1079:                             // TManilaGL::APCash: Transactions > Cash Invoice Vouchers, toolbar (S5-M4)
         RunApCashEntry(hwnd());
