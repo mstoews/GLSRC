@@ -300,10 +300,10 @@ On Spec #3's engine; all in the report list. Accounts come from `GL_SETAT`, not 
 | 8073 | Cash Cheque Summary | `AP_CHEQC` | |
 | 8067 / 8072 | VAT: AP / GL | `AP_VATAP`, `AP_VATGL` | VAT account from `GL_SETAT VATR` |
 | 8071 | Withholding Tax | `AP_REB` | W/H accounts from `GL_SETAT` (its selection was commented out) |
-| 8068 / 8069 / 8075 / 8076 | AP Journal: summary, detail, cash, invoices | `AP_JSUM*` | the cash/invoice menu labels corrected |
+| 8068 / 8069 / 8075 / 8076 | AP Journal: summary, detail, cash, invoices | `AP_JSUM*` | 8069's label corrected (it said "Transfer Summary"); 8075's and 8076's named the right reports (checked in S5-M7) and are made clearer |
 | 4091 | Cheques | `AP_CHEQ` | §6.2 |
 
-**Not ported:** 1082 and 1990 (adjustments: there are none) and the unreferenced `AP_CHECK`, `AP_CHEQA`, `AP_CHEQS`, `AP_SUMRY`, `AP_VAT`. **Menu labels** that named the wrong report are corrected by `prune_rc.py` edits, as in Spec #3 D13.
+**Not ported:** 1082 and 1990 (adjustments: there are none) and the unreferenced `AP_CHECK`, `AP_CHEQA`, `AP_CHEQS`, `AP_SUMRY`, `AP_VAT`. **Menu labels** that named the wrong report are corrected by `prune_rc.py` edits, as in Spec #3 D13: 4091's "Customer Sales Statements" copy goes, 4092 becomes "Cheque Payment Detail", 1060's second copy goes, and 8068, 1049 and 1065, on no menu, join Reporting > Accounts Payable (S5-M7).
 
 ---
 

@@ -17,7 +17,15 @@
 #include "Ap.h"
 #include "Vouchers.h"
 #include "reports/ApReports.h"
+#include "reports/ReportContext.h"
 
+#include "report/Layout.h"
+#ifdef _WIN32
+#include "report/win32/Gdi.h"
+#endif
+
+#include <algorithm>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1099,3 +1107,230 @@ TEST_CASE("Cheques: confirm, renumber, clear, void, purge (S5-M6, D8, D9)", "[ap
     for (const OpenItem& i : LoadOpenItems(db.code)) CHECK(i.paymentCtl != ap_payment::kCleared);
     CHECK(LoadOpenItems(db.code).size() == 2);   // invoices 3 (held) and 6 (open again)
 }
+
+// ---- the reports (S5-M7) ------------------------------------------------------------------
+
+namespace {
+
+int rowsOf(const rpt::Report& r, rpt::RowKind kind)
+{
+    int n = 0;
+    for (const rpt::Row& row : r.rows) n += row.kind == kind;
+    return n;
+}
+
+// The last Total row's amount in column `col` (-1 if there isn't one).
+std::int64_t totalAt(const rpt::Report& r, size_t col)
+{
+    for (auto it = r.rows.rbegin(); it != r.rows.rend(); ++it)
+        if (it->kind == rpt::RowKind::Total) return col < it->cells.size() ? it->cells[col].value : -1;
+    return -1;
+}
+
+bool hasNote(const rpt::Report& r, const std::string& text)
+{
+    for (const rpt::Row& row : r.rows)
+        if (row.kind == rpt::RowKind::Note && row.text == text) return true;
+    return false;
+}
+
+// Every Detail, GroupFooter and Total row has a cell per column.
+void checkShape(const rpt::Report& r)
+{
+    INFO(r.title);
+    CHECK(!r.rows.empty());
+    for (const rpt::Row& row : r.rows)
+        if (row.kind == rpt::RowKind::Detail || row.kind == rpt::RowKind::GroupFooter ||
+            row.kind == rpt::RowKind::Total)
+            CHECK(row.cells.size() == r.columns.size());
+}
+
+} // namespace
+
+TEST_CASE("DaysBetween and ApAsAtDate", "[ap]")
+{
+    CHECK(DaysBetween("20261104", "20261110") == 6);
+    CHECK(DaysBetween("20261110", "20261104") == -6);
+    CHECK(DaysBetween("20251231", "20260101") == 1);
+    CHECK(DaysBetween("20240228", "20240301") == 2);   // a leap year
+    CHECK(DaysBetween("20261110", "20261110") == 0);
+    ReportContext ctx;
+    ctx.printedOn = "11/10/2026";
+    CHECK(ApAsAtDate(ctx) == "20261110");
+    ctx.printedOn = "";
+    CHECK(ApAsAtDate(ctx).empty());
+}
+
+TEST_CASE("The AP reports on the fixture (S5-M7, D14)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    REQUIRE(ctx.currentPeriod == 7);
+
+    // Every report builds with a cell per column.
+    using Builder = rpt::Report (*)(cb4sqlite::Code4&, const ReportContext&);
+    const Builder all[] = {ApInvoicePrePosting, ApCashPrePosting, ApInvoiceVoucherDetail, ApCashVoucherDetail,
+                           ApVoucherStatus, ApPostingJournal, ApVendorList, ApOpenPayables, ApAgedPayables,
+                           ApCashRequirement, ApRegister, ApPrepayments, ApCheques, ApPaymentDetail,
+                           ApCashChequeSummary, ApVatAp, ApVatGl, ApWithholding, ApJournalSummary, ApJournalDetail,
+                           ApJournalCash, ApJournalInvoices};
+    for (Builder build : all) checkShape(build(db.code, ctx));
+
+    const auto invoices = LoadApVouchers(db.code, ApKind::Invoice);
+    const auto cash = LoadApVouchers(db.code, ApKind::Cash);
+
+    // 1078: the open invoices, each balanced.
+    int open = 0;
+    for (const ApVoucher& v : invoices) open += v.mode == ap_mode::kOpen;
+    const rpt::Report pre = ApInvoicePrePosting(db.code, ctx);
+    CHECK(rowsOf(pre, rpt::RowKind::GroupHeader) == open);
+    CHECK(totalAt(pre, 3) == totalAt(pre, 4));
+    CHECK(totalAt(pre, 3) > 0);
+
+    // 8077: the period's vouchers, every state; 1065: a line each, the total without the cancelled.
+    int inPeriod = 0;
+    std::int64_t payable = 0;
+    for (const ApVoucher& v : invoices)
+        if (v.period == 7) {
+            ++inPeriod;
+            if (!v.cancelled()) payable += v.payable;
+        }
+    CHECK(rowsOf(ApInvoiceVoucherDetail(db.code, ctx), rpt::RowKind::GroupHeader) == inPeriod);
+    const rpt::Report status = ApVoucherStatus(db.code, ctx);
+    CHECK(rowsOf(status, rpt::RowKind::Detail) == inPeriod);
+    CHECK(totalAt(status, 5) == payable);
+
+    // 1049: the posted invoices (3 and 6), without their AP lines.
+    const rpt::Report postj = ApPostingJournal(db.code, ctx);
+    CHECK(rowsOf(postj, rpt::RowKind::GroupHeader) == 2);
+    for (const rpt::Row& row : postj.rows)
+        if (row.kind == rpt::RowKind::Detail) CHECK(row.cells[0].text != "221002");
+
+    // 1060: the three vendors.
+    const rpt::Report vend = ApVendorList(db.code, ctx);
+    CHECK(rowsOf(vend, rpt::RowKind::Detail) == 3);
+    CHECK(hasNote(vend, "Total number of vendors: 3"));
+
+    // What's owed: invoice 3 only (6 is paid). 1061, 1062, 1064, 1058 and 1077 agree.
+    const auto items = LoadOpenItems(db.code);
+    REQUIRE(items.size() == 2);
+    const std::int64_t owed = AmountOwed(items[0]);
+    CHECK(owed == 490000);
+    CHECK(totalAt(ApOpenPayables(db.code, ctx), 5) == owed);
+    CHECK(totalAt(ApPrepayments(db.code, ctx), 5) == owed);
+    const rpt::Report reg = ApRegister(db.code, ctx);
+    CHECK(rowsOf(reg, rpt::RowKind::Detail) == 2);
+    CHECK(totalAt(reg, 3) == items[0].amount + items[1].amount);
+    CHECK(totalAt(reg, 8) == owed);
+    for (Builder build : {ApAgedPayables, ApCashRequirement}) {
+        const rpt::Report r = build(db.code, ctx);
+        INFO(r.title);
+        CHECK(totalAt(r, 6) == owed);
+        CHECK(totalAt(r, 2) + totalAt(r, 3) + totalAt(r, 4) + totalAt(r, 5) == owed);   // the buckets add up
+    }
+
+    // The buckets move with the report's date.
+    const long late = DaysBetween(items[0].dueDate, "20261110");
+    const size_t agedCol = late <= 30 ? 2 : late <= 60 ? 3 : late <= 90 ? 4 : 5;
+    CHECK(totalAt(ApAgedPayables(db.code, ctx), agedCol) == owed);
+    ReportContext later = ctx;
+    later.printedOn = "12/31/2027";   // long overdue
+    CHECK(totalAt(ApAgedPayables(db.code, later), 5) == owed);
+    CHECK(totalAt(ApCashRequirement(db.code, later), 2) == owed);   // overdue: the first column
+    ReportContext early = ctx;
+    early.printedOn = "01/01/2020";   // due in years
+    CHECK(totalAt(ApAgedPayables(db.code, early), 2) == owed);
+    CHECK(totalAt(ApCashRequirement(db.code, early), 5) == owed);
+
+    // 4092: cheque 5001 pays invoice 6.
+    const rpt::Report pay = ApPaymentDetail(db.code, ctx);
+    CHECK(rowsOf(pay, rpt::RowKind::GroupHeader) == 1);
+    CHECK(totalAt(pay, 6) == items[1].paid);
+
+    // 8073: the cash voucher paid by cheque 000123, less its W/H.
+    REQUIRE(cash.size() == 1);
+    const rpt::Report cc = ApCashChequeSummary(db.code, ctx);
+    if (cash[0].period == 7 && !cash[0].cancelled())
+        CHECK(totalAt(cc, 5) == cash[0].payable + std::min<std::int64_t>(cash[0].whAmount, 0));
+    else
+        CHECK(hasNote(cc, "No cash vouchers paid by cheque in this period."));
+
+    // 8067 / 8071: the tax lines of the period's posted vouchers.
+    std::int64_t vat = 0, wh = 0;
+    for (const ApKind kind : {ApKind::Invoice, ApKind::Cash})
+        for (const ApVoucher& v : LoadApVouchers(db.code, kind)) {
+            if (v.period != 7 || (v.mode != ap_mode::kPosted && v.mode != ap_mode::kTransferred)) continue;
+            for (const ApLine& l : LoadApLines(db.code, kind, v.number)) {
+                if (l.role == ApLineRole::Vat) vat += l.debit - l.credit;
+                if (l.role == ApLineRole::WithHolding) wh += l.credit - l.debit;
+            }
+        }
+    const rpt::Report vatap = ApVatAp(db.code, ctx);
+    if (vat) CHECK(totalAt(vatap, 5) - totalAt(vatap, 6) == vat);
+    const rpt::Report reb = ApWithholding(db.code, ctx);
+    CHECK(wh > 0);   // invoice 3's
+    CHECK(totalAt(reb, 5) - totalAt(reb, 4) == wh);
+
+    // The journal: seven rows waiting, all AP, in period 7, balanced.
+    std::int64_t jdr = 0;
+    for (const JournalRow& j : LoadJournal(db.code)) jdr += j.debit;
+    const rpt::Report jsum = ApJournalSummary(db.code, ctx);
+    CHECK(totalAt(jsum, 2) == jdr);
+    CHECK(totalAt(jsum, 3) == jdr);
+    CHECK(rowsOf(ApJournalDetail(db.code, ctx), rpt::RowKind::Detail) == 7);
+    CHECK(rowsOf(ApJournalInvoices(db.code, ctx), rpt::RowKind::Detail) == 7);
+    CHECK(hasNote(ApJournalCash(db.code, ctx), "No journal rows."));
+
+    // After posting, the pre-posting reports are empty and the cash voucher's rows are in 8075.
+    PostApVouchers(db.code, ApKind::Invoice);
+    PostApVouchers(db.code, ApKind::Cash);
+    CHECK(hasNote(ApInvoicePrePosting(db.code, ctx), "No vouchers."));
+    CHECK(hasNote(ApCashPrePosting(db.code, ctx), "No vouchers."));
+    const rpt::Report jcash = ApJournalCash(db.code, ctx);
+    CHECK(rowsOf(jcash, rpt::RowKind::Detail) > 0);
+    CHECK(totalAt(jcash, 6) == totalAt(jcash, 7));
+}
+
+#ifdef _WIN32
+// The column widths (plan S5-M7 task 6): laid out on A4, the narrower paper,
+// with the engine's own fonts measured by GDI, no text is cut short and no
+// number or date prints "###".
+TEST_CASE("The AP reports' columns fit A4 (S5-M7)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    rpt::win32::GdiMeasure measure;
+    using Builder = rpt::Report (*)(cb4sqlite::Code4&, const ReportContext&);
+    const Builder all[] = {ApInvoicePrePosting, ApCashPrePosting, ApInvoiceVoucherDetail, ApCashVoucherDetail,
+                           ApVoucherStatus, ApPostingJournal, ApVendorList, ApOpenPayables, ApAgedPayables,
+                           ApCashRequirement, ApRegister, ApPrepayments, ApPaymentDetail, ApCashChequeSummary,
+                           ApVatAp, ApVatGl, ApWithholding, ApJournalSummary, ApJournalDetail, ApJournalCash,
+                           ApJournalInvoices};
+    auto check = [&](const rpt::Report& r) {
+        INFO(r.title);
+        std::set<std::string> printed;
+        for (const rpt::Page& page : rpt::Layout(r, rpt::PageSetup::A4(r.orientation), measure))
+            for (const rpt::TextOp& t : page.texts) {
+                CHECK(t.text.find("###") == std::string::npos);
+                printed.insert(t.text);
+            }
+        for (const rpt::Row& row : r.rows) {
+            if (row.kind == rpt::RowKind::GroupHeader && !row.text.empty()) {
+                INFO(row.text);
+                CHECK(printed.count(row.text) == 1);
+            }
+            for (const rpt::Cell& c : row.cells)
+                if (c.type == rpt::CellType::Text && !c.text.empty()) {
+                    INFO(c.text);
+                    CHECK(printed.count(c.text) == 1);
+                }
+        }
+    };
+    for (Builder build : all) check(build(db.code, ctx));
+    PostApVouchers(db.code, ApKind::Invoice);   // the journal's cash and payment rows
+    PostApVouchers(db.code, ApKind::Cash);
+    for (Builder build : all) check(build(db.code, ctx));
+}
+#endif

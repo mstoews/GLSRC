@@ -265,6 +265,9 @@ ComputedVoucher ComputeVoucher(const std::vector<ApLine>& expenseLines, int vatR
 // yyyymmdd plus `days` (the due date: invoice date + terms); "" for an invalid date.
 std::string AddDays(const std::string& yyyymmdd, int days);
 
+// Days from `from` to `to` (yyyymmdd; negative when `to` is earlier); 0 if either is invalid.
+long DaysBetween(const std::string& from, const std::string& to);
+
 // The account's description in glaccts ("" if it isn't there).
 std::string AccountName(cb4sqlite::Code4& code, const ApAccount& account);
 

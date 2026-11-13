@@ -78,12 +78,9 @@ constexpr WORD kFixedAssetTypes = 1020;
 // The reports Spec #3 doesn't port (spec #3 1.2): they go with their modules.
 // Every General Ledger report is ported (S3-M1 to S3-M7); 1025 left the menu
 // (D13), and 6077 (GLAccounts), on no menu or toolbar, isn't ported (D11).
-// The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5).
-const WORD kApReports[] = {
-    1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
-    4092,
-    8067, 8068, 8069, 8071, 8072, 8073, 8075, 8076, 8077, 8078,
-};
+// The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5), the
+// AP reports with Spec #5 (S5-M7, RunApReport; 1082 and 1990, the adjustment
+// reports, aren't: there are no adjustments, spec #5 7).
 const WORD kArReports[] = {
     4056, 4057, 4060, 4061, 4063, 4068, 4069, 4070, 4071, 4072, 4073, 4074, 4075, 4076, 8137,
 };
@@ -280,9 +277,6 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());
         return true;
-    case 4091:                             // Print Cheques (AP_CHEQ.RPT): the cheques made, to print (S5-M6)
-        RunApCheques(*this);
-        return true;
     case 8074:                             // TManilaGL::APChequeAP: Confirm Printed Cheques (S5-M6, D9)
         RunApConfirmCheques(hwnd());
         return true;
@@ -427,6 +421,7 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     default:
         break;
     }
+    if (!ctl && RunApReport(*this, id)) return true;   // the AP reports, 4091 Print Cheques among them (spec #5 7)
     if (ctl || id >= 0xFF00) return false;   // child-window IDs: DefFrameProc
     NotPorted(id);
     return true;
@@ -453,9 +448,7 @@ std::wstring ManilaGL::MenuText(WORD id) const
 void ManilaGL::NotPorted(WORD id)
 {
     const std::wstring item = MenuText(id);
-    if (contains(kApReports, id)) {
-        ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Payable", 5);
-    } else if (contains(kArReports, id)) {
+    if (contains(kArReports, id)) {
         ReportingStubs::Show(hwnd(), item.c_str(), L"Accounts Receivable", 6);
     } else if (contains(kApCommands, id)) {
         ApStubs::Show(hwnd(), item.c_str());

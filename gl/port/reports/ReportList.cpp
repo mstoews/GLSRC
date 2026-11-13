@@ -50,6 +50,28 @@ const ListedReport kReports[] = {
     {ID_DOCTOR_RPT, L"Doctor Codes"},
     {1019, L"Fixed Assets Listing"},                // GLFinFA (spec #4 7)
     {1020, L"Fixed Asset Types"},                   // GLFinDep
+    {1078, L"AP Invoice Pre-Posting"},              // spec #5 7
+    {1081, L"AP Cash Pre-Posting"},
+    {8077, L"AP Voucher Detail"},
+    {8078, L"AP Cash Voucher Detail"},
+    {1065, L"AP Voucher Status"},
+    {1049, L"AP Invoice Posting Journal"},
+    {1060, L"Vendor List"},
+    {1061, L"Open Payables Detail"},
+    {1062, L"Aged Payables 30-60-90"},
+    {1064, L"Cash Requirement"},
+    {1077, L"Accounts Payable Register"},
+    {1058, L"Prepayments"},
+    {4091, L"Cheques"},
+    {4092, L"Payment Detail"},
+    {8073, L"Cash Cheque Summary"},
+    {8067, L"VAT: AP"},
+    {8072, L"VAT: General Ledger"},
+    {8071, L"Withholding Tax"},
+    {8068, L"AP Journal Summary"},
+    {8069, L"AP Journal Detail"},
+    {8075, L"AP Journal: Cash"},
+    {8076, L"AP Journal: Invoices and Payments"},
 };
 
 class ReportListDialog : public fx::Dialog {
