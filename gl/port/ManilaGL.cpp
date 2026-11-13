@@ -4,6 +4,8 @@
 #include "ManilaGL.h"
 
 #include "ApInvoiceEntry.h"
+#include "ApPosting.h"
+#include "ApTransfer.h"
 #include "ApVendors.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
@@ -52,14 +54,12 @@ constexpr wchar_t kGleProp[] = L"GL.UseGle";
 // the other handlers in gl_man.h's "Accounts Payable" / "Accounts
 // Receivable" sections are AP / AR. Everything else is General Ledger.
 const WORD kApCommands[] = {
-    1048,  // APPostBatch      ID_APPOSTBATCH
     1057,  // APCreateGLSlip   ID_GLSLIP
     1066,  // APPurgeAccts     ID_PURGEACCTS
     1079,  // APCash           ID_APCASH
     1084,  // APPostAdj        ID_APPOSTADJ
     1085,  // APCancelCash     ID_CASHCANCEL
     1088,  // APPostCash       ID_APPOSTCASH
-    3064,  // APCancelBatch    ID_BATCHCANCEL
     4046,  // APDelVendors     ID_DELVENDOR
     4047,  // APModVendors     ID_MODVENDOR
     6085,  // APPayment        ID_PAYMENT
@@ -286,6 +286,18 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());
         return true;
+    case 1048:                             // TManilaGL::APPostBatch: Post Voucher > Purchase Vouchers (S5-M3)
+        RunApPost(hwnd(), ApKind::Invoice);
+        return true;
+    case 3064:                             // TManilaGL::APCancelBatch: Cancel Voucher > Purchase Vouchers (S5-M3)
+        RunApCancel(hwnd(), ApKind::Invoice);
+        return true;
+    case CM_AP_RECOVER:                    // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3)
+        RunApRecover(hwnd(), ApKind::Invoice);
+        return true;
+    case 1028:                             // TGlWindow::GLUpdateAP: Maintenance > Update AR and AP (S5-M3)
+        RunApTransfer(hwnd());
+        return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
         RunVoucherEntry(hwnd());
@@ -448,6 +460,10 @@ bool ManilaGL::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT&)
         if (menu)
             EnableMenuItem(menu, CM_STATEMENT_LAYOUT,
                            MF_BYCOMMAND | ((GetMenuState(menu, ID_ACCTADD, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
+        // Recover Purchase Voucher is behind Recover General Ledger Voucher's access.
+        if (menu)
+            EnableMenuItem(menu, CM_AP_RECOVER,
+                           MF_BYCOMMAND | ((GetMenuState(menu, ID_GLREPBATCH, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
         // The voucher list opens Voucher Entry: behind its access.
         if (menu)
             EnableMenuItem(menu, CM_VOUCHER_LIST,

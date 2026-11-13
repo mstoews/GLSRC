@@ -17,6 +17,7 @@
 #include "Accounts.h"       // TrimText
 #include "Assets.h"         // ValidateAccount
 #include "MasterTables.h"   // SeekCode, DeleteRecord
+#include "Vouchers.h"       // SaveLine (the transfer)
 
 #include "report/Format.h"  // rpt::ToCents
 
@@ -25,6 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <stdexcept>
 
 namespace {
 
@@ -245,10 +247,10 @@ void deleteRows(cb4sqlite::Code4& code, const char* table, long number, const ch
 int EnsureApTables(cb4sqlite::Code4& code)
 {
     const char* names[] = {"ap_vend", "ap_btch", "ap_btchd", "ap_cash", "ap_cashd",
-                           "ap_dist", "ap_reqst", "ap_jsum", "ap_linex"};
-    bool have[9] = {};
+                           "ap_dist", "ap_reqst", "ap_jsum", "ap_linex", "ap_xfer"};
+    bool have[10] = {};
     bool all = true;
-    for (int i = 0; i < 9; ++i) all = (have[i] = hasTable(code, names[i])) && all;
+    for (int i = 0; i < 10; ++i) all = (have[i] = hasTable(code, names[i])) && all;
     if (!all) {
         cb4sqlite::Transaction tx(code);
         if (!have[0]) {   // dbf/AP_VEND
@@ -315,6 +317,11 @@ int EnsureApTables(cb4sqlite::Code4& code)
                                    {{"KIND", 'C', 1}, {"BATCHNO", 'N', 6}, {"ENTRYNO", 'N', 3}, {"ROLE", 'C', 1},
                                     {"GROSS", 'N', 16, 2}});
             cb4sqlite::createTag(code, "ap_linex", "batchno", "\"BATCHNO\"");
+        }
+        if (!have[9]) {   // the port's own (Ap.h)
+            cb4sqlite::createTable(code, "ap_xfer",
+                                   {{"JSUMROW", 'N', 10}, {"GLBATCH", 'N', 6}, {"PERIOD", 'N', 2}});
+            cb4sqlite::createTag(code, "ap_xfer", "glbatch", "\"GLBATCH\"");
         }
         tx.commit();
     }
@@ -856,6 +863,354 @@ bool DeleteApVoucher(cb4sqlite::Code4& code, ApKind kind, long number)
     deleteRows(code, "ap_linex", number, kindCode(kind));
     tx.commit();
     return true;
+}
+
+// ---- Post, Cancel, Recover ----------------------------------------------------------------
+
+namespace {
+
+const char* journalType(ApKind k) { return k == ApKind::Cash ? "CA" : "AP"; }
+
+// The ap_jsum PERIOD text, as the deployed rows: the number right-aligned in two.
+std::string periodText(int period)
+{
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "%2d", period);
+    return buf;
+}
+
+std::string clip(const std::string& s, size_t n) { return s.size() > n ? s.substr(0, n) : s; }
+
+// Why voucher `v` can't be posted, if it can't.
+std::optional<ApRefusal> checkPostable(cb4sqlite::Code4& code, const ApVoucher& v, const std::vector<ApLine>& lines)
+{
+    if (lines.empty()) return ApRefusal{v.number, ApPostRefusal::NoLines, {}};
+    std::int64_t dr = 0, cr = 0;
+    for (const ApLine& l : lines) {
+        dr += l.debit;
+        cr += l.credit;
+    }
+    if (dr != cr) return ApRefusal{v.number, ApPostRefusal::OutOfBalance, {}};
+    for (const ApLine& l : lines)
+        if ((l.debit != 0 || l.credit != 0) && !ValidateAccount(code, l.account.account, l.account.dept))
+            return ApRefusal{v.number, ApPostRefusal::UnknownAccount, l.account};
+    return std::nullopt;
+}
+
+void setMode(cb4sqlite::Code4& code, ApKind kind, long number, const char* mode)
+{
+    Data4 d(&code, headerTable(kind));
+    Field4 batchno(d, "batchno"), m(d, "mode");
+    if (seekBatch(d, batchno, number)) {
+        m.assign(mode);
+        d.flush();
+    }
+    d.close();
+}
+
+void appendJournal(cb4sqlite::Code4& code, const ApVoucher& v, const std::vector<ApLine>& lines)
+{
+    Data4 j(&code, "ap_jsum");
+    Field4 account(j, "account"), dept(j, "dept"), period(j, "period"), mode(j, "mode"), date(j, "date"),
+        type(j, "type"), batchno(j, "batchno"), reference(j, "reference"), cheque(j, "cheque"),
+        descript(j, "descript"), debit(j, "debit"), credit(j, "credit");
+    for (const ApLine& l : lines) {
+        if (l.debit == 0 && l.credit == 0) continue;
+        j.appendStart();
+        j.blank();
+        account.assign(l.account.account.c_str());
+        dept.assign(l.account.dept.c_str());
+        period.assign(periodText(v.period).c_str());
+        mode.assign("1");
+        date.assign(v.invoiceDate.empty() ? v.date.c_str() : v.invoiceDate.c_str());
+        type.assign(journalType(v.kind));
+        batchno.assignLong(v.number);
+        reference.assign(clip(TrimText(v.reference), 30).c_str());
+        cheque.assign(clip(TrimText(v.cheque), 7).c_str());
+        descript.assign(clip(TrimText(l.descript), 40).c_str());
+        debit.assign(money(l.debit).c_str());
+        credit.assign(money(l.credit).c_str());
+        j.append();
+    }
+    j.close();
+}
+
+void appendOpenItem(cb4sqlite::Code4& code, const ApVoucher& v)
+{
+    Data4 d(&code, "ap_dist");
+    d.appendStart();
+    d.blank();
+    Field4(d, "apaccount").assign(v.account.account.c_str());
+    Field4(d, "apdepart").assign(v.account.dept.c_str());
+    Field4(d, "period").assignLong(v.period);
+    Field4(d, "date").assign(v.invoiceDate.c_str());
+    Field4(d, "duedate").assign(v.dueDate.c_str());
+    Field4(d, "batchno").assignLong(v.number);
+    Field4(d, "invoiceno").assign(clip(TrimText(v.invoiceNo), 8).c_str());
+    Field4(d, "paymentctl").assign(ap_payment::kOpen);
+    Field4(d, "vendorno").assign(TrimText(v.vendor).c_str());
+    Field4(d, "chequeno").assignLong(0);
+    Field4(d, "reference").assign(TrimText(v.reference).c_str());
+    Field4(d, "descript").assign(TrimText(v.descript).c_str());
+    Field4(d, "amount").assign(money(v.payable).c_str());
+    Field4(d, "rebateamt").assign(money(v.whAmount).c_str());
+    Field4(d, "amountpaid").assign(money(0).c_str());
+    Field4(d, "paymentreq").assignLong(0);
+    Field4(d, "vatamt").assign(money(v.vatAmount).c_str());
+    Field4(d, "adjustment").assign(money(0).c_str());
+    d.append();
+    d.close();
+}
+
+// Deletes the rows of `table` matching `where` (SQL over the table, bound to ?1 and ?2) and packs it.
+void deleteWhere(cb4sqlite::Code4& code, const char* table, const std::string& where, const std::string& a, long b)
+{
+    std::vector<long long> rows;
+    {
+        cb4sqlite::Query q(code, std::string("SELECT _rowid FROM ") + table + " WHERE _deleted = 0 AND " + where);
+        q.bindText(1, a);
+        q.bindInt(2, b);
+        while (q.next()) rows.push_back(q.integer(0));
+    }
+    if (rows.empty()) return;
+    Data4 d(&code, table);
+    for (long long r : rows)
+        if (d.go(static_cast<long>(r)) == r4success) d.deleteRec();
+    d.pack();
+    d.close();
+}
+
+} // namespace
+
+ApPostResult PostApVouchers(cb4sqlite::Code4& code, ApKind kind, long number)
+{
+    ApPostResult result;
+    std::vector<ApVoucher> todo;
+    for (const ApVoucher& v : LoadApVouchers(code, kind))
+        if (v.mode == ap_mode::kOpen && (number == 0 || v.number == number)) todo.push_back(v);
+    if (todo.empty()) return result;
+    cb4sqlite::Transaction tx(code);
+    for (const ApVoucher& v : todo) {
+        const std::vector<ApLine> lines = LoadApLines(code, kind, v.number);
+        if (const std::optional<ApRefusal> r = checkPostable(code, v, lines)) {
+            result.refused.push_back(*r);
+            continue;
+        }
+        if (kind == ApKind::Invoice) appendOpenItem(code, v);   // AppendAPDist
+        appendJournal(code, v, lines);                          // AppendAPSummary
+        setMode(code, kind, v.number, ap_mode::kPosted);
+        result.posted.push_back(v.number);
+    }
+    tx.commit();
+    return result;
+}
+
+ApCancelResult CancelApVoucher(cb4sqlite::Code4& code, ApKind kind, long number)
+{
+    const std::optional<ApVoucher> v = FindApVoucher(code, kind, number);
+    if (!v) return ApCancelResult::NotFound;
+    if (v->mode != ap_mode::kOpen) return ApCancelResult::NotOpen;
+    cb4sqlite::Transaction tx(code);
+    setMode(code, kind, number, ap_mode::kCancelled);
+    tx.commit();
+    return ApCancelResult::Cancelled;
+}
+
+ApRecoverResult RecoverApVoucher(cb4sqlite::Code4& code, ApKind kind, long number)
+{
+    const std::optional<ApVoucher> v = FindApVoucher(code, kind, number);
+    if (v && v->mode == ap_mode::kTransferred) return ApRecoverResult::Transferred;
+    if (!v || v->mode != ap_mode::kPosted) return ApRecoverResult::NotPosted;
+    {
+        cb4sqlite::Query q(code, "SELECT count(*) FROM ap_jsum WHERE _deleted = 0 AND trim(type) = ?1 AND batchno = ?2 "
+                                 "AND trim(mode) = '2'");
+        q.bindText(1, journalType(kind));
+        q.bindInt(2, number);
+        if (q.next() && q.integer(0) > 0) return ApRecoverResult::Transferred;
+    }
+    if (kind == ApKind::Invoice) {
+        cb4sqlite::Query q(code, "SELECT count(*) FROM ap_dist WHERE _deleted = 0 AND batchno = ?1 AND "
+                                 "trim(paymentctl) IN ('P', 'V', 'C')");
+        q.bindInt(1, number);
+        if (q.next() && q.integer(0) > 0) return ApRecoverResult::Paid;
+    }
+    cb4sqlite::Transaction tx(code);
+    if (kind == ApKind::Invoice) deleteWhere(code, "ap_dist", "?1 = ?1 AND batchno = ?2", "", number);
+    deleteWhere(code, "ap_jsum", "trim(type) = ?1 AND batchno = ?2", journalType(kind), number);
+    setMode(code, kind, number, ap_mode::kOpen);
+    tx.commit();
+    return ApRecoverResult::Recovered;
+}
+
+// ---- the transfer ---------------------------------------------------------------------------
+
+namespace {
+
+struct PeriodInfo {
+    bool found = false, closed = false;
+    std::string end;   // yyyymmdd
+};
+
+PeriodInfo periodInfo(cb4sqlite::Code4& code, int period)
+{
+    PeriodInfo p;
+    cb4sqlite::Query q(code, "SELECT status, periode FROM gl_pds WHERE _deleted = 0 AND period = ?1 ORDER BY _rowid LIMIT 1");
+    q.bindInt(1, period);
+    if (!q.next()) return p;
+    p.found = true;
+    p.closed = TrimText(q.text(0)) == "1";
+    p.end = TrimText(q.text(1));
+    return p;
+}
+
+// After a transfer or its undo: each posted / transferred voucher of a kind
+// is "2" when it has rows and all are transferred, "0" otherwise.
+void markTransferred(cb4sqlite::Code4& code, ApKind kind)
+{
+    std::vector<std::pair<long, const char*>> changes;
+    for (const ApVoucher& v : LoadApVouchers(code, kind)) {
+        if (v.mode != ap_mode::kPosted && v.mode != ap_mode::kTransferred) continue;
+        cb4sqlite::Query q(code, "SELECT count(*), sum(trim(mode) = '2') FROM ap_jsum WHERE _deleted = 0 AND "
+                                 "trim(type) = ?1 AND batchno = ?2");
+        q.bindText(1, journalType(kind));
+        q.bindInt(2, v.number);
+        if (!q.next() || q.integer(0) == 0) continue;
+        const bool all = q.integer(1) == q.integer(0);
+        const char* want = all ? ap_mode::kTransferred : ap_mode::kPosted;
+        if (v.mode != want) changes.emplace_back(v.number, want);
+    }
+    for (const auto& [n, m] : changes) setMode(code, kind, n, m);
+}
+
+double toDouble(std::int64_t cents) { return static_cast<double>(cents) / 100.0; }
+
+} // namespace
+
+ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
+{
+    ApTransferResult result;
+    struct Row {
+        long long rowid;
+        ApAccount account;
+        std::int64_t debit, credit;
+    };
+    std::map<int, std::vector<Row>> byPeriod;
+    {
+        cb4sqlite::Query q(code, "SELECT _rowid, trim(period), account, dept, debit, credit FROM ap_jsum "
+                                 "WHERE _deleted = 0 AND coalesce(trim(mode), '') IN ('', '1') ORDER BY _rowid");
+        while (q.next())
+            byPeriod[static_cast<int>(q.integer(1))].push_back(
+                {q.integer(0), {TrimText(q.text(2)), TrimText(q.text(3))}, rpt::ToCents(q.number(4)),
+                 rpt::ToCents(q.number(5))});
+    }
+    if (byPeriod.empty()) return result;
+
+    cb4sqlite::Transaction tx(code);
+    VoucherHeaders h(code);
+    VoucherLines l(code);
+    if (!h.isValid() || !l.isValid()) throw std::runtime_error("gl: a voucher table is missing");
+    for (const auto& [period, rows] : byPeriod) {
+        const PeriodInfo p = periodInfo(code, period);
+        if (!p.found || p.end.empty()) {
+            result.undatedPeriods.push_back(period);
+            continue;
+        }
+        if (p.closed) {
+            result.closedPeriods.push_back(period);
+            continue;
+        }
+        // Net by account and dept, in the order the accounts first appear.
+        std::vector<std::pair<ApAccount, std::int64_t>> nets;
+        for (const Row& r : rows) {
+            auto it = std::find_if(nets.begin(), nets.end(), [&](const auto& n) { return n.first == r.account; });
+            if (it == nets.end()) {
+                nets.emplace_back(r.account, 0);
+                it = nets.end() - 1;
+            }
+            it->second += r.debit - r.credit;
+        }
+        ApTransferVoucher tv;
+        tv.period = period;
+        tv.rows = static_cast<int>(rows.size());
+        VoucherHeader header;
+        header.mode = voucher_mode::kOpen;
+        header.description = "Accounts Payable GL Update";   // string 1049
+        header.date = p.end;
+        header.period = period;
+        long number = 0;
+        for (const auto& [account, net] : nets) {
+            if (net == 0) continue;
+            VoucherLine v;
+            v.line = ++tv.lines;
+            v.period = period;
+            v.date = p.end;
+            v.account = account.account;
+            v.dept = account.dept;
+            v.descript = clip(AccountName(code, account), 40);
+            v.reference = "AP GL Update";
+            v.debit = net > 0 ? toDouble(net) : 0;
+            v.credit = net < 0 ? toDouble(-net) : 0;
+            (net > 0 ? tv.debit : tv.credit) += net > 0 ? net : -net;
+            number = SaveLine(h, l, number, header, v, iniBatchno);
+        }
+        tv.glVoucher = number;
+        Data4 j(&code, "ap_jsum");
+        Field4 mode(j, "mode");
+        Data4 x(&code, "ap_xfer");
+        Field4 xrow(x, "jsumrow"), xbatch(x, "glbatch"), xperiod(x, "period");
+        for (const Row& r : rows) {
+            if (j.go(static_cast<long>(r.rowid)) == r4success) {
+                mode.assign(ap_mode::kTransferred);
+                j.flush();
+            }
+            x.appendStart();
+            x.blank();
+            xrow.assignLong(static_cast<long>(r.rowid));
+            xbatch.assignLong(number);
+            xperiod.assignLong(period);
+            x.append();
+        }
+        j.close();
+        x.close();
+        result.vouchers.push_back(tv);
+    }
+    markTransferred(code, ApKind::Invoice);
+    markTransferred(code, ApKind::Cash);
+    tx.commit();
+    return result;
+}
+
+int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
+{
+    if (glVoucher <= 0 || !hasTable(code, "ap_xfer") || !hasTable(code, "ap_jsum")) return 0;
+    std::vector<long long> rows, links;
+    {
+        cb4sqlite::Query q(code, "SELECT _rowid, jsumrow FROM ap_xfer WHERE _deleted = 0 AND glbatch = ?1");
+        q.bindInt(1, glVoucher);
+        while (q.next()) {
+            links.push_back(q.integer(0));
+            rows.push_back(q.integer(1));
+        }
+    }
+    if (rows.empty()) return 0;
+    {
+        Data4 j(&code, "ap_jsum");
+        Field4 mode(j, "mode");
+        for (long long r : rows)
+            if (j.go(static_cast<long>(r)) == r4success) {
+                mode.assign("1");
+                j.flush();
+            }
+        j.close();
+        Data4 x(&code, "ap_xfer");
+        for (long long r : links)
+            if (x.go(static_cast<long>(r)) == r4success) x.deleteRec();
+        x.pack();
+        x.close();
+    }
+    markTransferred(code, ApKind::Invoice);
+    markTransferred(code, ApKind::Cash);
+    return static_cast<int>(rows.size());
 }
 
 // ---- the ledger rows ----------------------------------------------------------------------

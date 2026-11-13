@@ -241,6 +241,43 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 3 — Post, Cancel, Recover; the transfer (1028)
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.4 and §2.6 #3, #8 hold. Further findings:
+>   - `TAPPostBatch::HandleListBox` (a double-click) wrote `GL_DIST` rows and no `AP_JSUM` rows, unlike Ok.
+>   - The original's Cancel wrote string 1042 over the reference and descriptions, and zeroed the payable and lines.
+>   - `APUpdate` dated the GL voucher today and read rows with mode blank or "1".
+>   - Dialog 1030's boxes are hand-toggled `BS_CHECKBOX`.
+>   - **Settled:** where the transfer records its GL voucher. A port table, **`ap_xfer`** (the `ap_jsum` row's record number, the GL voucher, the period), as Spec #4's `gl_fadep`. A transferred row is never deleted, and `pack()` doesn't renumber, so the link holds. The design's §4.4 says so.
+> - **`Ap.h`** (task 2), each in one transaction:
+>   - **`PostApVouchers(kind, number)`:** an invoice gets its `ap_dist` row ("O", D11); a cash voucher gets none (D10). Both get `ap_jsum` rows (TYPE "AP" / "CA", the cash cheque, the period as " 7", the invoice date), then "0". It refuses a voucher out of balance by a cent, with no lines, or with an account not in the chart. Cash posting is in place for S5-M4.
+>   - **`CancelApVoucher`:** "X", lines kept (D3).
+>   - **`RecoverApVoucher` (D7):** refuses a voucher that is transferred, or whose open item is P/V/C. Otherwise it removes its own `ap_dist` and `ap_jsum` rows and sets "1".
+>   - **`TransferAp`:**
+>     - one GL voucher per period through Spec #2's `SaveLine`, netted by account and dept, dated the period's end (D2);
+>     - closed or undated periods are reported and left waiting;
+>     - rows go to "2" with `ap_xfer` links, and each voucher of either kind whose rows are all transferred goes to "2" (D10).
+>   - **`UndoApTransfer`**, called by Spec #2's `CancelVoucher` after Spec #4's `UndoRun`: one call in `Vouchers.cpp`.
+>   - `EnsureApTables` creates `ap_xfer`.
+> - **Screens** (tasks 3–4):
+>   - **`gl/port/ApPosting.{h,cpp}`:** Spec #2's voucher-list shape, for either kind. Post on 1047 (OK posts all, a double-click one), Cancel on 1043, and Recover on 1015 (refusing a transferred or paid voucher, saying what to do).
+>   - **`gl/port/ApTransfer.{h,cpp}`** on 1030: the AP box checked, the AR box disabled (Spec #6), the waiting rows counted. OK reports each period's GL voucher, or why a period was left.
+>   - `prune_rc.py`: 1047 and 1030 added. A menu edit puts **Recover Purchase Voucher** (`CM_AP_RECOVER`, 20504) after Recover General Ledger Voucher, behind its access.
+> - **Wire** (task 5): 1048, 3064, `CM_AP_RECOVER` and 1028; 1048 and 3064 left `kApCommands`. `/checkres` loads 1047 and 1030; `StressAp` opens all four.
+> - **Fixture:** regenerated for the new menu row (`ACCESSM` 108 rows); every other table identical.
+> - **Tests** (task 6), 5 cases. `gl_tests`: 133 cases.
+>   - Posting invoice 1 (the open item, 4 journal rows), all the rest, and the cash voucher.
+>   - The refusals, with nothing written.
+>   - Cancel; Recover (invoice 3 recovered and posted again; paid invoice 6 refused).
+>   - The transfer: GL voucher 104, 7 lines, 6,536.00 each way, 11 rows, closed period 5 left waiting, the vouchers "2" with cash included. Cancelling 101 leaves AP alone; cancelling 104 puts everything back.
+>   - Posting the transfer: 221002 moves by 4,900.00 (the unpaid invoice 3), 731000-20 by 5,000.00.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (69 s). Driven in the app (a scratch copy, window messages only), checked in the database:
+>   - cancel invoice 2 ("X");
+>   - post all ("1 voucher(s) posted");
+>   - Recover refuses paid invoice 6, then recovers invoice 1;
+>   - Update AR and AP gives "Period 7: GL voucher 104, 5 line(s), 6,200.00 each way";
+>   - Cancel Voucher on GL voucher 104 puts the 7 rows back to waiting and invoices 3 and 6 back to "0".
+> - **Q3** is still the spec's assumption (posted invoices start open).
+
 **Goal:** invoices post to AP's ledger, and AP's journal reaches the General Ledger.
 
 ### Tasks
