@@ -142,7 +142,7 @@ int EnsureAssetTables(cb4sqlite::Code4& code)
                                  "WHERE _deleted = 0 AND accum_dep IS NULL AND lifeleft > 0");
         while (q.next()) {
             const std::int64_t depreciable = std::max<std::int64_t>(0, rpt::ToCents(q.number(1)) - rpt::ToCents(q.number(2)));
-            const std::int64_t accum = std::min(depreciable, rpt::ToCents(q.number(3)) * q.integer(4));
+            const std::int64_t accum = std::min<std::int64_t>(depreciable, rpt::ToCents(q.number(3)) * q.integer(4));
             fills.emplace_back(q.text(0), accum);
         }
     }

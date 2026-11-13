@@ -15,6 +15,14 @@ tools/linux/wincheck_all.sh     # every gl.exe, win32fx and trivial_dialog sourc
 
 It catches typos, wrong API names and signatures, and most of what `/W4` warns about. It doesn't link anything, and `long` is 64-bit there, unlike on Windows, so size-dependent mistakes can slip through.
 
+## `check_generated.sh`
+
+Regenerates `gl/res/gl.rc`, `resource.h`, `bitmaps/` and `icons/` with `gl/res/tools/prune_rc.py` into a scratch directory and compares them with the committed files. Run it after changing `prune_rc.py` (its font map or `PATCHES`, UI refresh spec §4.1) and committing the regenerated files; the exit code is the number of differences.
+
+```
+tools/linux/check_generated.sh
+```
+
 ## `genproj.py`
 
 Writes the solution's `.vcxproj` files and `gl.sln`.

@@ -20,7 +20,6 @@
 #include "StringUtil.h"
 #include "Toolbar.h"
 #include "Verify.h"
-#include "VerticalToolbar.h"
 #include "Window.h"
 #include "controls/CustomControls.h"
 #include "controls/Grid.h"

@@ -139,6 +139,16 @@ HWND MdiFrame::activeChild() const noexcept
 
 LRESULT MdiFrame::DefaultProc(UINT msg, WPARAM wp, LPARAM lp)
 {
+    if (msg == WM_DPICHANGED) {   // per-monitor v2: moved to a monitor with another scaling
+        OnDpiChanged(HIWORD(wp));   // the bars first, so the layout below uses their new heights
+        const RECT* r = reinterpret_cast<const RECT*>(lp);
+        SetWindowPos(hwnd(), nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        RECT client{};   // and lay out, also when the suggested size is the current one
+        GetClientRect(hwnd(), &client);
+        OnSize(SIZE_RESTORED, client.right, client.bottom);
+        return 0;
+    }
     return DefFrameProcW(hwnd(), client_, msg, wp, lp);
 }
 

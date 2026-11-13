@@ -8,6 +8,7 @@ All three are compiled as part of their projects with `/W3`, without `/WX` (see 
 |---|---|---|---|---|
 | SQLite amalgamation | 3.46.1 | Public domain | `cb4sqlite/sqlite3.c`, `cb4sqlite/sqlite3.h` | `cb4sqlite.lib` (spec §4) |
 | Catch2 amalgamation | 3.7.1 | BSL-1.0 (`cb4sqlite_tests/vendor/catch2/LICENSE.txt`) | `cb4sqlite_tests/vendor/catch2/catch_amalgamated.{hpp,cpp}` | `cb4sqlite_tests.exe` (provides `main()`) |
+| Fluent UI System Icons (27 icons, rendered to `.ico`) | commit `64e5aa7` (2026-10-28) | MIT (`gl/res/icons/fluent/LICENSE`) | `gl/res/icons/fluent/*.ico` | `gl.exe` resources (UI refresh spec §4.2) |
 | shapelib (DBF reader only) | 1.6.3 | `MIT OR LGPL-2.0-or-later`; **used under MIT** (`dbf2sqlite_core/vendor/shapelib/LICENSE-MIT`) | `dbf2sqlite_core/vendor/shapelib/{dbfopen.c,safileio.c,shapefil.h,shapefil_private.h}` | `dbf2sqlite_core.lib` (spec §4.5, §10 Q3) |
 
 ## Sources (fetched 2026-11-06)
@@ -15,6 +16,8 @@ All three are compiled as part of their projects with `/W3`, without `/WX` (see 
 - SQLite: `https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip` (zip SHA-256 `77823cb110929c2bcb0f5d48e4833b5c59a8a6e40cdea3936b99e199dbbe5784`). Only `sqlite3.c` and `sqlite3.h` are kept; `shell.c` and `sqlite3ext.h` are not needed. Built with `SQLITE_THREADSAFE=0`, `SQLITE_OMIT_LOAD_EXTENSION=1`, `SQLITE_DEFAULT_FOREIGN_KEYS=1` (spec §7.1).
 - Catch2: `https://raw.githubusercontent.com/catchorg/Catch2/v3.7.1/extras/catch_amalgamated.{hpp,cpp}` and `.../v3.7.1/LICENSE.txt`.
 - shapelib: `https://raw.githubusercontent.com/OSGeo/shapelib/v1.6.3/{dbfopen.c,safileio.c,shapefil.h,shapefil_private.h,LICENSE-MIT}`. The `.shp`/`.shx` parts of shapelib are not vendored.
+
+- Fluent UI System Icons (fetched 2026-11-13): `https://raw.githubusercontent.com/microsoft/fluentui-system-icons/64e5aa757d1b70c24a283256ddcb8269d0f58773/assets/<Icon>/SVG/ic_fluent_<icon>_<size>_regular.svg` and `.../LICENSE`, by `gl/res/tools/make_icons.py fetch`. Not kept as SVG: `make_icons.py build` renders them into the committed `.ico` files, so their hashes are the `.ico` files' own (`git log`).
 
 ## SHA-256 of vendored files
 

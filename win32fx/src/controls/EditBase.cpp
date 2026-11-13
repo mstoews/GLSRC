@@ -3,7 +3,7 @@
 //
 // Creation (WM_NCCREATE): the template text is kept as the mask and the
 // control starts empty; the Toolbox style bits are replaced by EDIT styles
-// (ES_3D -> WS_EX_CLIENTEDGE, else WS_BORDER; ES_STATIC -> ES_READONLY;
+// (WS_EX_CLIENTEDGE always, whether ES_3D or not; ES_STATIC -> ES_READONLY;
 // numbers ES_RIGHT; ES_UPPERCASE/LOWERCASE for tbPic) before EDIT sees them.
 //
 // Typing (WM_CHAR) and pasting (WM_PASTE): the text the edit would have
@@ -103,8 +103,7 @@ LRESULT onCreate(const EditBehavior& b, HWND h, WPARAM wp, LPARAM lp)
     if (tb & tbES_STATIC) low |= ES_READONLY;
     DWORD style = (static_cast<DWORD>(cs->style) & 0xFFFF0000u) | low;
     DWORD ex = cs->dwExStyle;
-    if (tb & tbES_3D) ex |= WS_EX_CLIENTEDGE;
-    else style |= WS_BORDER;
+    ex |= WS_EX_CLIENTEDGE;   // with or without ES_3D: the themed border (UI refresh spec 4.5, D5)
     SetWindowLongPtrW(h, GWL_STYLE, static_cast<LONG_PTR>(style));
     SetWindowLongPtrW(h, GWL_EXSTYLE, static_cast<LONG_PTR>(ex));
     cs->style = static_cast<LONG>(style);

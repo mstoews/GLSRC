@@ -6,7 +6,9 @@ gl/gl.rc (bitmaps and strings that gl_new.rc lacks). Plan M4; spec 6.2.
 The output is committed. Re-run this only to regenerate it, e.g. when a later
 spec adds a dialog to DIALOGS. Hand edits to gl.rc made since are lost.
 
-usage: python3 prune_rc.py <repo-root>
+usage: python3 prune_rc.py <repo-root> [out-dir]
+       out-dir defaults to <repo-root>/gl/res; tools/linux/check_generated.sh
+       writes to a scratch directory and compares.
 needs: a C preprocessor that understands -P -w -I, to resolve the symbolic IDs
        through gl/header (default x86_64-w64-mingw32-cpp; override with $CPP).
        On Windows, Visual Studio's LLVM tools have one:
@@ -21,7 +23,7 @@ import os, re, subprocess, sys
 
 ROOT = sys.argv[1]
 GL = os.path.join(ROOT, 'gl')
-OUT = os.path.join(GL, 'res')
+OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(GL, 'res')
 CPP = os.environ.get('CPP', 'x86_64-w64-mingw32-cpp')
 
 # Spec #1 dialogs (spec 6.2 as corrected in M4), all taken from gl_new.rc,
@@ -262,9 +264,77 @@ nstr_raw = sum(1 for b in strings_new for l in b['lines'] if re.match(r'^\s*\w+\
 if nstr_raw != len(str_new):
     sys.exit('string parse mismatch')
 
+# ---- the UI refresh (specs/2026-11-13-ui-refresh-design.md 4.1, D1) --------
+# Every dialog in Segoe UI, one point larger than the original font: MS Sans
+# Serif 8 and Segoe UI 9 look about the same size. Dialog units follow the
+# font, so each dialog grows by about 15% and keeps its proportions.
+FONT_LINE = re.compile(r'^FONT\s+(\d+)\s*,\s*"([^"]*)"\s*$', re.I)
+OLD_FONTS = {'ms sans serif', 'helv'}
+
+
+# The module bar 2057 keeps its fields 15 px high (ManilaGL::OnSize), which
+# Segoe UI 11 overflows. 9, the status bar's font, until U3 replaces the bar.
+FONT_SIZE = {'2057': 9}
+
+
+def new_font(line, dialog):
+    m = FONT_LINE.match(line.strip())
+    if not m or m.group(2).strip().lower() not in OLD_FONTS:
+        return line
+    return f'FONT {FONT_SIZE.get(dialog, int(m.group(1)) + 1)}, "Segoe UI"'
+
+
+# Text that no longer fits in Segoe UI (gl.exe /checkres reports it): widen
+# the control by `dw` dialog units. Key: (dialog, control), the control being
+# its ID as written in the template, or, for the -1 labels, its quoted text.
+# Control None widens the dialog itself. Keep each entry to a few units, with
+# a comment saying what /checkres reported.
+PATCHES = {
+    # ('1010', '2021'): 4,   # e.g.: "&Retained earnings", text 78 px, room 72 px
+}
+CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
+DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)
+applied = set()
+
+
+def widen(nums, dw):
+    """nums: 'x, y, w, h[, rest]' -> w + dw."""
+    parts = [p.strip() for p in nums.split(',')]
+    parts[2] = str(int(parts[2]) + dw)
+    return ', '.join(parts)
+
+
+def patch_dialog(name, lines):
+    out = []
+    for l in lines:
+        if (name, None) in PATCHES and DIALOG_HEAD.match(l):
+            m = DIALOG_HEAD.match(l)
+            l = f'{m.group(1)}{m.group(2)}, {m.group(3)}, {int(m.group(4)) + PATCHES[(name, None)]}, {m.group(5)}{m.group(6)}'
+            applied.add((name, None))
+        m = CONTROL_LINE.match(l)
+        if m:
+            indent, kind, text, cid, rest = m.groups()
+            for key in (cid.strip(), text):
+                if (name, key) not in PATCHES:
+                    continue
+                dw = PATCHES[(name, key)]
+                if kind.upper() == 'CONTROL':   # "class", style, x, y, w, h
+                    cls, style, nums = rest.split(',', 2)
+                    rest = f'{cls},{style}, {widen(nums, dw)}'
+                else:                           # x, y, w, h[, style]
+                    rest = widen(rest, dw)
+                l = f'{indent}{kind} {text}, {cid}, {rest}'
+                applied.add((name, key))
+                break
+        out.append(new_font(l, name))
+    return out
+
+
 # ---- emit -----------------------------------------------------------------
-def clean(block):
+def clean(block, dialog=None):
     out = [STRIP.sub('', block[0]).rstrip()] + [l.rstrip() for l in block[1:]]
+    if dialog is not None:
+        out = patch_dialog(dialog, out)
     return out
 
 # A control line's ID: the first field, or the second when the first is its text.
@@ -334,7 +404,9 @@ for r in menus:
     body += [f'// ---- menu {r["name"]} (gl_new.rc line {r["src_line"]})'] + apply_menu_edits(
         {**r, 'lines': clean(r['lines'])}) + ['']
 for r in dialogs:
-    body += [f'// ---- dialog {r["name"]} ({r["src"]} line {r["src_line"]})'] + clean(dedupe_controls(r)) + ['']
+    body += [f'// ---- dialog {r["name"]} ({r["src"]} line {r["src_line"]})'] + clean(dedupe_controls(r), r['name']) + ['']
+if applied != set(PATCHES):
+    sys.exit(f'PATCHES not applied: {sorted(set(PATCHES) - applied, key=str)}')
 body += ['// ---- strings (gl_new.rc)', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in final_new] + ['}', '']
 if extra:
     body += ['// ---- strings only in gl.rc', 'STRINGTABLE', '{'] + [f' {i}, {s}' for i, s in extra] + ['}', '']
@@ -348,8 +420,10 @@ hdr = [
     '// from the legacy gl/gl_new.rc (and gl/gl.rc for bitmaps and strings that',
     '// gl_new.rc lacks). Templates, IDs, styles and strings are copied verbatim;',
     '// only the 16-bit load attributes are gone and the hex bitmaps/icons are now',
-    '// files. UTF-16 LE with BOM (spec 5.3); edit as text, not in the VS',
-    '// resource editor (spec risk 11).',
+    '// files. UI refresh (U1): the dialogs\' fonts are Segoe UI, and PATCHES in',
+    '// prune_rc.py widens the controls whose text no longer fits. Generated by',
+    '// gl/res/tools/prune_rc.py: change that, not this file. UTF-16 LE with BOM',
+    '// (spec 5.3); edit as text, not in the VS resource editor (spec risk 11).',
     '//',
     '#include <windows.h>',
     '#include "resource.h"',

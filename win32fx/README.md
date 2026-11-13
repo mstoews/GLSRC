@@ -12,14 +12,13 @@ A static library: light C++ helpers over the Win32 SDK that let ports of the OWL
 | `Verify.h` | `FX_VERIFY(cond, msg)`: live in Debug and Release (spec §7.2). |
 | `MessageLoop.h` | `RunMessageLoop(frame, mdiClient, accel)`: MDI accelerators, the accelerator table, `IsDialogMessageW` for every live modeless `Dialog`. |
 | `MdiFrame.h` | `MdiFrame` (owns MDICLIENT, lays it out between docked bars, handles the OWL `CM_TILECHILDREN`…`CM_EXIT` commands) and `MdiChild` (`CreateMDIWindowW`, `DefMDIChildProcW`). `OnMdiChildActivate(child)` is the menu-merge hook. The GL frame's swap of MANILA and GLE is in `gl/port/ManilaGL.cpp`; the merge points are in `MdiFrame.cpp`. |
-| `Toolbar.h` | `DialogBar`: a modeless child dialog from a template whose button clicks go to the parent (`TToolBar::Mssg`); `PlaceButton` is the original `SetPic`. `Toolbar` adds the stretched background bitmap. |
-| `VerticalToolbar.h` | The original `TVToolBar` (dialog 2057): the module buttons and the status fields 3222–3224. It docks at the *bottom*, as the original did. |
+| `Toolbar.h` | `CommandBar`: a wrapper over the common-controls toolbar, with flat icon buttons (`LoadModernIcon`) and tooltips; each button sends a command. It replaced `DialogBar`/`Toolbar` (the original `TToolBar`, dialog 1032) and `VerticalToolbar` (`TVToolBar`, 2057) in the UI refresh (spec §4.3). |
 | `StatusBar.h` | A wrapper over the common-controls status bar. |
 | `controls/CustomControls.h` | `RegisterCustomControls(hInst)` and the Toolbox calls/messages (below). |
 
 **Dispatch boundary (spec §7.2):** `Window::WndProc` and `Dialog::DlgProc` each wrap the whole dispatch in one `try`/`catch`. An exception (e.g. a `cb4sqlite::Error`) is written to `OutputDebugStringW` and shown in a `MessageBox`, and the message loop carries on. From `WM_CREATE` it fails the creation; from `OnInitDialog` it closes the dialog.
 
-**MDI children** get `DefMDIChildProcW` for the messages it must see (`WM_SIZE`, `WM_SETFOCUS`, `WM_SYSCOMMAND`, …) even when a handler handled them. A subclass overriding `MdiChild::OnMessage` or `Toolbar::OnMessage` must call the base first.
+**MDI children** get `DefMDIChildProcW` for the messages it must see (`WM_SIZE`, `WM_SETFOCUS`, `WM_SYSCOMMAND`, …) even when a handler handled them. A subclass overriding `MdiChild::OnMessage` must call the base first.
 
 ## Custom controls
 
@@ -29,7 +28,7 @@ A static library: light C++ helpers over the Win32 SDK that let ports of the OWL
 
 | Toolbox | Becomes |
 |---|---|
-| `ES_3D` 0x0400 | `WS_EX_CLIENTEDGE` (otherwise `WS_BORDER`) |
+| `ES_3D` 0x0400 | Ignored: every `tb*` edit gets `WS_EX_CLIENTEDGE`, the themed border (UI refresh D5; it was `WS_BORDER` without `ES_3D`, which no ported template uses) |
 | `ES_STATIC` 0x0080 | `ES_READONLY` |
 | `ES_LEFTALIGN` 0x0200 | numbers left-aligned (default right) |
 | `ES_UPPERCASE` / `ES_LOWERCASE` | the same `EDIT` styles (tbPic only) |

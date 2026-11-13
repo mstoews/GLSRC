@@ -70,5 +70,7 @@ protected:
     bool OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) override;
 
 private:
+    void placeButtons();   // the 2 x 5 grid, sized for the window's DPI
+
     HWND owner_ = nullptr;
 };

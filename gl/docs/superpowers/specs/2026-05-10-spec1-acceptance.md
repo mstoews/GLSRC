@@ -174,7 +174,7 @@ Known deviation: the spec says "a 30-line example program in `win32fx/examples/t
 
 | # | Gap | Why accepted | Follow-up |
 |---|---|---|---|
-| G1 | High DPI is not tested. The walkthrough runs at 96 DPI. | Plan risk P5. The manifest still declares per-monitor v2. | The first hi-DPI bug becomes a task in the AP/AR specs (#5/#6). |
+| G1 | High DPI is not tested. The walkthrough runs at 96 DPI. | Plan risk P5. The manifest still declares per-monitor v2. | The UI refresh (U4) made the ported screens DPI-aware; its acceptance sheet (`2026-11-13-ui-refresh-acceptance.md`, criteria 6 and 7) tests them. Closed for the ported screens when those pass: ____ (date). |
 | G2 | The account list can only run the query `.NOT. DELETED()`. Any other `GL.INI [GLACCTS] QUERY` shows a message and falls back to that default. | `Relate4set::querySet` in cb4sqlite supports only that expression in Spec #1. | A later spec adds an expression evaluator. |
 | G3 | The account list is a ListView, not the original `tbSpread` grid. | Spec #1 has no grid control (§6.7 #7 correction). | The grid arrives with the spec that ports `tbSpread`. |
 | G4 | The User Access Menu button and the Cash Accounts grid list (1034) are not available. | They need the grid control. | As G3. |

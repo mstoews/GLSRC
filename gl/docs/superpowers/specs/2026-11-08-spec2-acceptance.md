@@ -224,7 +224,7 @@ Record `glaccts` and `gl_dist` for 101's accounts (111101, 410001-10, 410001-20)
 
 | # | Gap | Why accepted | Follow-up |
 |---|---|---|---|
-| G1 | High DPI is not tested. The walkthrough runs at 96 DPI. | As Spec #1 G1. | The AP/AR specs (#5/#6). |
+| G1 | High DPI is not tested. The walkthrough runs at 96 DPI. | As Spec #1 G1. | The UI refresh (U4) made the ported screens DPI-aware; its acceptance sheet (`2026-11-13-ui-refresh-acceptance.md`, criteria 6 and 7) tests them. Closed for the ported screens when those pass: ____ (date). |
 | G2 | Voucher Entry's Print, and every report, show the "not yet ported" message. | Reports are Spec #3. | Spec #3. |
 | G3 | Month close (1069) is not ported. Periods are closed in Company Profile > Periods. | D4: the original had retired it. | None. |
 | G4 | Maintain External Vouchers stays a stub. | D7. | When its purpose is known. |

@@ -2,7 +2,7 @@
 
 Plan M4 task 7 creates this file. M5 and M6 fill it in (spec §6.1). Add a row when a ported screen is shown to depend on a style bit of a `tb*` control. "Shown" means the screen behaves wrongly without it, not just that the bit is set in `gl/res/gl.rc`.
 
-What the bits *mean*, and how win32fx translates them, is in [`win32fx/README.md`](../../README.md#custom-controls). The values were decoded in M3 from `include/toolbox.h`. This file records which screens rely on which bits.
+What the bits *mean*, and how win32fx translates them, is in [`win32fx/README.md`](../../README.md#custom-controls). The values were decoded in M3 from `include/toolbox.h`. This file records which screens rely on which bits. Since the UI refresh (D5), `ES_3D` changes nothing: every edit gets the themed border.
 
 ## Style words used by the Spec #1 dialogs
 

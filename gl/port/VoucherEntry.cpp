@@ -137,7 +137,6 @@ private:
     TableList voucherList_;
     LineList lineList_;
     ToolBox toolBox_;
-    RECT original_{};                  // the dialog's rectangle before the tool box shrank it
 };
 
 bool VoucherEntry::OnInitDialog()
@@ -184,7 +183,6 @@ bool VoucherEntry::OnInitDialog()
         [this](int row) { ShowVoucher(std::atol(voucherList_.RowText(row, 1).c_str())); }, true, false);
     lineList_.Create(hwnd(), [this](int line) { PickLine(line); });
     toolBox_.Create(hwnd());
-    GetWindowRect(hwnd(), &original_);
 
     IntSetDlgItemValue(hwnd(), kBatchNo, NextVoucherNumber(*headers_, iniBatchno()));
     IntSetDlgItemValue(hwnd(), kLineNo, 1);
@@ -569,23 +567,23 @@ void VoucherEntry::ToggleVoucherList()   // TGLBatchEntry::ViewBatch
 
 void VoucherEntry::ToggleToolBox()   // TGLBatchEntry::ShowToolBox
 {
+    // The dialog narrows by its column of buttons (one button's width and 10
+    // px, scaled) while the tool box shows, and widens by as much again after.
+    // Measured each time, not remembered, so it holds after a DPI change.
     const HWND show = GetDlgItem(hwnd(), kShow);
+    RECT rc{}, button{};
+    GetWindowRect(hwnd(), &rc);
+    GetWindowRect(GetDlgItem(hwnd(), ID_NEW), &button);
+    const int column = button.right - button.left + MulDiv(10, static_cast<int>(GetDpiForWindow(hwnd())), 96);
     if (SendMessageW(show, BM_GETCHECK, 0, 0) != BST_CHECKED) {
         ShowWindow(toolBox_.hwnd(), SW_SHOWNOACTIVATE);
         SendMessageW(show, BM_SETCHECK, BST_CHECKED, 0);
-        // The dialog narrows to hide its own column of buttons.
-        RECT rc{}, button{};
-        GetWindowRect(hwnd(), &rc);
-        GetWindowRect(GetDlgItem(hwnd(), ID_NEW), &button);
-        const int width = rc.right - rc.left - (button.right - button.left + 10);
-        MoveWindow(hwnd(), rc.left, rc.top, width, rc.bottom - rc.top, TRUE);
+        MoveWindow(hwnd(), rc.left, rc.top, rc.right - rc.left - column, rc.bottom - rc.top, TRUE);
         SetWindowTextW(show, L"&Hide");
     } else {
         SendMessageW(show, BM_SETCHECK, BST_UNCHECKED, 0);
         ShowWindow(toolBox_.hwnd(), SW_HIDE);
-        RECT rc{};
-        GetWindowRect(hwnd(), &rc);
-        MoveWindow(hwnd(), rc.left, rc.top, original_.right - original_.left, original_.bottom - original_.top, TRUE);
+        MoveWindow(hwnd(), rc.left, rc.top, rc.right - rc.left + column, rc.bottom - rc.top, TRUE);
         SetWindowTextW(show, GetString(6066).c_str());   // "&Show"
     }
 }
