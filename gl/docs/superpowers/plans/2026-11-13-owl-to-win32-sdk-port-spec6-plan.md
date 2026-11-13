@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 built)
+**Plan status:** In progress (S6-M0 and M1 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -121,6 +121,38 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 1 — Customers (1052, 1063)
+
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.2 holds, with more found (now in §2.2):
+>   - **`TARVendorAdd::SetupWindow` opened its table on `ap_vend`**, so the screen maintained the vendors.
+>   - Options needed the customer on file (string 4119), and Add wrote a new customer with blank accounts.
+>   - Add blanked the contact, which is on Options.
+>   - Options' account check showed string 4017 ("Select a menu item...").
+>   - Its VAT dept went to control 1083, which 1063 doesn't have.
+>
+>   Find (Set Data) did work, unlike AP's. 1063's labels match its fields ("AR Acct" 1087/1086 is `ACCOUNT`, "Sales Acct" 8079/8080 is `AR_ACCT`); only `SetupWindow`'s tests were crossed.
+> - **`Ar.h`:** `CheckCustomer` (required names; VAT 0–99; the AR and sales accounts in the chart; a VAT account in the chart, and required with a rate) and `DeleteCustomer` (refused while the customer has a sales voucher, cancelled ones too, an open item or a receipt, naming it).
+> - **`prune_rc.py`** (task 2): 1052 and 1063 added. `/checkres` found both "Postal Code/Zip Code" labels wrapping to 45 px in 15. They are now "Postal Code", 15 units wider, as on 1006 and 1040.
+> - **`gl/port/ArCustomers.{h,cpp}`** (task 3), on the vendor screen's pattern:
+>   - The screen keeps the customer it shows. **Options edits it whether it's on file or not**, and its OK checks the accounts. For a customer on file, it saves its fields at once after asking (string 1093), as the original, leaving the main screen's edits for Add.
+>   - **New, and a new number with Enter, fill `GL_SETAT` `AR`, `SALE` and `VATP`** (D12).
+>   - **Add** runs `CheckCustomer`. A refusal on an account or the rate names it, adds "Set it under Options." and opens Options on that field. Replacing asks first (1093). A modified customer stays shown; an added one is cleared.
+>   - **Delete** asks (6094), then `DeleteCustomer`. **Find** shows the customer, or string 6017.
+>   - Enter on the number shows the customer; for a new number it moves on to the short name.
+>   - List shows `GL.INI [AR_CUST]`; Top / Bottom / Next / Previous stop at the ends.
+>   - Options hides the W/H account and its label (D15).
+> - **Wire** (task 4): 4059 in `ManilaGL.cpp`, out of the AR not-ported list; `/checkres` loads 1052 and 1063; `/stress` has an AR step, `StressAr`.
+> - **Tests** (task 5): `CheckCustomer` (each refusal; the fixture's `SALE` default refused until it has a dept) and `DeleteCustomer` (by voucher, open item, receipt; not found; deleted). `gl_tests`: 150 cases (`[ar]` 9).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (123 s). Driven in the app, on a scratch copy with the fixture, by messages to its own windows:
+>   - C001 and Enter: shown, with the ship-to address; Options shows its own AR, sales (410001-10), VAT, contact and VIN;
+>   - Delete C001: asks, then "sales voucher 1 is theirs";
+>   - Top, Next, Next to the end (stops at C003), Previous, Bottom;
+>   - a new C004 without a short name names the field; with the names, the default sales account (410001, no dept) is refused and Options opens with `111101`, `410001` and `260007` filled; dept 20, VAT 10, terms 15 and a contact, then Add saves it all;
+>   - C004's Options, terms 45: asks 1093, saved at once; then a new city with Add: asks, saved, terms kept;
+>   - Delete C004: deleted and cleared; Find C999: string 6017.
+>
+>   Screenshots checked the screen and Options (the W/H field hidden).
+> - **Still assumed:** Q8 (the deployed customers' accounts kept).
 
 **Goal:** customers can be maintained.
 

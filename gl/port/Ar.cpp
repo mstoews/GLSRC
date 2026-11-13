@@ -16,7 +16,8 @@
 #include "Ar.h"
 
 #include "Accounts.h"       // TrimText
-#include "MasterTables.h"   // SeekCode
+#include "Assets.h"         // ValidateAccount
+#include "MasterTables.h"   // SeekCode, DeleteRecord
 
 #include "report/Format.h"  // rpt::ToCents
 
@@ -334,6 +335,53 @@ bool SaveCustomer(cb4sqlite::Code4& code, const Customer& c)
     d.close();
     tx.commit();
     return added;
+}
+
+std::optional<CustomerProblem> CheckCustomer(cb4sqlite::Code4& code, const Customer& c)
+{
+    using K = CustomerProblem::Kind;
+    if (TrimText(c.number).empty()) return CustomerProblem{CustomerField::Number, K::Required};
+    if (TrimText(c.shortName).empty()) return CustomerProblem{CustomerField::ShortName, K::Required};
+    if (TrimText(c.name).empty()) return CustomerProblem{CustomerField::Name, K::Required};
+    if (c.vatRate < 0 || c.vatRate > 99) return CustomerProblem{CustomerField::VatRate, K::BadRate};
+    if (!ValidateAccount(code, c.ar.account, c.ar.dept)) return CustomerProblem{CustomerField::ArAccount, K::BadAccount};
+    if (!ValidateAccount(code, c.sales.account, c.sales.dept))
+        return CustomerProblem{CustomerField::SalesAccount, K::BadAccount};
+    if (c.vat.empty()) {
+        if (c.vatRate > 0) return CustomerProblem{CustomerField::VatAccount, K::VatAccountNeeded};
+    } else if (!ValidateAccount(code, c.vat.account, c.vat.dept)) {
+        return CustomerProblem{CustomerField::VatAccount, K::BadAccount};
+    }
+    return std::nullopt;
+}
+
+DeleteCustomerResult DeleteCustomer(cb4sqlite::Code4& code, const std::string& number, std::string* usedBy)
+{
+    const std::string want = TrimText(number);
+    const std::pair<const char*, const char*> uses[] = {
+        {"SELECT batchno FROM ar_btch WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY batchno LIMIT 1",
+         "sales voucher "},
+        {"SELECT batchno FROM ar_dist WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY batchno LIMIT 1",
+         "the open item of voucher "},
+        {"SELECT rcptno FROM ar_rcpt WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY rcptno LIMIT 1",
+         "receipt "},
+    };
+    for (const auto& [sql, what] : uses) {
+        cb4sqlite::Query q(code, sql);
+        q.bindText(1, want);
+        if (q.next()) {
+            if (usedBy) *usedBy = what + std::to_string(q.integer(0));
+            return DeleteCustomerResult::InUse;
+        }
+    }
+    cb4sqlite::Transaction tx(code);
+    Data4 d(&code, "ar_cust");
+    d.SetIndex("vendorno");
+    Field4 vendorno(d, "vendorno");
+    const bool deleted = DeleteRecord(d, vendorno, want);
+    d.close();
+    tx.commit();
+    return deleted ? DeleteCustomerResult::Deleted : DeleteCustomerResult::NotFound;
 }
 
 // ---- vouchers ---------------------------------------------------------------------------

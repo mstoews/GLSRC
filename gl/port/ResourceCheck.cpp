@@ -123,6 +123,9 @@ const DialogCase kDialogs[] = {
     {1046, L"Bank Reconciliation (TAPPayment)", true, Pics::Main},
     {1051, L"Clear Cancel Cheque (TAPSetChequeNumber)", false},
     {1048, L"Purge Paid Payables (TAPPurgeBatch)", true, Pics::Main},
+    // Spec #6 S6-M1.
+    {1052, L"Customers (TARVendorAdd)", false, Pics::Main, {3001, 1121, ID_SETDATA}},
+    {1063, L"Customer Account Options (TARVendorOptions)", false, Pics::Main},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

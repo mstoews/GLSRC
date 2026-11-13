@@ -72,6 +72,9 @@ So `gl/src` is a work-in-progress revision. This spec ports **what the source me
   - SetupWindow's conditions are crossed (`ar_vendo.cpp:117-128`): it tests `ACCOUNT` to fill the sales field and `AR_ACCT` to fill the AR field.
   - It reads and writes a `WITHTAX` field that doesn't exist.
   - Delete deletes and packs with no check for invoices, and says "Vendor code not found".
+  - **It opens its table on `ap_vend`** (`ar_vendo.cpp:354`): the screen maintained the vendors, not `AR_CUST`. (Found in S6-M1.)
+  - Options needs the customer on file first (string 4119), and Add writes a new customer with blank accounts, so every new customer is saved unusable.
+  - Add writes the contact from a field that is on Options, not on 1052, so every Add/Mod blanks it. Options' account check shows string 4017, "Select a menu item from the menu list...".
 
 ### 2.3 Sales invoice vouchers (5045, dialog 1053)
 
@@ -293,7 +296,7 @@ All on Spec #3's engine, with accounts from `GL_SETAT` and the customer records,
 | D9 | **A receipt is journalled when it is entered**, dated by the receipt in its own period: Dr bank, Dr sales and VAT for a discount, Cr AR. The Create step goes. | §2.6 #1–#4. |
 | D10 | **A receipt can be reversed**: removed if waiting, reversed with new rows if transferred, the latest one per invoice. | A receipt entered by mistake or a bounced cheque otherwise needs a hand-made GL voucher and leaves `AR_DIST` wrong. As Spec #5's Void. |
 | D11 | **Purge** deletes settled invoices whose last receipt is before a date, and their receipts; it moves to Maintenance beside AP's. | §2.4; as Spec #5 D8. |
-| D12 | **Customers:** the options' fields fill from the right fields; Set Data finds the typed customer; Delete is refused while the customer has vouchers or open items; new customers default to `GL_SETAT` `AR`, `SALE` and `VATP`; no W/H field. | §2.2, §2.6 #11. |
+| D12 | **Customers:** the screen works on `AR_CUST`; the options' fields fill from the right fields; Options works before a new customer is first saved, and Add checks the accounts; Enter on the number finds the customer; Delete is refused while the customer has vouchers, open items or receipts; new customers default to `GL_SETAT` `AR`, `SALE` and `VATP`; no W/H field. | §2.2, §2.6 #11. |
 | D13 | **The analysis codes go to their own columns.** | §2.6 #12; as Spec #5 D13. |
 | D14 | **The reports in §7**, on AR's own tables, with accounts from `GL_SETAT`; two new ones (Customer Summary, Receipts Register) fill menu items that had none, and the customer statement goes on the menu. | §2.6 #17. |
 | D15 | **No withholding** on invoices or receipts (Q3). | As the original; `AR_CUST` has no W/H field. |
