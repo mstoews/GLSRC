@@ -19,3 +19,4 @@ typedef enum _EXCEPTION_DISPOSITION { ExceptionContinueExecution, ExceptionConti
 extern "C" int _vscwprintf(const wchar_t*, va_list);
 extern "C" int vswprintf_s(wchar_t*, size_t, const wchar_t*, va_list);
 template <size_t N> int swprintf_s(wchar_t (&)[N], const wchar_t*, ...);
+template <size_t N> int strcpy_s(char (&)[N], const char*);
