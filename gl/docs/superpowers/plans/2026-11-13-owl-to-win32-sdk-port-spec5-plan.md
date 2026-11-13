@@ -36,6 +36,41 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 0 — The portable core
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.1 and §2.3 hold. `GetAPExpense` (`ap_btche.cpp:817`) is as the spec summarizes it; `PAYABLE` is the gross, `VATAMT` the VAT, `REBATEAMT` the signed W/H (negative in F mode). Further findings:
+>   - `AP_DIST.ACCOUNT`/`DEPT` is the **bank**, set when a cheque is made (blank after Post); `APACCOUNT`/`APDEPART` is the AP account.
+>   - `AP_REQST.CLEARED` is "1" when cleared.
+>   - The original's Cancel writes string 1042, "Cancelled", into the reference, and zeroes the payable and lines.
+> - **The typed amounts** (spec change): the lines store each expense's net, and the gross can't be recovered from it. In F mode two grosses often give one net (at 12 %, 11.24 and 11.25 both give 10.04): a brute-force check (every amount up to 2,000.00, VAT 0–30 %) found millions of such pairs. So re-editing a line would move the invoice total by a cent. A port table, **`ap_linex`** (kind, voucher, line, role, gross), keeps each line's typed amount and role (in T mode the W/H line is a debit, like VAT). The design's §4.1 and D4 say so.
+> - **`gl/port/Ap.{h,cpp}`** (task 2):
+>   - `EnsureApTables` creates the eight AP tables with the deployed layouts and tags, and `ap_linex`, when missing. It then migrates D3 ("2" + "Cancelled" → "X") and returns the count.
+>   - `LoadApAccounts` reads `GL_SETAT`: AP, VATR, VATP, WTXC, WTXI, and the `CA` banks.
+>   - `Vendor` with `LoadVendors` / `FindVendor` / `SaveVendor`.
+>   - `ApVoucher` (invoice or cash) and `ApLine`, with `LoadApVouchers`, `FindApVoucher`, `LoadApLines`, `NextApVoucherNumber` and `SaveApVoucher`. The last replaces a voucher's lines and their `ap_linex` rows in one transaction, writing the doctor and product codes to their own columns (D13).
+>     - `LoadApLines` classifies a deployed voucher's lines (no `ap_linex` rows) by the header's VAT and W/H amounts. It computes an expense line's gross back with `GrossFromExpense`, in the mode `REBATEAMT`'s sign shows.
+>   - `DuplicateInvoice` (D6) works across invoice and cash vouchers, skipping cancelled ones and the voucher being edited.
+>   - The arithmetic is pure: `ParseTaxMode`, `SplitAmount`, `GrossFromExpense` and `ComputeVoucher`.
+>   - Read-only for now: `LoadOpenItems`, `LoadCheques`, `LoadJournal`.
+> - **Fixture** (task 3): `accounts_payable()` writes the eight tables and `AP_LINEX`:
+>   - vendors V001–V003;
+>   - invoices: 1 and 2 open, 3 posted with its open item, 4 cancelled ("X"), 5 the original's cancel ("2"), and 6 posted, paid by cheque 5001 and printed;
+>   - one open cash voucher;
+>   - AP's journal for invoices 3 and 6 and the payment, all waiting ("1").
+>
+>   Everything is in period 7, F mode, on accounts already in the chart. **Every General Ledger, voucher and fixed-asset table is row-for-row identical** after migration (compared table by table). `ACCESSM` and `ACCESSL` gain the Voucher List menu row: #42 added the item without regenerating the fixture. `sheet_queries.py` (named in task 3) isn't in the repository, so the table-by-table comparison replaced it.
+> - **Tests** (task 4): `gl_tests/test_ap.cpp`, 9 cases:
+>   - F and T splits, including the spec's 1,120.00 examples, the deployed sample and rounding;
+>   - `ParseTaxMode` and the inverse;
+>   - `ComputeVoucher`: two lines, a deletion, no tax, T mode, and 37 lines balancing in both modes;
+>   - the fixture's vendors, vouchers, lines (from `ap_linex`, and classified), open items, cheque and journal;
+>   - the `GL_SETAT` accounts;
+>   - `DuplicateInvoice`;
+>   - saving vendors and vouchers, without disturbing the others;
+>   - the tables created in an empty company.
+>
+>   `gl_tests`: 123 cases.
+> - **Checked:** Debug and Release `/W4 /WX` clean, `gl_tests` passes in both, and `/checkres` exits 0. `/stress` wasn't run: M0 has no screen.
+
 **Goal:** AP's tables can be read and written, and an invoice's amounts computed, under test, on a fixture whose AP data is consistent with its ledger.
 
 ### Tasks

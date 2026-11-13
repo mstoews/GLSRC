@@ -204,6 +204,7 @@ All amounts are in cents (`rpt::ToCents`), as Spec #2 D12.
   - one AP line on the voucher's AP account (Cr): F: Σa − W/H; T: Σa.
 
   The voucher always balances to the cent; rounding stays in the VAT/W/H lines (D4).
+- **The typed amounts are kept** (found in S5-M0). The lines store each expense's net, and the gross can't be recovered from it: VAT rounding maps two grosses to one net (at 12 %, 11.24 and 11.25 both give 10.04). Nor can a line's role be told from its account alone, since in T mode W/H is a debit like VAT. So a port table, `AP_LINEX` (kind, voucher, line, role, gross), keeps each line's role and an expense line's typed amount, as Spec #4 kept its run history in `gl_fadep`. The deployed vouchers have no rows there; their lines are classified by the header's VAT and W/H amounts, and an expense line's gross is computed back from its net.
 - **The mode** is the Company Profile setting (`GL.INI [WITHHOLDING] TAX`), as in the original. Its default is "F" when the key is missing (the original's "T" default contradicts the deployed `gl.ini`; Q2).
 
 ### 4.2 The entry screen (1042)
@@ -312,7 +313,7 @@ On Spec #3's engine; all in the report list. Accounts come from `GL_SETAT`, not 
 | D1 | **Port AP, fixing the cycle.** Screens keep their templates, IDs and strings where they work. | AP was never run in production (§2.7); as written, invoices can't be paid and reconciled reliably (§2.6). |
 | D2 | **The transfer makes one GL voucher per period**, dated its end, from the rows' own periods. Closed periods are reported, not moved. Cash vouchers are marked transferred too. | §2.6 #8. The GL must show AP activity in the period it happened. |
 | D3 | **Separate modes:** "1" open, "0" posted, "2" transferred, "X" cancelled. Migrated "2" rows whose reference is "Cancelled" become "X". | §2.6 #2. |
-| D4 | **One set of VAT/W/H formulas in cents.** The voucher's VAT, W/H and AP lines are recomputed from its expense lines. Rates are whole percentages, 0 meaning none. | §2.6 #4–6. |
+| D4 | **One set of VAT/W/H formulas in cents.** The voucher's VAT, W/H and AP lines are recomputed from its expense lines, whose typed amounts are kept in `AP_LINEX` (§4.1). Rates are whole percentages, 0 meaning none. | §2.6 #4–6. |
 | D5 | **"No" to saving removes only a voucher created in this session**, as Spec #2's Voucher Entry. | §2.6 #4. |
 | D6 | **The duplicate check works:** the same vendor and invoice number in any voucher not cancelled, invoice or cash. | §2.6 #1. |
 | D7 | **Recover** reopens a posted, untransferred, unpaid voucher, removing exactly its own `AP_DIST` and `AP_JSUM` rows. | §2.6 #3. |
