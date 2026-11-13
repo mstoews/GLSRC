@@ -15,7 +15,8 @@
 #include "Ap.h"
 
 #include "Accounts.h"       // TrimText
-#include "MasterTables.h"   // SeekCode
+#include "Assets.h"         // ValidateAccount
+#include "MasterTables.h"   // SeekCode, DeleteRecord
 
 #include "report/Format.h"  // rpt::ToCents
 
@@ -397,6 +398,55 @@ bool SaveVendor(cb4sqlite::Code4& code, const Vendor& v)
     d.close();
     tx.commit();
     return added;
+}
+
+std::optional<VendorProblem> CheckVendor(cb4sqlite::Code4& code, const Vendor& v)
+{
+    using K = VendorProblem::Kind;
+    if (TrimText(v.number).empty()) return VendorProblem{VendorField::Number, K::Required};
+    if (TrimText(v.shortName).empty()) return VendorProblem{VendorField::ShortName, K::Required};
+    if (TrimText(v.name).empty()) return VendorProblem{VendorField::Name, K::Required};
+    if (v.type != "C" && v.type != "I") return VendorProblem{VendorField::Type, K::NoType};
+    if (v.vatRate < 0 || v.vatRate > 99) return VendorProblem{VendorField::VatRate, K::BadRate};
+    if (v.whRate < 0 || v.whRate > 99) return VendorProblem{VendorField::WhRate, K::BadRate};
+    if (!ValidateAccount(code, v.ap.account, v.ap.dept)) return VendorProblem{VendorField::ApAccount, K::BadAccount};
+    if (v.vat.empty()) {
+        if (v.vatRate > 0) return VendorProblem{VendorField::VatAccount, K::VatAccountNeeded};
+    } else if (!ValidateAccount(code, v.vat.account, v.vat.dept)) {
+        return VendorProblem{VendorField::VatAccount, K::BadAccount};
+    }
+    return std::nullopt;
+}
+
+DeleteVendorResult DeleteVendor(cb4sqlite::Code4& code, const std::string& number, std::string* usedBy)
+{
+    const std::string want = TrimText(number);
+    const std::pair<const char*, const char*> uses[] = {
+        {"SELECT batchno FROM ap_btch WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY batchno LIMIT 1",
+         "invoice voucher "},
+        {"SELECT batchno FROM ap_cash WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY batchno LIMIT 1",
+         "cash voucher "},
+        {"SELECT batchno FROM ap_dist WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY batchno LIMIT 1",
+         "the open item of voucher "},
+        {"SELECT cheque FROM ap_reqst WHERE _deleted = 0 AND trim(vendorno) = ?1 ORDER BY cheque LIMIT 1",
+         "cheque "},
+    };
+    for (const auto& [sql, what] : uses) {
+        cb4sqlite::Query q(code, sql);
+        q.bindText(1, want);
+        if (q.next()) {
+            if (usedBy) *usedBy = what + std::to_string(q.integer(0));
+            return DeleteVendorResult::InUse;
+        }
+    }
+    cb4sqlite::Transaction tx(code);
+    Data4 d(&code, "ap_vend");
+    d.SetIndex("vendorno");
+    Field4 vendorno(d, "vendorno");
+    const bool deleted = DeleteRecord(d, vendorno, want);
+    d.close();
+    tx.commit();
+    return deleted ? DeleteVendorResult::Deleted : DeleteVendorResult::NotFound;
 }
 
 // ---- vouchers ---------------------------------------------------------------------------

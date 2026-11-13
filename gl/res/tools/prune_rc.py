@@ -39,7 +39,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '4002',   # Spec #4 S4-M1: Asset Types
            '4004',   # Spec #4 S4-M2: Fixed Assets Add/Modify
            '4003',   # Spec #4 S4-M3: Create Voucher (the depreciation run)
-           '1001']   # Spec #4 S4-M4: Disposal
+           '1001',   # Spec #4 S4-M4: Disposal
+           '1041']   # Spec #5 S5-M1: Vendors
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -306,6 +307,8 @@ PATCHES = {
     ('1013', '"Cheque No."'): 4,      # wraps to 26 px high, room 20 px; its field is at x 50
     # Recover / Post (1015): the voucher number is at x 250.
     ('1015', '"Posting Voucher Number :"'): 16,   # wraps to 30 px high, room 15 px
+    # Vendors (1041, S5-M1): the W/H field follows at once; "VAT %" is beside it.
+    ('1041', '"W/H Tax percentage"'): (0, 0, '"W/H %"'),   # text 59 px, room 58 px
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)
@@ -355,10 +358,17 @@ def patch_dialog(name, lines):
 
 
 # ---- emit -----------------------------------------------------------------
+# RADIOBUTTON already has BS_RADIOBUTTON (4); OR-ed with BS_AUTORADIOBUTTON (9)
+# it is 0xD, BS_SPLITBUTTON on Win32 (Win16 had none), so the buttons drew as
+# split buttons that never show a check (dialog 1041, S5-M1). What was meant:
+RADIO_AUTO = re.compile(r'^(\s*)RADIOBUTTON(\s.*?),\s*BS_AUTORADIOBUTTON\s*$')
+
+
 def clean(block, dialog=None):
     out = [STRIP.sub('', block[0]).rstrip()] + [l.rstrip() for l in block[1:]]
     if dialog is not None:
         out = patch_dialog(dialog, out)
+        out = [RADIO_AUTO.sub(r'\1AUTORADIOBUTTON\2', l) for l in out]
     return out
 
 # A control line's ID: the first field, or the second when the first is its text.
