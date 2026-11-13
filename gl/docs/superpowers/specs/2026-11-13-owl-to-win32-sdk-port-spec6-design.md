@@ -133,7 +133,7 @@ So `gl/src` is a work-in-progress revision. This spec ports **what the source me
 12. **The product and doctor codes are swapped**, as in AP.
 13. **The transfer** discards the rows' periods, dates the voucher today, and marks cancelled vouchers transferred.
 14. **Copy-paste from AP:** the entry screen checks that `AP_VEND`, `AP_JSUM` and `AP_DIST` exist; Cancel uses AP's dialog; Clear Receipts reports "no invoices" with an AP string (4074); `AR_SETUP` and the posting code still say "AP Control" (`TYPE` "APC").
-15. **The receipt dialog differs between the two `.rc` files.** In `gl.rc`, the one `GL.IDE` compiled, 1155 has no amount field (so OK always says the amount can't be zero), and its invoice and W/H IDs aren't the ones the code uses. `gl_new.rc`'s matches the code. The purge dialog 1062 is only in `gl.rc`.
+15. **The receipt dialog differs between the two `.rc` files.** In `gl.rc`, the one `GL.IDE` compiled, 1155 has no amount field (so OK always says the amount can't be zero), and its invoice and W/H IDs aren't the ones the code uses. `gl_new.rc`'s matches the code. The purge dialog 1062 is only in `gl.rc`, and `gl_new.rc`'s Post dialog 1061 is cut short (no Close button, no closing brace), so the port takes `gl.rc`'s (found in S6-M3).
 16. **Missing strings:** 4076, 5013, 4113.
 17. **Reports** (§7): most of the AR `.RPT` files are AP reports renamed, still reading `AP_JSUM`, `AP_DIST` or `AP_VEND` (the AR journal reports print AP's journal); two (`ar_bstat`, `ar_batch`) aren't in `dbf/`, two more (`ar_recei`, `ar_cust`) exist nowhere; 4061 and 4068 print the same aged report; "Customer Summary" (4058) has no handler; 4074 and 4075's labels are swapped.
 

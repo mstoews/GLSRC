@@ -128,6 +128,8 @@ const DialogCase kDialogs[] = {
     {1063, L"Customer Account Options (TARVendorOptions)", false, Pics::Main},
     {1053, L"Sales invoice voucher entry (TARInvoiceEntry)", false, Pics::Main, {1121}, {{3043, 4054}}},
     {1060, L"Sales voucher memo (TARMemo), with its menu MEMO", false, Pics::Main},
+    // Spec #6 S6-M3 (1061, Post, and 1015, Recover, are Spec #2's).
+    {1054, L"Cancel sales vouchers (TARCancelBatch)", true, Pics::Main},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

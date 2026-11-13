@@ -1100,7 +1100,7 @@ double toDouble(std::int64_t cents) { return static_cast<double>(cents) / 100.0;
 
 } // namespace
 
-ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
+ApTransferResult TransferJournal(cb4sqlite::Code4& code, long iniBatchno, const JournalTransfer& spec)
 {
     ApTransferResult result;
     struct Row {
@@ -1110,8 +1110,9 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
     };
     std::map<int, std::vector<Row>> byPeriod;
     {
-        cb4sqlite::Query q(code, "SELECT _rowid, trim(period), account, dept, debit, credit FROM ap_jsum "
-                                 "WHERE _deleted = 0 AND coalesce(trim(mode), '') IN ('', '1') ORDER BY _rowid");
+        cb4sqlite::Query q(code, std::string("SELECT _rowid, trim(period), account, dept, debit, credit FROM ") +
+                                     spec.journal +
+                                     " WHERE _deleted = 0 AND coalesce(trim(mode), '') IN ('', '1') ORDER BY _rowid");
         while (q.next())
             byPeriod[static_cast<int>(q.integer(1))].push_back(
                 {q.integer(0), {TrimText(q.text(2)), TrimText(q.text(3))}, rpt::ToCents(q.number(4)),
@@ -1119,7 +1120,6 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
     }
     if (byPeriod.empty()) return result;
 
-    cb4sqlite::Transaction tx(code);
     VoucherHeaders h(code);
     VoucherLines l(code);
     if (!h.isValid() || !l.isValid()) throw std::runtime_error("gl: a voucher table is missing");
@@ -1148,7 +1148,7 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
         tv.rows = static_cast<int>(rows.size());
         VoucherHeader header;
         header.mode = voucher_mode::kOpen;
-        header.description = "Accounts Payable GL Update";   // string 1049
+        header.description = spec.description;
         header.date = p.end;
         header.period = period;
         long number = 0;
@@ -1161,16 +1161,16 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
             v.account = account.account;
             v.dept = account.dept;
             v.descript = clip(AccountName(code, account), 40);
-            v.reference = "AP GL Update";
+            v.reference = spec.reference;
             v.debit = net > 0 ? toDouble(net) : 0;
             v.credit = net < 0 ? toDouble(-net) : 0;
             (net > 0 ? tv.debit : tv.credit) += net > 0 ? net : -net;
             number = SaveLine(h, l, number, header, v, iniBatchno);
         }
         tv.glVoucher = number;
-        Data4 j(&code, "ap_jsum");
+        Data4 j(&code, spec.journal);
         Field4 mode(j, "mode");
-        Data4 x(&code, "ap_xfer");
+        Data4 x(&code, spec.xfer);
         Field4 xrow(x, "jsumrow"), xbatch(x, "glbatch"), xperiod(x, "period");
         for (const Row& r : rows) {
             if (j.go(static_cast<long>(r.rowid)) == r4success) {
@@ -1188,18 +1188,29 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
         x.close();
         result.vouchers.push_back(tv);
     }
-    markTransferred(code, ApKind::Invoice);
-    markTransferred(code, ApKind::Cash);
+    return result;
+}
+
+ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno)
+{
+    cb4sqlite::Transaction tx(code);
+    ApTransferResult result =
+        TransferJournal(code, iniBatchno, {"ap_jsum", "ap_xfer", "Accounts Payable GL Update", "AP GL Update"});   // string 1049
+    if (!result.vouchers.empty()) {
+        markTransferred(code, ApKind::Invoice);
+        markTransferred(code, ApKind::Cash);
+    }
     tx.commit();
     return result;
 }
 
-int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
+int UndoJournalTransfer(cb4sqlite::Code4& code, long glVoucher, const char* journal, const char* xfer)
 {
-    if (glVoucher <= 0 || !hasTable(code, "ap_xfer") || !hasTable(code, "ap_jsum")) return 0;
+    if (glVoucher <= 0 || !hasTable(code, xfer) || !hasTable(code, journal)) return 0;
     std::vector<long long> rows, links;
     {
-        cb4sqlite::Query q(code, "SELECT _rowid, jsumrow FROM ap_xfer WHERE _deleted = 0 AND glbatch = ?1");
+        cb4sqlite::Query q(code, std::string("SELECT _rowid, jsumrow FROM ") + xfer +
+                                     " WHERE _deleted = 0 AND glbatch = ?1");
         q.bindInt(1, glVoucher);
         while (q.next()) {
             links.push_back(q.integer(0));
@@ -1208,7 +1219,7 @@ int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
     }
     if (rows.empty()) return 0;
     {
-        Data4 j(&code, "ap_jsum");
+        Data4 j(&code, journal);
         Field4 mode(j, "mode");
         for (long long r : rows)
             if (j.go(static_cast<long>(r)) == r4success) {
@@ -1216,15 +1227,23 @@ int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
                 j.flush();
             }
         j.close();
-        Data4 x(&code, "ap_xfer");
+        Data4 x(&code, xfer);
         for (long long r : links)
             if (x.go(static_cast<long>(r)) == r4success) x.deleteRec();
         x.pack();
         x.close();
     }
-    markTransferred(code, ApKind::Invoice);
-    markTransferred(code, ApKind::Cash);
     return static_cast<int>(rows.size());
+}
+
+int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
+{
+    const int rows = UndoJournalTransfer(code, glVoucher, "ap_jsum", "ap_xfer");
+    if (rows > 0) {
+        markTransferred(code, ApKind::Invoice);
+        markTransferred(code, ApKind::Cash);
+    }
+    return rows;
 }
 
 // ---- payments ---------------------------------------------------------------------------------

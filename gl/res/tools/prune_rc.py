@@ -53,7 +53,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1052',   # Spec #6 S6-M1: Customers
            '1063',   # Spec #6 S6-M1: Customer Account Options
            '1053',   # Spec #6 S6-M2: Sales invoice voucher entry
-           '1060']   # Spec #6 S6-M2: the sales voucher's memo (its menu MEMO)
+           '1060',   # Spec #6 S6-M2: the sales voucher's memo (its menu MEMO)
+           '1054']   # Spec #6 S6-M3: Cancel sales vouchers
 MENUS = ['MANILA', 'GLE', 'GLSUB', 'MEMO']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -80,6 +81,8 @@ MENU_EDITS = [
     ('MANILA', 'insert_after', '10076', '"Voucher &List...", CM_VOUCHER_LIST'),
     # Spec #5 D7 (S5-M3): Recover for purchase vouchers, beside the GL's.
     ('MANILA', 'insert_after', '10122', '"Recover P&urchase Voucher...", CM_AP_RECOVER'),
+    # Spec #6 D7 (S6-M3): and for sales vouchers.
+    ('MANILA', 'insert_after', 'CM_AP_RECOVER', '"Recover Sal&es Voucher...", CM_AR_RECOVER'),
     # Spec #5 S5-M6: Confirm Printed replaces Set Cheque Numbers (D9); Purge goes on the menu (spec 6.4).
     ('MANILA', 'rename', '8074', '"Confirm Printed &Cheques..."'),
     ('MANILA', 'insert_after', '1068', '"Purge &Paid Payables...", 1066'),

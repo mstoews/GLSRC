@@ -707,6 +707,215 @@ bool SaveArMemo(cb4sqlite::Code4& code, long number, const std::string& memo)
     return found;
 }
 
+// ---- Post, Cancel, Recover ----------------------------------------------------------------
+
+namespace {
+
+// The ar_jsum PERIOD text, as the deployed rows: the number right-aligned in two.
+std::string periodText(int period)
+{
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "%2d", period);
+    return buf;
+}
+
+std::string clip(const std::string& s, size_t n) { return s.size() > n ? s.substr(0, n) : s; }
+
+std::optional<ApRefusal> checkPostable(cb4sqlite::Code4& code, const ArVoucher& v, const std::vector<ArLine>& lines)
+{
+    if (lines.empty()) return ApRefusal{v.number, ApPostRefusal::NoLines, {}};
+    std::int64_t dr = 0, cr = 0;
+    for (const ArLine& l : lines) {
+        dr += l.debit;
+        cr += l.credit;
+    }
+    if (dr != cr) return ApRefusal{v.number, ApPostRefusal::OutOfBalance, {}};
+    for (const ArLine& l : lines)
+        if ((l.debit != 0 || l.credit != 0) && !ValidateAccount(code, l.account.account, l.account.dept))
+            return ApRefusal{v.number, ApPostRefusal::UnknownAccount, l.account};
+    return std::nullopt;
+}
+
+void setMode(cb4sqlite::Code4& code, long number, const char* mode)
+{
+    Data4 d(&code, "ar_btch");
+    Field4 batchno(d, "batchno"), m(d, "mode");
+    if (seekBatch(d, batchno, number)) {
+        m.assign(mode);
+        d.flush();
+    }
+    d.close();
+}
+
+void appendJournal(cb4sqlite::Code4& code, const ArVoucher& v, const std::vector<ArLine>& lines)   // AppendARSummary
+{
+    Data4 j(&code, "ar_jsum");
+    Field4 account(j, "account"), dept(j, "dept"), period(j, "period"), mode(j, "mode"), date(j, "date"),
+        type(j, "type"), batchno(j, "batchno"), reference(j, "reference"), descript(j, "descript"),
+        debit(j, "debit"), credit(j, "credit");
+    for (const ArLine& l : lines) {
+        if (l.debit == 0 && l.credit == 0) continue;
+        j.appendStart();
+        j.blank();
+        account.assign(l.account.account.c_str());
+        dept.assign(l.account.dept.c_str());
+        period.assign(periodText(v.period).c_str());
+        mode.assign("1");
+        date.assign(v.invoiceDate.empty() ? v.date.c_str() : v.invoiceDate.c_str());
+        type.assign(ar_journal::kInvoice);
+        batchno.assignLong(v.number);
+        reference.assign(clip(TrimText(v.reference), 30).c_str());
+        descript.assign(clip(TrimText(l.descript), 50).c_str());
+        debit.assign(money(l.debit).c_str());
+        credit.assign(money(l.credit).c_str());
+        j.append();
+    }
+    j.close();
+}
+
+void appendOpenItem(cb4sqlite::Code4& code, const ArVoucher& v)   // AppendARDist
+{
+    Data4 d(&code, "ar_dist");
+    d.appendStart();
+    d.blank();
+    Field4(d, "apaccount").assign(v.account.account.c_str());
+    Field4(d, "apdepart").assign(v.account.dept.c_str());
+    Field4(d, "period").assignLong(v.period);
+    Field4(d, "date").assign((v.invoiceDate.empty() ? v.date : v.invoiceDate).c_str());
+    Field4(d, "duedate").assign(v.dueDate.c_str());
+    Field4(d, "batchno").assignLong(v.number);
+    Field4(d, "invoiceno").assign(clip(TrimText(v.invoiceNo), 8).c_str());
+    Field4(d, "paymentctl").assign(ar_receipt::kOpen);
+    Field4(d, "vendorno").assign(TrimText(v.customer).c_str());
+    Field4(d, "reference").assign(clip(TrimText(v.reference), 20).c_str());
+    Field4(d, "descript").assign(clip(TrimText(v.descript), 50).c_str());
+    Field4(d, "amount").assign(money(v.total).c_str());
+    Field4(d, "rebateamt").assign(money(0).c_str());
+    Field4(d, "amountpaid").assign(money(0).c_str());
+    Field4(d, "paymentreq").assignLong(0);
+    Field4(d, "vatamt").assign(money(v.vatAmount).c_str());
+    Field4(d, "adjustment").assign(money(0).c_str());
+    Field4(d, "remainder").assign(money(v.total).c_str());
+    d.append();
+    d.close();
+}
+
+// Deletes the rows of `table` matching `where` (SQL over the table, ?1 bound to `number`) and packs it.
+void deleteWhere(cb4sqlite::Code4& code, const char* table, const std::string& where, long number)
+{
+    std::vector<long long> rows;
+    {
+        cb4sqlite::Query q(code, std::string("SELECT _rowid FROM ") + table + " WHERE _deleted = 0 AND " + where);
+        q.bindInt(1, number);
+        while (q.next()) rows.push_back(q.integer(0));
+    }
+    if (rows.empty()) return;
+    Data4 d(&code, table);
+    for (long long r : rows)
+        if (d.go(static_cast<long>(r)) == r4success) d.deleteRec();
+    d.pack();
+    d.close();
+}
+
+std::int64_t countOf(cb4sqlite::Code4& code, const char* sql, long number)
+{
+    cb4sqlite::Query q(code, sql);
+    q.bindInt(1, number);
+    return q.next() ? q.integer(0) : 0;
+}
+
+// After a transfer or its undo: each posted / transferred voucher is "2"
+// when it has "AR" rows and all are transferred, "0" otherwise. Receipts'
+// rows don't count: a voucher is transferred when its invoice is.
+void markTransferred(cb4sqlite::Code4& code)
+{
+    std::vector<std::pair<long, const char*>> changes;
+    for (const ArVoucher& v : LoadArVouchers(code)) {
+        if (v.mode != ar_mode::kPosted && v.mode != ar_mode::kTransferred) continue;
+        cb4sqlite::Query q(code, "SELECT count(*), sum(trim(mode) = '2') FROM ar_jsum WHERE _deleted = 0 AND "
+                                 "trim(type) = 'AR' AND batchno = ?1");
+        q.bindInt(1, v.number);
+        if (!q.next() || q.integer(0) == 0) continue;
+        const char* want = q.integer(1) == q.integer(0) ? ar_mode::kTransferred : ar_mode::kPosted;
+        if (v.mode != want) changes.emplace_back(v.number, want);
+    }
+    for (const auto& [n, m] : changes) setMode(code, n, m);
+}
+
+} // namespace
+
+ApPostResult PostArVouchers(cb4sqlite::Code4& code, long number)
+{
+    ApPostResult result;
+    std::vector<ArVoucher> todo;
+    for (const ArVoucher& v : LoadArVouchers(code))
+        if (v.mode == ar_mode::kOpen && (number == 0 || v.number == number)) todo.push_back(v);
+    if (todo.empty()) return result;
+    cb4sqlite::Transaction tx(code);
+    for (const ArVoucher& v : todo) {
+        const std::vector<ArLine> lines = LoadArLines(code, v.number);
+        if (const std::optional<ApRefusal> r = checkPostable(code, v, lines)) {
+            result.refused.push_back(*r);
+            continue;
+        }
+        appendOpenItem(code, v);
+        appendJournal(code, v, lines);
+        setMode(code, v.number, ar_mode::kPosted);
+        result.posted.push_back(v.number);
+    }
+    tx.commit();
+    return result;
+}
+
+ApCancelResult CancelArVoucher(cb4sqlite::Code4& code, long number)
+{
+    const std::optional<ArVoucher> v = FindArVoucher(code, number);
+    if (!v) return ApCancelResult::NotFound;
+    if (v->mode != ar_mode::kOpen) return ApCancelResult::NotOpen;
+    cb4sqlite::Transaction tx(code);
+    setMode(code, number, ar_mode::kCancelled);
+    tx.commit();
+    return ApCancelResult::Cancelled;
+}
+
+ArRecoverResult RecoverArVoucher(cb4sqlite::Code4& code, long number)
+{
+    const std::optional<ArVoucher> v = FindArVoucher(code, number);
+    if (v && v->mode == ar_mode::kTransferred) return ArRecoverResult::Transferred;
+    if (!v || v->mode != ar_mode::kPosted) return ArRecoverResult::NotPosted;
+    if (countOf(code, "SELECT count(*) FROM ar_jsum WHERE _deleted = 0 AND batchno = ?1 AND trim(mode) = '2'", number))
+        return ArRecoverResult::Transferred;
+    if (countOf(code, "SELECT count(*) FROM ar_rcpt WHERE _deleted = 0 AND batchno = ?1", number) ||
+        countOf(code, "SELECT count(*) FROM ar_dist WHERE _deleted = 0 AND batchno = ?1 AND trim(paymentctl) <> 'O'",
+                number))
+        return ArRecoverResult::Received;
+    cb4sqlite::Transaction tx(code);
+    deleteWhere(code, "ar_dist", "batchno = ?1", number);
+    deleteWhere(code, "ar_jsum", "trim(type) = 'AR' AND batchno = ?1", number);
+    setMode(code, number, ar_mode::kOpen);
+    tx.commit();
+    return ArRecoverResult::Recovered;
+}
+
+// ---- the transfer ---------------------------------------------------------------------------
+
+ApTransferResult TransferAr(cb4sqlite::Code4& code, long iniBatchno)
+{
+    cb4sqlite::Transaction tx(code);
+    ApTransferResult result =
+        TransferJournal(code, iniBatchno, {"ar_jsum", "ar_xfer", "Accounts Receivable GL Update", "AR GL Update"});
+    if (!result.vouchers.empty()) markTransferred(code);
+    tx.commit();
+    return result;
+}
+
+int UndoArTransfer(cb4sqlite::Code4& code, long glVoucher)
+{
+    const int rows = UndoJournalTransfer(code, glVoucher, "ar_jsum", "ar_xfer");
+    if (rows > 0) markTransferred(code);
+    return rows;
+}
+
 // ---- the ledger rows ---------------------------------------------------------------------
 
 std::vector<ArOpenItem> LoadArOpenItems(cb4sqlite::Code4& code)
