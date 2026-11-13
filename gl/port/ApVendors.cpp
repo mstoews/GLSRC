@@ -32,6 +32,7 @@
 
 #include "Accounts.h"   // TrimText
 #include "Ap.h"
+#include "ApInvoiceEntry.h"
 #include "Globals.h"
 #include "MainDialog.h"
 #include "MasterTables.h"   // SeekCode
@@ -379,7 +380,7 @@ int StressAp(int times)
         HANDLE self = GetCurrentProcess();
         return static_cast<int>(GetGuiResources(self, GR_GDIOBJECTS) + GetGuiResources(self, GR_USEROBJECTS));
     };
-    auto openAll = [] { return RunApVendors(nullptr, true) != -1; };
+    auto openAll = [] { return RunApVendors(nullptr, true) != -1 && RunApInvoiceEntry(nullptr, true) != -1; };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();
     for (int i = 0; i < times; ++i)

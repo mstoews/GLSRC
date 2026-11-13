@@ -715,6 +715,149 @@ ComputedVoucher ComputeVoucher(const std::vector<ApLine>& expenseLines, int vatR
     return c;
 }
 
+// ---- invoice entry ------------------------------------------------------------------------
+
+namespace {
+
+// Days since 1970-01-01 for a civil date, and back (H. Hinnant's algorithms).
+long long daysFromCivil(int y, unsigned m, unsigned d)
+{
+    y -= m <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + static_cast<long long>(doe) - 719468;
+}
+
+void civilFromDays(long long z, int& y, unsigned& m, unsigned& d)
+{
+    z += 719468;
+    const long long era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    d = doy - (153 * mp + 2) / 5 + 1;
+    m = mp < 10 ? mp + 3 : mp - 9;
+    y = static_cast<int>(static_cast<long long>(yoe) + era * 400) + (m <= 2);
+}
+
+// The voucher's expense lines, as entries.
+std::vector<ExpenseEntry> expenseEntries(const std::vector<ApLine>& lines)
+{
+    std::vector<ExpenseEntry> out;
+    for (const ApLine& l : lines)
+        if (l.role == ApLineRole::Expense)
+            out.push_back({0, l.descript, l.medrep, l.drcode, l.product, l.account, l.gross});
+    return out;
+}
+
+long saveComputed(cb4sqlite::Code4& code, ApVoucher header, const std::vector<ExpenseEntry>& entries, TaxMode mode,
+                  VoucherAccounts accounts)
+{
+    if (accounts.vatText.empty()) accounts.vatText = AccountName(code, accounts.vat);
+    if (accounts.whText.empty()) accounts.whText = AccountName(code, accounts.wh);
+    if (accounts.creditText.empty()) accounts.creditText = AccountName(code, accounts.credit);
+    std::vector<ApLine> in;
+    for (const ExpenseEntry& e : entries) {
+        ApLine l;
+        l.descript = TrimText(e.descript).empty() ? AccountName(code, e.account) : e.descript;
+        l.medrep = e.medrep;
+        l.drcode = e.drcode;
+        l.product = e.product;
+        l.account = e.account;
+        l.gross = e.gross;
+        in.push_back(l);
+    }
+    const ComputedVoucher c = ComputeVoucher(in, header.vatRate, header.whRate, mode, accounts);
+    header.payable = c.payable;
+    header.vatAmount = c.vat;
+    header.whAmount = mode == TaxMode::F ? -c.wh : c.wh;
+    return SaveApVoucher(code, header, c.lines);
+}
+
+} // namespace
+
+std::string AddDays(const std::string& yyyymmdd, int days)
+{
+    const std::string s = TrimText(yyyymmdd);
+    if (s.size() != 8 || s.find_first_not_of("0123456789") != std::string::npos) return {};
+    const int y = std::atoi(s.substr(0, 4).c_str());
+    const unsigned m = static_cast<unsigned>(std::atoi(s.substr(4, 2).c_str()));
+    const unsigned d = static_cast<unsigned>(std::atoi(s.substr(6, 2).c_str()));
+    if (m < 1 || m > 12 || d < 1 || d > 31) return {};
+    int ry = 0;
+    unsigned rm = 0, rd = 0;
+    civilFromDays(daysFromCivil(y, m, d) + days, ry, rm, rd);
+    char buf[16];
+    std::snprintf(buf, sizeof buf, "%04d%02u%02u", ry, rm, rd);
+    return buf;
+}
+
+std::string AccountName(cb4sqlite::Code4& code, const ApAccount& account)
+{
+    if (account.empty()) return {};
+    cb4sqlite::Query q(code, "SELECT descript FROM glaccts WHERE _deleted = 0 AND trim(account) = ?1 "
+                             "AND coalesce(trim(dept), '') = ?2 ORDER BY _rowid LIMIT 1");
+    q.bindText(1, TrimText(account.account));
+    q.bindText(2, TrimText(account.dept));
+    return q.next() ? q.text(0) : std::string();
+}
+
+long SaveExpenseLine(cb4sqlite::Code4& code, ApVoucher header, const ExpenseEntry& entry, TaxMode mode,
+                     VoucherAccounts accounts)
+{
+    std::vector<ExpenseEntry> entries;
+    const std::optional<ApVoucher> onFile =
+        header.number > 0 ? FindApVoucher(code, header.kind, header.number) : std::nullopt;
+    if (onFile) {
+        if (onFile->mode != ap_mode::kOpen) return 0;
+        header.mode = onFile->mode;
+        entries = expenseEntries(LoadApLines(code, header.kind, header.number));
+    } else {
+        header.number = 0;
+        header.mode = ap_mode::kOpen;
+    }
+    if (entry.line >= 1 && entry.line <= static_cast<int>(entries.size()))
+        entries[static_cast<size_t>(entry.line - 1)] = entry;
+    else
+        entries.push_back(entry);
+    return saveComputed(code, header, entries, mode, accounts);
+}
+
+bool DeleteExpenseLine(cb4sqlite::Code4& code, ApKind kind, long number, int line, TaxMode mode,
+                       VoucherAccounts accounts)
+{
+    const std::optional<ApVoucher> v = FindApVoucher(code, kind, number);
+    if (!v || v->mode != ap_mode::kOpen) return false;
+    std::vector<ExpenseEntry> entries = expenseEntries(LoadApLines(code, kind, number));
+    if (line < 1 || line > static_cast<int>(entries.size())) return false;
+    entries.erase(entries.begin() + (line - 1));
+    saveComputed(code, *v, entries, mode, accounts);
+    return true;
+}
+
+bool DeleteApVoucher(cb4sqlite::Code4& code, ApKind kind, long number)
+{
+    const std::optional<ApVoucher> v = FindApVoucher(code, kind, number);
+    if (!v || v->mode != ap_mode::kOpen) return false;
+    cb4sqlite::Transaction tx(code);
+    {
+        Data4 d(&code, headerTable(kind));
+        Field4 batchno(d, "batchno");
+        if (seekBatch(d, batchno, number)) {
+            d.deleteRec();
+            d.pack();
+        }
+        d.close();
+    }
+    deleteRows(code, lineTable(kind), number);
+    deleteRows(code, "ap_linex", number, kindCode(kind));
+    tx.commit();
+    return true;
+}
+
 // ---- the ledger rows ----------------------------------------------------------------------
 
 std::vector<OpenItem> LoadOpenItems(cb4sqlite::Code4& code)

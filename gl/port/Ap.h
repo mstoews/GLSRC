@@ -257,6 +257,42 @@ struct ComputedVoucher {
 ComputedVoucher ComputeVoucher(const std::vector<ApLine>& expenseLines, int vatRate, int whRate, TaxMode mode,
                                const VoucherAccounts& accounts);
 
+// ---- invoice entry (spec #5 4.2, D4, D5; plan S5-M2) ------------------------------
+
+// yyyymmdd plus `days` (the due date: invoice date + terms); "" for an invalid date.
+std::string AddDays(const std::string& yyyymmdd, int days);
+
+// The account's description in glaccts ("" if it isn't there).
+std::string AccountName(cb4sqlite::Code4& code, const ApAccount& account);
+
+// An expense line as the entry screen gives it: the amount typed.
+struct ExpenseEntry {
+    int line = 0;              // the expense line it replaces (1-based among the expense lines); 0 adds one
+    std::string descript, medrep, drcode, product;
+    ApAccount account;
+    std::int64_t gross = 0;
+};
+
+// Adds or replaces an expense line of voucher `header.number` (a new voucher
+// when 0 or not on file, in mode open), then recomputes the VAT, W/H and
+// credit lines from all its expense lines with the header's rates (D4) and
+// saves the header with the totals: PAYABLE the typed amounts, VATAMT, and
+// REBATEAMT negative in F mode, positive in T. An expense line or computed
+// line with no text gets its account's name. Returns the voucher's number,
+// or 0 if the voucher on file isn't open (posted, transferred or cancelled).
+long SaveExpenseLine(cb4sqlite::Code4& code, ApVoucher header, const ExpenseEntry& entry, TaxMode mode,
+                     VoucherAccounts accounts);
+
+// Removes expense line `line` (1-based among the expense lines) and
+// recomputes, as SaveExpenseLine, with the voucher's own rates. False if the
+// voucher isn't open or has no such line.
+bool DeleteExpenseLine(cb4sqlite::Code4& code, ApKind kind, long number, int line, TaxMode mode,
+                       VoucherAccounts accounts);
+
+// D5: "No" to keeping a voucher made in this session removes that voucher
+// (header, lines, ap_linex rows) and nothing else. Only an open voucher.
+bool DeleteApVoucher(cb4sqlite::Code4& code, ApKind kind, long number);
+
 // ---- the ledger rows (read-only until their milestones) ------------------------------------
 
 struct OpenItem {   // ap_dist
