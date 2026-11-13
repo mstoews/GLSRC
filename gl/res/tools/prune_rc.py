@@ -51,8 +51,10 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1051',   # Spec #5 S5-M6: Clear Cancel Cheque
            '1048',   # Spec #5 S5-M6: Purge Paid Payables
            '1052',   # Spec #6 S6-M1: Customers
-           '1063']   # Spec #6 S6-M1: Customer Account Options
-MENUS = ['MANILA', 'GLE', 'GLSUB']
+           '1063',   # Spec #6 S6-M1: Customer Account Options
+           '1053',   # Spec #6 S6-M2: Sales invoice voucher entry
+           '1060']   # Spec #6 S6-M2: the sales voucher's memo (its menu MEMO)
+MENUS = ['MANILA', 'GLE', 'GLSUB', 'MEMO']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
 # here so gl.rc stays generated. Each edit names a menu and the ID of an item
@@ -319,6 +321,16 @@ OLD_FONTS = {'ms sans serif', 'helv'}
 FONT_SIZE = {'2057': 9}
 
 
+# A dialog's MENU names its menu unquoted: rc stores MENU "MEMO" with the
+# quotes, so CreateDialog can't find the menu (error 1814; dialog 1060, S6-M2).
+DIALOG_MENU = re.compile(r'^MENU\s+"([^"]+)"\s*$', re.I)
+
+
+def dialog_menu(line):
+    m = DIALOG_MENU.match(line.strip())
+    return f'MENU {m.group(1)}' if m else line
+
+
 def new_font(line, dialog):
     m = FONT_LINE.match(line.strip())
     if not m or m.group(2).strip().lower() not in OLD_FONTS:
@@ -355,6 +367,9 @@ PATCHES = {
     # Customers (1052, S6-M1): both addresses' labels, 34 and 35 units wide, wrap to 45 px
     # high in 15 px; their fields are at x 60, so they can grow 15 units, as "Postal Code".
     ('1052', '"Postal Code/Zip Code"'): (15, 0, '"Postal Code"'),
+    # Sales invoice vouchers (1053, S6-M2): its terms field is at x 118.
+    ('1053', '"Terms"'): 2,          # text 32 px, room 30 px
+    ('1053', '" Vendor "'): (0, 0, '" Customer "'),   # the group box of the customer's fields
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)
@@ -399,7 +414,7 @@ def patch_dialog(name, lines):
                 l = f'{indent}{kind} {new_text or text}, {cid}, {rest}'
                 applied.add((name, key))
                 break
-        out.append(new_font(l, name))
+        out.append(dialog_menu(new_font(l, name)))
     return out
 
 

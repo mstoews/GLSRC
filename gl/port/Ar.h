@@ -236,6 +236,41 @@ struct ComputedSale {
 // zero, with the descriptions `accounts` gives.
 ComputedSale ComputeSale(const std::vector<ArLine>& productLines, int vatRate, const SaleAccounts& accounts);
 
+// ---- invoice entry (spec #6 4.1, 4.2, D4, D5; plan S6-M2) ---------------------------------
+
+// A product line as the entry screen gives it: a quantity and price, or (price
+// 0) the amount typed, VAT included.
+struct SaleEntry {
+    int line = 0;              // the product line it replaces (1-based among the product lines); 0 adds one
+    std::string descript, medrep, drcode, product;
+    ApAccount account;         // the sales account
+    std::int64_t qty = 0;      // hundredths
+    std::int64_t price = 0;    // cents; 0: `gross` was typed
+    std::int64_t gross = 0;    // the amount typed (used only when price is 0)
+};
+
+// Adds or replaces a product line of voucher `header.number` (a new voucher
+// when 0 or not on file, in mode open), then recomputes the VAT and AR lines
+// from all its product lines with the header's VAT rate (D4): the VAT line
+// on `vat`, the AR line on `header.account`. The header is saved with the
+// totals (PAYABLE, VATAMT). A line with no text gets its account's name, as
+// do the computed lines. Returns the voucher's number, or 0 if the voucher
+// on file isn't open (posted, transferred or cancelled).
+long SaveSaleLine(cb4sqlite::Code4& code, ArVoucher header, const SaleEntry& entry, const ApAccount& vat);
+
+// Removes product line `line` (1-based among the product lines) and
+// recomputes, as SaveSaleLine, with the voucher's own rate and AR account.
+// False if the voucher isn't open or has no such line.
+bool DeleteSaleLine(cb4sqlite::Code4& code, long number, int line, const ApAccount& vat);
+
+// D5: "No" to keeping a voucher made in this session removes that voucher
+// (header, lines, ar_linex rows) and nothing else. Only an open voucher.
+bool DeleteArVoucher(cb4sqlite::Code4& code, long number);
+
+// TARMemo::Ok: the voucher's memo (MEMOFIELD) replaced by `memo`. False if
+// there is no such voucher.
+bool SaveArMemo(cb4sqlite::Code4& code, long number, const std::string& memo);
+
 // ---- the ledger rows (read-only until their milestones) ------------------------------------
 
 struct ArOpenItem {   // ar_dist
