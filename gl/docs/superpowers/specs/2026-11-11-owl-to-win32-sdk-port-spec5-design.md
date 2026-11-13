@@ -1,6 +1,6 @@
 # Spec #5 — OWL-to-Win32 SDK Port: Accounts Payable
 
-**Status:** Draft, for review
+**Status:** Reviewed (2026-11-13): Q1 and Q2 answered; the plan is `plans/2026-11-13-owl-to-win32-sdk-port-spec5-plan.md`
 **Date:** 2026-11-11
 **Scope:** Fifth spec of the migration: the Accounts Payable module.
 - vendors;
@@ -9,7 +9,7 @@
 - the transfer of AP's journal to the General Ledger;
 - the AP reports, on Spec #3's engine.
 
-The original's cycle has broken links at almost every step (§2.6), and the company never used AP beyond a few test vouchers (§2.7). So, as for Fixed Assets (Spec #4), the spec fixes what it ports, and asks first whether all of it is wanted (Q1).
+The original's cycle has broken links at almost every step (§2.6), and the company never used AP beyond a few test vouchers (§2.7). So, as for Fixed Assets (Spec #4), the spec fixes what it ports. Q1 asked first whether all of it is wanted: it is (§13).
 
 **Depends on:** Specs #1–#4. Spec #2's GL vouchers carry AP's GL entries; Spec #3's `report` library prints the reports; the Spec #2 master-data and voucher-entry screens are the pattern. Everything they fixed still holds: the build, the error idioms, the Unicode strategy, the translation pattern and the per-port checklist.
 
@@ -59,6 +59,13 @@ The original's cycle has broken links at almost every step (§2.6), and the comp
 | `AP_JSUM` | 40 | **AP's journal, staged for the GL:** account, dept, period, date, debit, credit; `TYPE` "AP" (invoices and payments) or "CA" (cash vouchers); `MODE` "1" waiting, "2" transferred. |
 | `GL_SETAT` | (GL) | Named accounts: `AP` 221002, `VATR` prepaid VAT 148000, `VATP` VAT payable 260007, `WTXC`/`WTXI` withholding 260004; and the banks (`TYPE` "CA"). |
 | `AP_SETUP`, `AP_CTRL`, `AP_REGIS`, `AP_SYS`, `AP_TAG` | 2, 0, 2, 12, 0 | Not used by any built code. `AP_SETUP` belongs to the unbuilt `ap_setup.cpp`; `AP_CTRL` is zapped by every Post; `AP_REGIS` has no reference at all. |
+
+**Layouts worth knowing** (checked against the deployed `.DBF`/`.MDX`, 2026-11-13):
+- `AP_BTCHD` / `AP_CASHD` lines have no mode, period, date or reference: only voucher, line number, description, the three analysis codes, account, dept, debit and credit. The voucher's header carries the rest.
+- The cash lines' doctor column is `DRCODES`; the invoice lines' is `DRCODE`.
+- `INVOICENO` is 8 characters in `AP_BTCH` and `AP_DIST`, 10 in `AP_CASH`.
+- `AP_JSUM.PERIOD` is text (C4), and `AP_JSUM` has no field for the GL voucher a transfer makes (§4.4).
+- Tags: `AP_BTCH`/`AP_CASH` `batchno`, `invoiceno` (`VENDORNO+INVOICENO`), `account`; `AP_DIST` `batchno`, `invoiceno`, `vendorno`, `chequeno`, `paymentreq`, `cheques` (filtered on P); `AP_JSUM` `batchno`, `account`, `apdist`/`ardist` (filtered on the type); `AP_REQST` `paymentreq`, `vendorno`; `AP_VEND` `vendorno`.
 
 ### 2.2 Vendors (4045, dialog 1041)
 
@@ -224,7 +231,7 @@ The Spec #2 Voucher Entry pattern:
 Maintenance > **Update AR and AP**:
 - `AP_JSUM` rows with `MODE` "1" become **one GL voucher per period** (Spec #2 `SaveLine`, mode 1, numbered `NextVoucherNumber`). Its lines are netted by account and dept, it is dated the period's end, and its description is "Accounts Payable GL Update" (1049).
 - A period that is closed in `gl_pds` is reported and left untransferred, rather than moved into another period.
-- The rows get `MODE` "2" and the voucher number. Posted invoice and cash vouchers get `MODE` "2" (transferred).
+- The rows get `MODE` "2", and the GL voucher's number is recorded with them. `AP_JSUM` has no field for it, so where it is kept is settled in plan S5-M3, as Spec #4 kept its run history in a table of its own (`gl_fadep`). Posted invoice and cash vouchers get `MODE` "2" (transferred).
 - The GL vouchers post with Spec #2's Post Voucher; Cancel Voucher on one sets its rows back to "1" (as Spec #4's undo).
 
 ---
@@ -374,7 +381,7 @@ Its expected figures go in the tests and the acceptance sheet, as in Specs #3 an
 
 ---
 
-## 12. Milestones (plan to be written after review)
+## 12. Milestones (the plan: `plans/2026-11-13-owl-to-win32-sdk-port-spec5-plan.md`)
 
 | Milestone | Content |
 |---|---|
@@ -392,19 +399,15 @@ Its expected figures go in the tests and the acceptance sheet, as in Specs #3 an
 
 ## 13. Still open
 
-Questions for the finance team (and the user), with the spec's assumption until they answer:
+Questions for the finance team (and the user), with the spec's assumption until they answer.
 
-- **Q1 Is AP wanted, and how much of it?**
-  - AP was set up and tested in 1995 but never run (§2.7).
-  - Choices: all of §1.1; or vendors, invoices and the transfer to the GL only, with payments made outside the system; or nothing beyond the vendor list.
-  - *Assumed: all of §1.1.*
-- **Q2 VAT and withholding tax:**
-  - Are invoice amounts VAT-inclusive?
-  - Is W/H withheld from the payment (F) or the amount grossed up (T)?
-  - Is W/H computed on the net or the gross?
-  - What are the current rates (the sample uses 10 % VAT and 1 % W/H)?
+**Answered (the user, 2026-11-13):**
 
-  *Assumed: F mode, W/H on the net, as the deployed sample's postings.*
+- **Q1 Is AP wanted, and how much of it?** **All of §1.1.** (AP was set up and tested in 1995 but never run, §2.7. The other choices were vendors, invoices and the transfer only, or the vendor list only.)
+- **Q2 VAT and withholding tax:** **as assumed**: amounts VAT-inclusive, W/H withheld from the payment (F mode), W/H computed on the net, rates from each vendor. The deployed sample confirms it: voucher 4, 1,100.00 at 10 % VAT and 1 % W/H, booked expense 1,000.00, VAT 100.00 and W/H 10.00. T mode stays, chosen by `GL.INI [WITHHOLDING] TAX` as in the original (§4.1). The rules are one function in `Ap.cpp`, with tests per mode, so a later change from the finance team touches only that.
+
+**Still assumed** until the finance team answers:
+
 - **Q3 New invoices: open or held** until someone releases them for payment? *Assumed: open (D11).*
 - **Q4 One cheque per vendor per run, or per invoice?** *Assumed: per vendor and bank (D9).*
 - **Q5 The deployed AP test data** (9 invoices, 1 cash voucher, 3 cheques from March 1995): clear it before go-live? Its effect is already in the GL balances. *Assumed: yes, as Spec #4 Q4.*

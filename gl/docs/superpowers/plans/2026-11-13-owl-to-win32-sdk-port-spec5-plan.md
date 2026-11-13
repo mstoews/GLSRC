@@ -1,0 +1,297 @@
+# Spec #5 — Implementation Plan: Accounts Payable
+
+**Spec reference:** `gl/docs/superpowers/specs/2026-11-11-owl-to-win32-sdk-port-spec5-design.md`
+**Date:** 2026-11-13
+**Plan status:** Draft
+
+**Paths:** relative to the repository root. The legacy sources are `gl/src/ap_*.cpp` and `gl_apupd.cpp`, the table classes `include/db_apbtc.h`, `db_apdst.h`, `db_vend.h`, `db_jsum.h`, `db_cash.h` and `db_reqst.h`, the dialogs in `gl/gl_new.rc` (1045 only in `gl/gl.rc`), and the Crystal files `dbf/AP*.RPT`. New code goes in `gl/port/` (screens, and the portable `Ap.{h,cpp}`) and `gl/port/reports/` (the reports).
+
+This plan carries out the Spec #5 design. If a milestone finds that the spec is wrong, **stop, fix the spec, then resume**.
+
+**Read first, as in Specs #2–#4.** Each milestone that ports a screen starts by re-reading its part of the original and its dialog, and checking the spec's §2 against them. The spec's §2.6 lists what doesn't work; each fix is a decision (D1–D15), and each screen's translation notes say which ones apply.
+
+**Open questions.** Q1 and Q2 are answered (spec §13): all of AP is ported, with the spec's tax rules (F mode, VAT-inclusive, W/H on the net). Q3–Q7 stay as the spec assumes until the finance team answers: invoices start open (Q3), one cheque per vendor and bank (Q4), the deployed test data cleared before go-live (Q5), cheques on plain paper (Q6), no partial payments or credit notes (Q7). Each milestone notes where an answer would change it.
+
+**Where it runs.** Specs #1–#4 were written on Linux and run on Windows by the user. From Spec #5 the development machine is Windows 11 with Visual Studio 18 (v145), so each milestone is built, tested and driven in the app as it is written. The Linux checks (`tools/linux/`) are kept working: new portable files join `build_tests.sh`, and `wincheck_all.sh` is run when a Linux machine is available.
+
+---
+
+## Milestone summary
+
+| # | Milestone | Size | Depends on | Critical path? |
+|---|---|---|---|---|
+| 0 | `Ap` core: tables, records, the arithmetic, modes; the fixture; tests | M | none | yes |
+| 1 | Vendors (1041) | S | M0 | yes |
+| 2 | Invoice voucher entry (1042) | M | M1 | yes |
+| 3 | Post, Cancel, Recover; the AP → GL transfer (1028) | M | M2 | yes |
+| 4 | Cash vouchers (1044): entry, post, cancel | M | M3 | no |
+| 5 | Create Cheques (1045), Hold/Force; the payment's GL entry | M | M3 | yes |
+| 6 | Print Cheques, Confirm Printed, Bank Reconciliation, Void, Purge | M | M5 | yes |
+| 7 | Reports; the report list; menu labels; `/stress`, `/checkres`; README | M | M4, M6 | yes |
+| 8 | Acceptance sheet, walkthrough, sign-off | S | all | yes |
+
+S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and can run beside M5 and M6.
+
+---
+
+## Milestone 0 — The portable core
+
+**Goal:** AP's tables can be read and written, and an invoice's amounts computed, under test, on a fixture whose AP data is consistent with its ledger.
+
+### Tasks
+
+1. **Read** the table classes (`db_apbtc.h`, `db_apdst.h`, `db_vend.h`, `db_jsum.h`, `db_cash.h`, `db_reqst.h`), `GetAPExpense` and `UpdateBatchDetail` (`ap_btche.cpp`), and the deployed layouts and tags (spec §2.1, "Layouts worth knowing"). Check the field meanings the spec gives, in particular:
+   - `PAYABLE` is the gross;
+   - `REBATEAMT` is the signed W/H;
+   - the modes and `PAYMENTCTL` codes.
+2. **`gl/port/Ap.{h,cpp}`**, portable (no Win32), over `cb4sqlite`:
+   - **`EnsureApTables(code)`:** creates `ap_vend`, `ap_btch`, `ap_btchd`, `ap_cash`, `ap_cashd`, `ap_dist`, `ap_reqst` and `ap_jsum` with the deployed layouts and tags when the company lacks them. It also migrates D3: a voucher with `MODE` "2" whose reference starts "Cancelled" becomes "X". It returns how many vouchers it migrated, and runs from every AP screen, the transfer and the reports, as Spec #4's `EnsureAssetTables`.
+   - **Records, amounts in cents** (Spec #2 D12), deleted rows skipped:
+     - `Vendor`;
+     - `ApVoucher`, one type for invoice and cash vouchers, with a `kind`;
+     - `ApLine`;
+     - `OpenItem` (`AP_DIST`);
+     - `Cheque` (`AP_REQST`);
+     - `JournalRow` (`AP_JSUM`).
+
+     Each has `Load…` / `Find…` / `Save…` functions as the screens of M1–M6 need them. M0 provides those for vendors and vouchers with their lines; the rest come with their milestones.
+   - **Modes** as named constants (`ap_mode::kOpen` "1", `kPosted` "0", `kTransferred` "2", `kCancelled` "X"), and the payment states (`PAYMENTCTL` H, O, F, P, V, C).
+   - **The arithmetic** (spec §4.1, D4), pure functions with no table access:
+     - `SplitAmount(amount, vatRate, whRate, mode)` → expense, VAT and W/H, for F and T;
+     - `ComputeVoucher(expenseLines, rates, mode, accounts)` → the VAT, W/H and AP (or bank) lines. The voucher balances to the cent.
+   - **The accounts** from `GL_SETAT`: `AP`, `VATR`, `VATP`, `WTXC`, `WTXI`, and the banks (`TYPE` "CA").
+   - **`DuplicateInvoice(code, vendor, invoiceNo, exceptVoucher)`** (D6), across invoice and cash vouchers not cancelled.
+3. **The fixture** (spec §9) in `make_dev_fixture.py`, as `accounts_payable(d)`, with the deployed layouts and tags:
+   - **Vendors** V001 (company, VAT 12 %, W/H 1 %, terms 30, AP 221002, VAT 148000), V002 (individual, VAT 0, W/H 2 %) and V003 (no VAT or W/H).
+   - **Vouchers:**
+     - two open invoice vouchers, one with two expense lines;
+     - one posted and untransferred, with its `AP_DIST` row ("O") and `AP_JSUM` rows;
+     - one cancelled ("X");
+     - one migrated-style cancelled voucher ("2", reference "Cancelled …") for the D3 migration test;
+     - one open cash voucher.
+   - **Payments:** one paid, printed invoice ("V") with its cheque in `AP_REQST`, not cleared, and the payment's `AP_JSUM` rows.
+
+   The expense lines use accounts already in the chart, and the AP data's journal is **untransferred**, so no GL balance moves. It must leave every Spec #1–#4 figure unchanged: check by running the sheets' queries (`sheet_queries.py`) before and after, as S4-M0 did.
+4. **Tests**, `gl_tests/test_ap.cpp`:
+   - **The arithmetic, F mode:** 1,120.00 at 12 % / 1 % gives 1,000.00 / 120.00 / 10.00, and AP 1,110.00. The deployed sample: 1,100.00 at 10 % / 1 % gives 1,000.00 / 100.00 / 10.00. No VAT, no W/H, both zero. A rounding case.
+   - **The arithmetic, T mode:** 1,120.00 at 12 % / 1 % gives 991.15 / 118.94 / 9.91, and AP 1,120.00. A rate of 0 means none in both modes (§2.6 #5).
+   - **The voucher's computed lines:** two expense lines recompute one VAT, one W/H and one AP line, balancing to the cent; deleting one recomputes.
+   - **Tables:** missing tables are created; the D3 migration ("2" + "Cancelled" → "X", other "2" untouched).
+   - **The fixture:** its vendors and vouchers load with the expected amounts.
+   - **`DuplicateInvoice`:** refused for the same vendor and number; allowed for a cancelled voucher, another vendor, or the voucher itself.
+   - **Accounts:** the `GL_SETAT` accounts and the two banks.
+5. **Build lists:** add `Ap.cpp` and the test to `gl_tests.vcxproj` and `tools/linux/build_tests.sh`, and `Ap.{h,cpp}` to `gl.vcxproj` (`genproj.py`).
+
+### Exit criteria
+
+- `gl_tests` passes in Debug and Release.
+- The Spec #1–#4 sheets' figures are unchanged on the new fixture.
+
+---
+
+## Milestone 1 — Vendors (1041)
+
+**Goal:** vendors can be maintained.
+
+### Tasks
+
+1. **Read** `TAPVendorAdd` (`ap_vendi.cpp`, `ap_vendo.cpp`), its list, and dialog 1041.
+2. **`prune_rc.py`:** add 1041; regenerate `gl.rc`. Check `/checkres`'s text fit.
+3. **`gl/port/ApVendors.{h,cpp}`** on the Spec #2 master-data pattern:
+   - **Add/Mod** asks before replacing a vendor. The accounts are checked (`ValidateAccount`).
+   - **Defaults:** the AP account from `GL_SETAT AP`, the VAT account from `VATR` (D12).
+   - **Set Data / Enter** on the number finds the vendor (D12: the original never found it).
+   - **Delete** is refused while the vendor has vouchers or open items (D12), naming one.
+   - **New, Top / Bottom / Next / Previous;** the vendor list (`TableList`, `GL.INI [AP_VEND]`).
+4. **Wire** 4045 in `ManilaGL.cpp`; `/checkres` loads 1041; `/stress` opens it (a new AP step, which later screens join).
+5. **Tests:** `Ap.h`'s vendor checks and `DeleteVendor`'s refusals.
+
+### Exit criteria
+
+- On the fixture: add V004; Enter finds V001; deleting V001 is refused, naming its voucher.
+
+---
+
+## Milestone 2 — Invoice voucher entry (1042)
+
+**Goal:** purchase invoices are entered with their VAT, W/H and AP lines computed.
+
+### Tasks
+
+1. **Read** `TAPInvoiceEntry` (`ap_btche.cpp`) and its lists, and dialog 1042. Note which controls the code reads that aren't in the template (§2.6 #11).
+2. **`prune_rc.py`:** add 1042; regenerate.
+3. **`gl/port/ApInvoiceEntry.{h,cpp}`** on Spec #2's Voucher Entry pattern (spec §4.2):
+   - **The header:** vendor (Enter shows it and fills the rates and accounts), invoice number, dates (the due date is invoice date + terms, editable), period, rates, the AP and VAT accounts.
+   - **Expense lines:** account, dept, description, med rep, product, doctor, amount. Each add, change or delete recomputes the computed lines (D4) through `Ap.h`.
+   - **The Distribution List** beside it (Spec #2's `LineList`): double-click edits an expense line; computed lines aren't editable.
+   - **Duplicates** refused (D6). **The analysis codes** go to their own columns (D13).
+   - **New and Close** ask to keep a voucher made in this session; No removes only that voucher (D5).
+   - **The mode** is `GL.INI [WITHHOLDING] TAX`, default "F" (spec §4.1).
+4. **The vendor popup** from entry, if the template has one, uses `VATR` like Vendors (D12).
+5. **Wire** 4044; `/checkres`, `/stress`.
+6. **Tests:** `SaveApLine` / `DeleteApLine` with recompute; D5's removal; the due date.
+
+### Exit criteria
+
+- On the fixture, a V001 invoice of 1,120.00 shows Dr expense 1,000.00, Dr VAT 120.00, Cr W/H 10.00, Cr AP 1,110.00.
+- A second line recomputes, and the voucher still balances; the same invoice number is refused.
+
+---
+
+## Milestone 3 — Post, Cancel, Recover; the transfer (1028)
+
+**Goal:** invoices post to AP's ledger, and AP's journal reaches the General Ledger.
+
+### Tasks
+
+1. **Read** `TAPPostBatch`, `TAPCancelBatch` (`ap_post.cpp`, `ap_cancb.cpp`), `TGLAPUpdate` (`gl_apupd.cpp`), dialogs 1047, 1043 and 1030, and Spec #2's `VoucherPosting.cpp`.
+   - **Settle** where the transfer records the GL voucher of each `AP_JSUM` row (spec §4.4: `AP_JSUM` has no field for it). The likely answer is a port table, as Spec #4's `gl_fadep`. Record the answer in the spec before going on.
+2. **`Ap.h`**, each in one transaction:
+   - `PostApVoucher` / `PostAllAp` (spec §4.3): the `AP_DIST` row ("O", D11), the `AP_JSUM` rows (`TYPE` "AP", the voucher's period and invoice date), `MODE` "0". An unbalanced voucher is refused.
+   - `CancelApVoucher`: `MODE` "X", lines kept.
+   - `RecoverApVoucher` (D7): posted, untransferred, unpaid; removes exactly its own `AP_DIST` and `AP_JSUM` rows.
+   - `TransferAp` (D2): one GL voucher per period (Spec #2 `SaveLine`, mode "1"), netted by account and dept, dated the period's end, described by string 1049. A closed period is reported and left. The rows and vouchers get "2".
+   - **The Cancel hook:** Spec #2's `CancelVoucher` sets a transfer voucher's rows back to "1", as Spec #4's `UndoRun`. One call in `Vouchers.cpp`.
+3. **Screens** on Spec #2's Post / Cancel list dialogs: Post (1048), Cancel (3064), and Recover (a new menu item, Transactions > Recover Voucher > Purchase Vouchers, by a `prune_rc.py` edit).
+4. **`gl/port/ApTransfer.{h,cpp}`** on dialog 1030 (Maintenance > Update AR and AP): the AP half; the AR half stays a stub for Spec #6.
+5. **Wire** 1048, 3064, the Recover item and 1028; `/checkres`, `/stress`.
+6. **Tests:**
+   - posting the fixture's open voucher (the `AP_DIST` row and journal), and a refused unbalanced one;
+   - cancelling; recovering, and refusing a transferred or paid voucher;
+   - the transfer: one GL voucher per period, its lines and totals, a closed period left, the rows marked;
+   - cancelling the transfer's GL voucher puts the rows back;
+   - posting it with Spec #2, then 221002 carrying the unpaid invoices.
+
+### Exit criteria
+
+- On the fixture: post, cancel and recover driven in the app; the transfer's GL voucher posts with Spec #2's Post Voucher.
+- Q3 still assumed (open), or answered.
+
+---
+
+## Milestone 4 — Cash vouchers (1044)
+
+**Goal:** invoices paid at entry are entered, posted and transferred.
+
+### Tasks
+
+1. **Read** `TAPCashEntry` (`ap_cashp.cpp`, `ap_cshbt.cpp`, `ap_cshrb.cpp`) and dialog 1044.
+2. **`prune_rc.py`:** add 1044; regenerate.
+3. **`gl/port/ApCashEntry.{h,cpp}`:** as M2, with a bank (the `GL_SETAT` `CA` accounts) and a cheque number in place of the AP account; the credit line is the bank (spec §5, D10).
+4. **`Ap.h`:** posting writes `AP_JSUM` (`TYPE` "CA", with the cheque number) and no `AP_DIST` row; cancel as invoices; the transfer marks cash vouchers "2" (D10).
+5. **Wire** 1079, 1088, 1085; `/checkres`, `/stress`.
+6. **Tests:** a cash voucher's lines; post; cancel; transferred with the invoices.
+
+### Exit criteria
+
+- On the fixture: the open cash voucher posts, and the transfer carries it.
+
+---
+
+## Milestone 5 — Create Cheques (1045)
+
+**Goal:** due invoices are paid by cheques, with the payment's GL entry.
+
+### Tasks
+
+1. **Read** `TAPCreatePayment`, `TAPHoldForce` (`ap_paymt.cpp`, `ap_payrq.cpp`), dialogs 1045 (from `gl.rc`) and 1066.
+2. **`prune_rc.py`:** add 1045 (from `gl.rc`, as 1061 in Spec #2) and 1066.
+3. **`Ap.h`:**
+   - `DueItems(code, date)`: the O, F and H items due by the date, with the amount owed (amount − W/H);
+   - `SetPaymentControl(code, item, H|O|F)`;
+   - `CreateCheques(code, date, bank, firstNumber)` (spec §6.1, D8, D9), in one transaction: one cheque per vendor and bank, the items marked "P" with the cheque, and the payment's `AP_JSUM` rows (Dr AP / Cr bank, dated the payment date, in its period, with the cheque number).
+4. **`gl/port/ApPayments.{h,cpp}`:** the selection list with Hold / Force / Open, the date, the bank, the first cheque number (default: the last + 1), Create; then the cheques made.
+5. **Wire** 1057; `/checkres`, `/stress`.
+6. **Tests:** what's due by a date; Hold keeps an item out and Force pays one not due; one cheque per vendor and bank; the journal rows and their period.
+
+### Exit criteria
+
+- On the fixture: cheques for the due invoices driven in the app.
+- Q4 still assumed (per vendor and bank), or answered.
+
+---
+
+## Milestone 6 — Cheques, Bank Reconciliation, Void, Purge
+
+**Goal:** the payment cycle closes.
+
+### Tasks
+
+1. **Read** `TPrintCheques`, `TAPPayment`, `TAPSetChequeNumber`, `TAPPurgeBatch` (`ap_reqst.cpp`, `ap_paymt.cpp`, `ap_purge.cpp`), dialogs 1157, 1046, 1051 and 1048, and `AP_CHEQ.RPT`.
+2. **`Ap.h`:**
+   - `ConfirmPrinted(code, from, to)` ("V") and `RenumberCheque(code, old, new)` (D9);
+   - `ClearCheque(code, cheque, date)` ("C");
+   - `VoidCheque` (spec §6.3): reverses the payment's journal (or writes reversing rows if transferred) and returns the items to "O";
+   - `PurgePaid(code, before)`: cleared items and their cheques only (D8).
+3. **The cheque** (4091) on Spec #3's engine: payee, amount in figures and words, date, and a stub with the invoices (spec §6.2; Q6 assumed plain paper).
+4. **Screens** in `ApPayments`: Confirm Printed (8074, replacing Set Cheque Numbers), Bank Reconciliation (6085), Purge (1066, put on Maintenance by a `prune_rc.py` edit).
+5. **Wire** 4091, 8074, 6085, 1066; `/checkres`, `/stress`.
+6. **Tests:** confirm and renumber; clear; void (journal reversed, items open again, before and after a transfer); purge leaves everything not cleared; the amount in words.
+
+### Exit criteria
+
+- On the fixture: print a cheque to PDF, confirm it, clear one, void one, purge.
+
+---
+
+## Milestone 7 — Reports, report list, clean-up
+
+**Goal:** the AP reports print; the module is complete in the menus, the checks and the README.
+
+### Tasks
+
+1. **Read** each `.RPT` of spec §7 (titles, columns, grouping, selection, footers) with `tools/rptdump.py`.
+2. **`gl/port/reports/ApReports.{h,cpp}`**, portable: the reports of spec §7 (D14), accounts from `GL_SETAT`, landscape where the columns need it.
+3. **Wire:**
+   - the reports leave `kApReports` (Spec #3 S3-M7), which then goes;
+   - they join `ReportList`'s entries;
+   - the mislabelled menu items are corrected by `prune_rc.py` edits (spec §7);
+   - `/stress` opens every preview.
+4. **Tests:** each report's rows and totals on the fixture; the aged report's buckets add to the open total.
+5. **README:** an Accounts Payable section (the screens, the cycle: enter, post, transfer, pay, print, reconcile, purge; the reports).
+6. **Print** each to PDF from the fixture and check the column widths, as in Specs #3 and #4.
+
+### Exit criteria
+
+- Debug and Release `/W4 /WX` clean.
+- Every suite, `/checkres`, `/stress` and the self-test pass.
+- The PDFs checked.
+
+---
+
+## Milestone 8 — Acceptance
+
+1. **`gl/docs/superpowers/specs/2026-11-13-spec5-acceptance.md`**, in the Spec #4 sheet's shape, with spec §10's checks, the fixture's expected figures and the `sqlite3` queries that produce them.
+2. Release build check, the walkthrough with a witness, triage, sign-off.
+
+---
+
+## Cross-cutting
+
+- **Per-port checklist** from the Spec #1 plan for every ported file. Each screen's header lists its translation notes, naming the decisions it applies.
+- **Per-milestone gates:**
+  - `/W4 /WX` clean on Debug and Release x64;
+  - the milestone's tests pass;
+  - `/checkres` and `/stress` exit 0;
+  - a spec drift check;
+  - an entry in `gl/docs/superpowers/plans/2026-05-10-progress.md`;
+  - the milestone's "As built" note here.
+- **What not to do:**
+  - Don't post to the GL directly: the transfer writes open GL vouchers, and Spec #2's posting posts them.
+  - Don't change the original tables' layouts: anything new goes in a table of the port's own, as Spec #4's `gl_fadep`.
+  - Don't edit `gl/res/gl.rc` by hand: change `prune_rc.py` or `port.rc`.
+  - Don't run anything against the real company's AP tables until Q5 is answered.
+  - Don't let AR's journal (`AR_JSUM`) be touched by AP code (D15).
+
+## Risks specific to the plan
+
+| # | Severity | Risk | Mitigation |
+|---|---|---|---|
+| P1 | Medium | The finance team's answers to Q3–Q7 arrive after their milestones. | Each is one function in `Ap.cpp` with its test; each milestone's exit criteria record what is still assumed. |
+| P2 | Medium | The transfer's Cancel hook changes Spec #2 behaviour. | One call, inside Cancel's transaction; a test cancels an ordinary voucher; the Spec #2 sheet's Cancel check is re-run in M8. |
+| P3 | Medium | The templates lack controls the code reads (§2.6 #11), or don't fit Segoe UI. | Each screen's read task lists them; missing controls are added in code (as S4-M4) and `/checkres` checks the fit. |
+| P4 | Low | The fixture's AP data shifts a Spec #1–#4 figure. | Its journal is untransferred; M0 task 3 compares the sheets' queries before and after. |
+
+## How to use this plan
+
+M0 → M1 → M2 → M3, then M4 beside M5 → M6, then M7 and M8. If the plan and the spec conflict, stop, edit the spec, recheck the plan, then continue.
