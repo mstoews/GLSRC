@@ -44,7 +44,9 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1042',   # Spec #5 S5-M2: Invoice voucher entry
            '1047',   # Spec #5 S5-M3: Post purchase vouchers
            '1030',   # Spec #5 S5-M3: Update AR and AP
-           '1044']   # Spec #5 S5-M4: Cash voucher entry
+           '1044',   # Spec #5 S5-M4: Cash voucher entry
+           '1045',   # Spec #5 S5-M5: Create Cheques (only in gl.rc)
+           '1066']   # Spec #5 S5-M5: Hold or Force
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -315,6 +317,8 @@ PATCHES = {
     ('1015', '"Posting Voucher Number :"'): 16,   # wraps to 30 px high, room 15 px
     # Vendors (1041, S5-M1): the W/H field follows at once; "VAT %" is beside it.
     ('1041', '"W/H Tax percentage"'): (0, 0, '"W/H %"'),   # text 59 px, room 58 px
+    # Create Cheques (1045, S5-M5): the date field follows at once; "Due Date" is above it.
+    ('1045', '"Payment Date"'): (0, 0, '"Pay Date"'),   # wraps to 30 px high, room 15 px
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)

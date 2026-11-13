@@ -46,6 +46,7 @@
     <ClInclude Include="port\Accounts.h" />
     <ClInclude Include="port\Ap.h" />
     <ClInclude Include="port\ApInvoiceEntry.h" />
+    <ClInclude Include="port\ApPayments.h" />
     <ClInclude Include="port\ApPosting.h" />
     <ClInclude Include="port\ApTransfer.h" />
     <ClInclude Include="port\ApVendors.h" />
@@ -102,6 +103,7 @@
     <ClCompile Include="port\Accounts.cpp" />
     <ClCompile Include="port\Ap.cpp" />
     <ClCompile Include="port\ApInvoiceEntry.cpp" />
+    <ClCompile Include="port\ApPayments.cpp" />
     <ClCompile Include="port\ApPosting.cpp" />
     <ClCompile Include="port\ApTransfer.cpp" />
     <ClCompile Include="port\ApVendors.cpp" />

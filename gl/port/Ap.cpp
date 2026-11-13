@@ -1213,6 +1213,183 @@ int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher)
     return static_cast<int>(rows.size());
 }
 
+// ---- payments ---------------------------------------------------------------------------------
+
+std::int64_t AmountOwed(const OpenItem& item) { return item.amount + (item.wh < 0 ? item.wh : 0) - item.paid; }
+
+std::vector<PaymentItem> PaymentItems(cb4sqlite::Code4& code, const std::string& dueBy, bool all)
+{
+    std::vector<PaymentItem> out;
+    std::map<std::string, std::string> names;
+    for (const Vendor& v : LoadVendors(code)) names[v.number] = TrimText(v.shortName).empty() ? v.name : v.shortName;
+    for (const OpenItem& i : LoadOpenItems(code)) {
+        const std::string c = i.paymentCtl;
+        const bool unpaid = c == ap_payment::kHeld || c == ap_payment::kOpen || c == ap_payment::kForced;
+        const bool due = TrimText(i.dueDate) <= TrimText(dueBy) || c == ap_payment::kForced;
+        if (!all && !(unpaid && due)) continue;
+        PaymentItem p;
+        p.item = i;
+        p.vendorName = names.count(i.vendor) ? names[i.vendor] : std::string();
+        p.owed = unpaid ? AmountOwed(i) : 0;
+        out.push_back(p);
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [](const PaymentItem& a, const PaymentItem& b) { return a.item.vendor < b.item.vendor; });
+    return out;
+}
+
+bool SetPaymentControl(cb4sqlite::Code4& code, long batchno, const std::string& control)
+{
+    if (control != ap_payment::kHeld && control != ap_payment::kOpen && control != ap_payment::kForced) return false;
+    cb4sqlite::Transaction tx(code);
+    Data4 d(&code, "ap_dist");
+    Field4 batch(d, "batchno"), ctl(d, "paymentctl");
+    bool done = false;
+    if (seekBatch(d, batch, batchno))
+        for (; !d.eof() && std::atol(batch.str()) == batchno; d.skip()) {
+            if (d.deleted()) continue;
+            const std::string c = TrimText(ctl.str());
+            if (c != ap_payment::kHeld && c != ap_payment::kOpen && c != ap_payment::kForced) break;   // 4010
+            ctl.assign(control.c_str());
+            d.flush();
+            done = true;
+            break;
+        }
+    d.close();
+    tx.commit();
+    return done;
+}
+
+long NextChequeNumber(cb4sqlite::Code4& code)
+{
+    long last = 0;
+    {
+        cb4sqlite::Query q(code, "SELECT coalesce(max(chequeno), 0) FROM ap_dist WHERE _deleted = 0");
+        if (q.next()) last = static_cast<long>(q.integer(0));
+    }
+    {
+        cb4sqlite::Query q(code, "SELECT coalesce(max(cheque), 0) FROM ap_reqst WHERE _deleted = 0");
+        if (q.next()) last = std::max(last, static_cast<long>(q.integer(0)));
+    }
+    return last + 1;
+}
+
+int OpenPeriodOf(cb4sqlite::Code4& code, const std::string& yyyymmdd)
+{
+    const std::string d = TrimText(yyyymmdd);
+    if (d.empty()) return 0;
+    cb4sqlite::Query q(code, "SELECT period FROM gl_pds WHERE _deleted = 0 AND trim(status) = '0' AND periods <= ?1 "
+                             "AND periode >= ?1 ORDER BY period LIMIT 1");
+    q.bindText(1, d);
+    return q.next() ? static_cast<int>(q.integer(0)) : 0;
+}
+
+CreateChequesResult CreateCheques(cb4sqlite::Code4& code, const std::string& dueBy, const std::string& payDate,
+                                  const ApAccount& bank, long firstNumber)
+{
+    CreateChequesResult r;
+    if (!ValidateAccount(code, bank.account, bank.dept)) {
+        r.status = CreateChequesStatus::BadBank;
+        return r;
+    }
+    r.period = OpenPeriodOf(code, payDate);
+    if (r.period == 0) {
+        r.status = CreateChequesStatus::ClosedPeriod;
+        return r;
+    }
+    // The items to pay: O due by the date, F whatever their date (D8; H waits).
+    std::vector<PaymentItem> pay;
+    for (const PaymentItem& p : PaymentItems(code, dueBy))
+        if (p.item.paymentCtl != ap_payment::kHeld && p.owed > 0) pay.push_back(p);
+    if (pay.empty()) return r;   // NothingDue
+    std::vector<std::string> vendors;
+    for (const PaymentItem& p : pay)
+        if (vendors.empty() || vendors.back() != p.item.vendor) vendors.push_back(p.item.vendor);
+    if (firstNumber <= 0) {
+        r.status = CreateChequesStatus::BadNumber;
+        return r;
+    }
+    for (long n = firstNumber; n < firstNumber + static_cast<long>(vendors.size()); ++n) {
+        cb4sqlite::Query q(code, "SELECT (SELECT count(*) FROM ap_reqst WHERE _deleted = 0 AND cheque = ?1) + "
+                                 "(SELECT count(*) FROM ap_dist WHERE _deleted = 0 AND chequeno = ?1)");
+        q.bindInt(1, n);
+        if (q.next() && q.integer(0) > 0) {
+            r.status = CreateChequesStatus::BadNumber;
+            r.clash = n;
+            return r;
+        }
+    }
+
+    cb4sqlite::Transaction tx(code);
+    Data4 items(&code, "ap_dist");
+    Field4 batch(items, "batchno"), ctl(items, "paymentctl"), cheque(items, "chequeno"), paid(items, "amountpaid"),
+        datePaid(items, "datepaid"), account(items, "account"), dept(items, "dept");
+    Data4 cheques(&code, "ap_reqst");
+    Data4 j(&code, "ap_jsum");
+    Field4 jaccount(j, "account"), jdept(j, "dept"), jperiod(j, "period"), jmode(j, "mode"), jdate(j, "date"),
+        jtype(j, "type"), jbatch(j, "batchno"), jref(j, "reference"), jcheque(j, "cheque"), jdesc(j, "descript"),
+        jdebit(j, "debit"), jcredit(j, "credit");
+    auto journal = [&](const ApAccount& a, const PaymentItem& p, long number, std::int64_t dr, std::int64_t cr) {
+        j.appendStart();
+        j.blank();
+        jaccount.assign(a.account.c_str());
+        jdept.assign(a.dept.c_str());
+        jperiod.assign(periodText(r.period).c_str());
+        jmode.assign("1");
+        jdate.assign(payDate.c_str());
+        jtype.assign("AP");
+        jbatch.assignLong(p.item.batchno);
+        jref.assign(clip(TrimText(p.item.reference), 30).c_str());
+        jcheque.assign(clip(std::to_string(number), 7).c_str());
+        jdesc.assign(clip("Cheque " + std::to_string(number) + " " + TrimText(p.vendorName), 40).c_str());
+        jdebit.assign(money(dr).c_str());
+        jcredit.assign(money(cr).c_str());
+        j.append();
+    };
+    long number = firstNumber;
+    for (const std::string& vendor : vendors) {
+        ChequeMade made;
+        made.number = number;
+        made.vendor = vendor;
+        for (const PaymentItem& p : pay) {
+            if (p.item.vendor != vendor) continue;
+            made.vendorName = p.vendorName;
+            if (seekBatch(items, batch, p.item.batchno)) {
+                ctl.assign(ap_payment::kPaid);
+                cheque.assignLong(number);
+                paid.assign(money(p.item.paid + p.owed).c_str());
+                datePaid.assign(payDate.c_str());
+                account.assign(bank.account.c_str());
+                dept.assign(bank.dept.c_str());
+                items.flush();
+            }
+            journal(p.item.ap, p, number, p.owed, 0);   // Dr AP
+            journal(bank, p, number, 0, p.owed);        // Cr the bank
+            made.amount += p.owed;
+            ++made.items;
+        }
+        cheques.appendStart();
+        cheques.blank();
+        Field4(cheques, "vendorno").assign(vendor.c_str());
+        Field4(cheques, "paymentreq").assignLong(0);
+        Field4(cheques, "reference").assign(clip(TrimText(made.vendorName), 20).c_str());
+        Field4(cheques, "amountpaid").assign(money(made.amount).c_str());
+        Field4(cheques, "datepaid").assign(payDate.c_str());
+        Field4(cheques, "cheque").assignLong(number);
+        Field4(cheques, "bankacct").assign(bank.account.c_str());
+        Field4(cheques, "bankdept").assign(bank.dept.c_str());
+        cheques.append();
+        r.cheques.push_back(made);
+        ++number;
+    }
+    items.close();
+    cheques.close();
+    j.close();
+    tx.commit();
+    r.status = CreateChequesStatus::Created;
+    return r;
+}
+
 // ---- the ledger rows ----------------------------------------------------------------------
 
 std::vector<OpenItem> LoadOpenItems(cb4sqlite::Code4& code)

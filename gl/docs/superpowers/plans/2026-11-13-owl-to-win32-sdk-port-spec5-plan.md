@@ -350,6 +350,43 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 5 — Create Cheques (1045)
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.5 and §6.1 hold. Further findings:
+>   - `TAPCreatePayment::Ok` paid the full amount, W/H included, and wrote no cheque; Set Cheque Numbers (8074) later built `AP_REQST`.
+>   - `CreateGLEntry` dated the payment's rows by the invoice, in the invoice's period.
+>   - Force was skipped unless due; an empty list gave AR's message (4074).
+>   - Dialog 1045 (only in `gl.rc`) holds a **`tbStatusBar`** (5013), a class win32fx didn't register, so the dialog couldn't load. Its status pane also sits partly below the dialog.
+>   - Dialog 1066's two auto check boxes could both be ticked.
+> - **win32fx:** `tbStatusBar` is registered (`src/controls/StatusPane.cpp`): a one-line pane drawing its text in a sunken border. It is in `genproj.py`'s win32fx list.
+> - **`prune_rc.py`** (task 2): 1045 (from `gl.rc`) and 1066 added. "Payment Date" didn't fit its 33 units, with the field right after it: `PATCHES` makes it "Pay Date", like the "Due Date" above it.
+> - **`Ap.h`** (task 3):
+>   - `AmountOwed` (amount less the W/H withheld, less what's paid);
+>   - `PaymentItems` (H/O/F due by a date, plus F whatever the date; or all);
+>   - `SetPaymentControl` (H/O/F, refused once paid, 4010);
+>   - `NextChequeNumber`, `OpenPeriodOf`;
+>   - **`CreateCheques`** in one transaction (D8, D9): O items due and F items, one cheque per vendor, numbered from the starting number, on one bank. It writes `ap_reqst`; each item gets P, the cheque, the amount owed as paid, the payment date and the bank; the journal gets Dr AP / Cr bank, TYPE "AP", dated the payment date, in its open period, with the cheque number. It refuses a bad bank (4007), a payment date outside an open period, or a number already used.
+> - **`gl/port/ApPayments.{h,cpp}`** (task 4):
+>   - **The list** is filled at once (due by today) with Vendor, Ctl, Code, Invoice, Due Date, Amount, VAT, W/H and Owed. Set Date refreshes it and View All shows every item.
+>   - **Double-click** opens Hold or Force: one box or the other; Accept sets H, F or O.
+>   - **Create** asks (4009), reports each cheque, refreshes, and moves the starting number on.
+>   - **The status pane** says what happened and is fitted to the bottom of the client area. Print (the cheque list) is hidden until S5-M7.
+> - **Wire** (task 5): 1057 (`ID_GLSLIP`), out of `kApCommands`. `/checkres` loads 1045 and 1066; `StressAp` opens Create Cheques.
+> - **Tests** (task 6), 1 case. `gl_tests`: 135 cases.
+>   - What's due by a date, and View All.
+>   - Force and Hold, with an item in a payment refused.
+>   - The four refusals, with nothing written.
+>   - Cheque 5002 for V001's due and forced invoices (1,887.00), with the items, the cheque and the journal checked.
+>   - Recover refusing the paid invoice; nothing more due; the released invoice paid on the next run with its own cheque.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (74 s). Driven in the app (window messages only), checked in the database:
+>   - post the open invoices;
+>   - Create Cheques: "3 invoice(s) due … 6,787.00 owed"; invoice 3 held through Hold or Force;
+>   - the CHCK bank picked; Create gives "Cheque 5002 V001 1,887.00 (2 invoice(s)) … period 8";
+>   - items 1 and 2 P on 5002 / 102101, item 3 H, and 4 journal rows dated the payment;
+>   - View All shows every state, and the next number is 5003.
+>
+>   Screenshots found the Due Date column and the status pane clipped; both are fixed above.
+> - **Q4** is still the spec's assumption: one cheque per vendor (and bank).
+
 **Goal:** due invoices are paid by cheques, with the payment's GL entry.
 
 ### Tasks

@@ -173,7 +173,11 @@ DIR=D:\GL\company.db
 - **Transactions > Cancel Voucher > Purchase Vouchers** (1043) lists the open invoice vouchers. Double-click one and confirm: it is kept, marked cancelled.
 - **Transactions > Recover Purchase Voucher** (1015) lists the posted invoice vouchers. Double-click one and confirm to reopen it for editing, removing its open item and journal. A voucher whose journal has gone to the General Ledger, or whose invoice is in a payment, can't be recovered.
 - **Maintenance > Update AR and AP** (1030): AP's posted journal becomes one open General Ledger voucher per period, dated the period's end, with its lines netted by account ("Accounts Payable GL Update"). Post it with Transactions > Post Voucher > General Ledger Voucher. A closed period's rows wait. To undo a transfer before posting, cancel its GL voucher: the rows wait again. (The AR half comes with Spec #6.)
-- **The AP cycle so far:** enter the invoice (or cash voucher), post it, Update AR and AP, then post the GL voucher. Payments come with S5-M5.
+- **Receipts/Payments > Create Cheques** (1045): pays the invoices due.
+  - The list shows the posted invoices due by the **Due Date**, and any forced, with what each still owes (the amount less the W/H withheld). **Set Date** refreshes it for another date; **View All** shows every open item, paid ones included, with its state (H held, O open, F forced, P cheque made, V printed, C cleared).
+  - **Double-click an invoice** to hold it (it isn't paid until released), force it (paid even if not yet due) or open it again. An invoice already in a payment can't be changed.
+  - **Create**, with the bank chosen and the **Starting Cheque No** (the next free one is filled in): one cheque per vendor for its open invoices due and its forced ones. Each invoice is marked paid with its cheque; the payment's GL entry (Dr AP, Cr the bank) goes in AP's journal, dated the **Pay Date**, in that date's period, which must be open. A cheque number already used is refused.
+- **The AP cycle so far:** enter the invoice (or cash voucher), post it, create the cheques, Update AR and AP, then post the GL voucher. Printing cheques and the bank reconciliation come with S5-M6.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

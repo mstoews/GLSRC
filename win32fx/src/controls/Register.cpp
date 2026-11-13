@@ -21,5 +21,6 @@ bool win32fx::RegisterCustomControls(HINSTANCE inst)
     ok = detail::RegisterIntEdit(inst) && ok;
     ok = detail::RegisterSuperBtn(inst) && ok;
     ok = detail::RegisterGrid(inst) && ok;
+    ok = detail::RegisterStatusPane(inst) && ok;
     return ok;
 }

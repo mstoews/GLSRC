@@ -60,7 +60,7 @@ PROJECTS = [
                   "src\\StatusBar.cpp", "src\\controls\\Register.cpp", "src\\controls\\EditRules.cpp",
                   "src\\controls\\EditBase.cpp", "src\\controls\\PicEdit.cpp", "src\\controls\\DateEdit.cpp",
                   "src\\controls\\FloatEdit.cpp", "src\\controls\\IntEdit.cpp", "src\\controls\\SuperBtn.cpp",
-                  "src\\controls\\Grid.cpp"],
+                  "src\\controls\\Grid.cpp", "src\\controls\\StatusPane.cpp"],
          refs=[], extra=None),
     dict(name="dbf2sqlite_core", dir="dbf2sqlite_core", n=3, type="StaticLibrary", sub=None,
          headers=["include\\Migrator.h", "src\\Source.h"],
