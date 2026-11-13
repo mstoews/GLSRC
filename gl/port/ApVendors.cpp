@@ -385,7 +385,9 @@ int StressAp(int times)
     auto openAll = [] {
         return RunApVendors(nullptr, true) != -1 && RunApInvoiceEntry(nullptr, true) != -1 &&
                RunApPost(nullptr, ApKind::Invoice, true) != -1 && RunApCancel(nullptr, ApKind::Invoice, true) != -1 &&
-               RunApRecover(nullptr, ApKind::Invoice, true) != -1 && RunApTransfer(nullptr, true) != -1;
+               RunApRecover(nullptr, ApKind::Invoice, true) != -1 && RunApTransfer(nullptr, true) != -1 &&
+               RunApCashEntry(nullptr, true) != -1 && RunApPost(nullptr, ApKind::Cash, true) != -1 &&
+               RunApCancel(nullptr, ApKind::Cash, true) != -1;
     };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();

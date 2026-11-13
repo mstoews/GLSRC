@@ -56,10 +56,7 @@ constexpr wchar_t kGleProp[] = L"GL.UseGle";
 const WORD kApCommands[] = {
     1057,  // APCreateGLSlip   ID_GLSLIP
     1066,  // APPurgeAccts     ID_PURGEACCTS
-    1079,  // APCash           ID_APCASH
     1084,  // APPostAdj        ID_APPOSTADJ
-    1085,  // APCancelCash     ID_CASHCANCEL
-    1088,  // APPostCash       ID_APPOSTCASH
     4046,  // APDelVendors     ID_DELVENDOR
     4047,  // APModVendors     ID_MODVENDOR
     6085,  // APPayment        ID_PAYMENT
@@ -285,6 +282,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());
+        return true;
+    case 1079:                             // TManilaGL::APCash: Transactions > Cash Invoice Vouchers, toolbar (S5-M4)
+        RunApCashEntry(hwnd());
+        return true;
+    case 1088:                             // TManilaGL::APPostCash: Post Voucher > Cash Vouchers (S5-M4)
+        RunApPost(hwnd(), ApKind::Cash);
+        return true;
+    case 1085:                             // TManilaGL::APCancelCash: Cancel Voucher > Cash Invoice Vouchers (S5-M4)
+        RunApCancel(hwnd(), ApKind::Cash);
         return true;
     case 1048:                             // TManilaGL::APPostBatch: Post Voucher > Purchase Vouchers (S5-M3)
         RunApPost(hwnd(), ApKind::Invoice);

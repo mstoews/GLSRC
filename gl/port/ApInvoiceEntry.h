@@ -18,3 +18,9 @@
 #include <Windows.h>
 
 INT_PTR RunApInvoiceEntry(HWND frame, bool closeAtOnce = false);
+
+// TAPCashEntry (gl/src/ap_cshbt.cpp) on dialog 1044: Transactions > Cash
+// Invoice Vouchers (ID_APCASH, 1079; the toolbar's cash button). The same
+// screen, with a bank (and cheque number) in place of the AP account (spec
+// #5 5, D10; plan S5-M4).
+INT_PTR RunApCashEntry(HWND frame, bool closeAtOnce = false);

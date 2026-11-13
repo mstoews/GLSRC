@@ -309,6 +309,28 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 4 — Cash vouchers (1044)
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §5 holds. Further findings:
+>   - `TAPCashEntry` is 1,573 lines in `ap_cshbt.cpp`, plus 635 in `ap_cshrb.cpp`, mostly one slip builder per tax case (`CreateVatSlip`, `CreateRebateSlip`, `CreateVat_RebateSlip`, …).
+>   - **Dialog 1044 uses 1042's control IDs.** In place of the due date and terms it has a bank combo box (1031, filling 1087 / 1086) and the cheque number (6070).
+>   - Its vendor field is read-only (picked from the list only), and the invoice number's mask allows 8 characters, though `AP_CASH.INVOICENO` holds 10.
+>   - `gl_new.rc` has three copies of 1044; the first has no closing brace and `prune_rc.py` drops it.
+> - **`prune_rc.py`** (task 2): 1044 added. `/checkres` fits it as it is.
+> - **The screen** (task 3) is S5-M2's, given the voucher's kind, rather than a copy: `RunApCashEntry` in `ApInvoiceEntry.{h,cpp}` (D10).
+>   - The bank combo box lists the `GL_SETAT` "CA" accounts, and picking one fills the credit account.
+>   - A cash voucher needs a bank. The cheque and the VAT account go on its header; its due date is the invoice date.
+>   - The vendor field is typed, and the vendor's AP account doesn't overwrite the bank.
+>   - Every voucher operation, the lists and the navigation use the kind.
+> - **`Ap.h`** (task 4): nothing new. S5-M3's `PostApVouchers` already posts cash (TYPE "CA" with the cheque, no `ap_dist` row), `CancelApVoucher` cancels it, and `TransferAp` marks it.
+> - **Wire** (task 5): 1079 (`ID_APCASH`, and the toolbar's cash button), 1088 and 1085, out of `kApCommands`. `/checkres` loads 1044; `StressAp` opens it and the cash Post and Cancel.
+> - **Tests** (task 6), 1 case. `gl_tests`: 134 cases.
+>   - Entry with a bank, through `SaveExpenseLine`: the credit is the bank, 555.00; the cheque, the VAT account and a 10-character invoice number are kept; D6 across kinds.
+>   - Post (4 "CA" rows with the cheque, no open item), the transfer marking it "2", and cancel.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (74 s). Driven in the app (window messages only), checked in the database:
+>   - V001, the CHCK bank picked (102101), cheque 000124, 560.00 on 501000: Dr 500.00, VAT 60.00, Cr W/H 5.00, Cr bank 555.00.
+>   - Post Voucher > Cash Vouchers: "2 voucher(s) posted", each with its "CA" rows and cheque.
+>   - The live window shows every label: `/screenshots` and the visible statics agree. An earlier capture missing four labels caught it mid-paint.
+
 **Goal:** invoices paid at entry are entered, posted and transferred.
 
 ### Tasks
