@@ -225,15 +225,16 @@ The Spec #2 Voucher Entry pattern:
   - its `AP_JSUM` rows (`TYPE` "AP", the voucher's period and invoice date);
   - `MODE` "0".
 - **Cancel** lists the open vouchers. It marks the voucher cancelled, `MODE` "X" (D3), keeping its lines for the record.
-- **Recover** (new, on the Post list's sibling: Transactions > Recover Voucher > Purchase Vouchers) reopens a posted voucher whose journal isn't yet transferred and whose invoice isn't in a payment. It removes its `AP_DIST` row and its `AP_JSUM` rows, and sets `MODE` "1".
+- **Recover** (new: Transactions > Recover Purchase Voucher, beside Recover General Ledger Voucher) reopens a posted voucher whose journal isn't yet transferred and whose invoice isn't in a payment. It removes its `AP_DIST` row and its `AP_JSUM` rows, and sets `MODE` "1".
 
 ### 4.4 The transfer (1028, D2)
 
 Maintenance > **Update AR and AP**:
 - `AP_JSUM` rows with `MODE` "1" become **one GL voucher per period** (Spec #2 `SaveLine`, mode 1, numbered `NextVoucherNumber`). Its lines are netted by account and dept, it is dated the period's end, and its description is "Accounts Payable GL Update" (1049).
 - A period that is closed in `gl_pds` is reported and left untransferred, rather than moved into another period.
-- The rows get `MODE` "2", and the GL voucher's number is recorded with them. `AP_JSUM` has no field for it, so where it is kept is settled in plan S5-M3, as Spec #4 kept its run history in a table of its own (`gl_fadep`). Posted invoice and cash vouchers get `MODE` "2" (transferred).
-- The GL vouchers post with Spec #2's Post Voucher; Cancel Voucher on one sets its rows back to "1" (as Spec #4's undo).
+- The rows get `MODE` "2", and the GL voucher's number is recorded with them. `AP_JSUM` has no field for it, so a port table, **`AP_XFER`** (the `AP_JSUM` row, the GL voucher, the period), holds it, as Spec #4 kept its run history in `gl_fadep` (settled in S5-M3). The link is the row's record number: a transferred row is never deleted (Recover removes only waiting rows, and a pack doesn't renumber). Posted invoice and cash vouchers whose rows are all transferred get `MODE` "2".
+- The GL vouchers post with Spec #2's Post Voucher; Cancel Voucher on one sets its rows back to "1", and their vouchers back to "0" (as Spec #4's undo).
+- A period with no end date in `GL_PDS` is reported and left waiting too.
 
 ---
 

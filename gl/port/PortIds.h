@@ -75,6 +75,7 @@
 #define CM_STATEMENT_LAYOUT     20502   // Accounts > Statement Layout (spec #3 6.4, S3-M4)
 #define CM_REPORT_LIST          20501   // Reporting > Custom Report, GLSUB > Custom Report: the report list (D9, S3-M7)
 #define CM_VOUCHER_LIST         20503   // Transactions > Voucher List: every voucher in an MDI grid (VoucherBrowser.h)
+#define CM_AP_RECOVER           20504   // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3; ApPosting.h)
 
 // ---- strings ---------------------------------------------------------------
 

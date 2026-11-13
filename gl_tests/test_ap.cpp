@@ -15,11 +15,13 @@
 #include "GlTestDb.h"
 
 #include "Ap.h"
+#include "Vouchers.h"
 
 #include <string>
 #include <vector>
 
 using namespace gltest;
+using Catch::Approx;
 
 namespace {
 
@@ -616,4 +618,219 @@ TEST_CASE("DeleteApVoucher removes only that open voucher (D5)", "[ap]")
     CHECK_FALSE(DeleteApVoucher(db.code, ApKind::Invoice, 4));   // cancelled
     CHECK_FALSE(DeleteApVoucher(db.code, ApKind::Invoice, 99));
     CHECK(LoadApVouchers(db.code, ApKind::Invoice).size() == 5);
+}
+
+namespace {
+
+std::vector<JournalRow> journalOf(Code4& code, const char* type, long batchno)
+{
+    std::vector<JournalRow> out;
+    for (const JournalRow& r : LoadJournal(code))
+        if (r.type == type && r.batchno == batchno) out.push_back(r);
+    return out;
+}
+
+double glBalance(Code4& code, const char* account, const char* dept = "")
+{
+    cb4sqlite::Query q(code, "SELECT curr_bal FROM glaccts WHERE trim(account) = ?1 AND coalesce(trim(dept), '') = ?2");
+    q.bindText(1, account);
+    q.bindText(2, dept);
+    REQUIRE(q.next());
+    return q.number(0);
+}
+
+} // namespace
+
+TEST_CASE("PostApVouchers: open items and the journal (S5-M3)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+
+    // One voucher: invoice 1 (1,120.00, F mode).
+    ApPostResult r = PostApVouchers(db.code, ApKind::Invoice, 1);
+    REQUIRE(r.posted.size() == 1);
+    CHECK(r.refused.empty());
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 1)->mode == ap_mode::kPosted);
+    const auto items = LoadOpenItems(db.code);
+    REQUIRE(items.size() == 3);
+    const OpenItem& item = items[0];   // in voucher order: 1, 3, 6
+    CHECK(item.batchno == 1);
+    CHECK(item.paymentCtl == ap_payment::kOpen);   // D11
+    CHECK(item.amount == 112000);
+    CHECK(item.wh == -1000);
+    CHECK(item.vat == 12000);
+    CHECK(item.ap.account == "221002");
+    CHECK(item.bank.empty());
+    CHECK(item.dueDate == "20261104");
+    const auto rows = journalOf(db.code, "AP", 1);
+    REQUIRE(rows.size() == 4);
+    std::int64_t dr = 0, cr = 0;
+    for (const JournalRow& j : rows) {
+        CHECK(j.mode == "1");
+        CHECK(j.period == 7);
+        CHECK(j.date == "20261005");
+        dr += j.debit;
+        cr += j.credit;
+    }
+    CHECK(dr == 112000);
+    CHECK(cr == 112000);
+
+    // The rest: invoice 2 posts; the posted, cancelled and transferred ones are left alone.
+    r = PostApVouchers(db.code, ApKind::Invoice);
+    CHECK(r.posted == std::vector<long>{2});
+    CHECK(r.refused.empty());
+    CHECK(LoadOpenItems(db.code).size() == 4);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 4)->mode == ap_mode::kCancelled);
+
+    // A cash voucher: TYPE "CA" with its cheque, no open item (D10).
+    r = PostApVouchers(db.code, ApKind::Cash);
+    CHECK(r.posted == std::vector<long>{1});
+    CHECK(LoadOpenItems(db.code).size() == 4);
+    const auto cash = journalOf(db.code, "CA", 1);
+    REQUIRE(cash.size() == 4);
+    CHECK(cash[0].cheque == "000123");
+    CHECK(FindApVoucher(db.code, ApKind::Cash, 1)->mode == ap_mode::kPosted);
+}
+
+TEST_CASE("PostApVouchers refuses what the GL couldn't post", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    // Out of balance by a cent.
+    ApVoucher v = *FindApVoucher(db.code, ApKind::Invoice, 1);
+    auto lines = LoadApLines(db.code, ApKind::Invoice, 1);
+    lines[3].credit -= 1;
+    SaveApVoucher(db.code, v, lines);
+    // An account not in the chart.
+    ApVoucher w = *FindApVoucher(db.code, ApKind::Invoice, 2);
+    auto wl = LoadApLines(db.code, ApKind::Invoice, 2);
+    wl[0].account = {"999999", ""};
+    SaveApVoucher(db.code, w, wl);
+    const ApPostResult r = PostApVouchers(db.code, ApKind::Invoice);
+    CHECK(r.posted.empty());
+    REQUIRE(r.refused.size() == 2);
+    CHECK(r.refused[0].number == 1);
+    CHECK(r.refused[0].reason == ApPostRefusal::OutOfBalance);
+    CHECK(r.refused[1].reason == ApPostRefusal::UnknownAccount);
+    CHECK(r.refused[1].account.account == "999999");
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 1)->mode == ap_mode::kOpen);
+    CHECK(LoadOpenItems(db.code).size() == 2);   // nothing written
+    // No lines.
+    ApVoucher e;
+    e.vendor = "V003";
+    e.invoiceNo = "EMPTY";
+    e.mode = ap_mode::kOpen;
+    const long n = SaveApVoucher(db.code, e, {});
+    CHECK(PostApVouchers(db.code, ApKind::Invoice, n).refused[0].reason == ApPostRefusal::NoLines);
+}
+
+TEST_CASE("CancelApVoucher and RecoverApVoucher (D3, D7)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    CHECK(CancelApVoucher(db.code, ApKind::Invoice, 2) == ApCancelResult::Cancelled);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 2)->cancelled());
+    CHECK(LoadApLines(db.code, ApKind::Invoice, 2).size() == 5);   // kept for the record
+    CHECK(CancelApVoucher(db.code, ApKind::Invoice, 3) == ApCancelResult::NotOpen);
+    CHECK(CancelApVoucher(db.code, ApKind::Invoice, 99) == ApCancelResult::NotFound);
+
+    // Invoice 3: posted, its journal waiting, its open item "O": recovered.
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 3) == ApRecoverResult::Recovered);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 3)->mode == ap_mode::kOpen);
+    CHECK(journalOf(db.code, "AP", 3).empty());
+    const auto items = LoadOpenItems(db.code);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].batchno == 6);
+    CHECK(journalOf(db.code, "AP", 6).size() == 4);   // invoice 6's rows untouched
+    // Posted again, it's as before.
+    CHECK(PostApVouchers(db.code, ApKind::Invoice, 3).posted.size() == 1);
+    CHECK(journalOf(db.code, "AP", 3).size() == 3);
+    CHECK(LoadOpenItems(db.code).size() == 2);
+
+    // Invoice 6 is paid (cheque 5001, printed): refused.
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 6) == ApRecoverResult::Paid);
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 1) == ApRecoverResult::NotPosted);   // open
+}
+
+TEST_CASE("TransferAp: one GL voucher per period, and its undo (D2, D10)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    PostApVouchers(db.code, ApKind::Cash);   // cash voucher 1: 336.00, period 7
+
+    // A row in closed period 5 is left waiting.
+    {
+        Data4 j(&db.code, "ap_jsum");
+        j.appendStart();
+        j.blank();
+        Field4(j, "account").assign("751000");
+        Field4(j, "period").assign(" 5");
+        Field4(j, "mode").assign("1");
+        Field4(j, "type").assign("AP");
+        Field4(j, "batchno").assignLong(77);
+        Field4(j, "debit").assign("10.00");
+        Field4(j, "credit").assign("0.00");
+        j.append();
+        j.close();
+    }
+
+    const ApTransferResult r = TransferAp(db.code, 99);
+    CHECK(r.closedPeriods == std::vector<int>{5});
+    REQUIRE(r.vouchers.size() == 1);
+    const ApTransferVoucher& t = r.vouchers[0];
+    CHECK(t.period == 7);
+    CHECK(t.glVoucher == 104);   // after the fixture's 100-103
+    CHECK(t.rows == 11);         // invoice 3 (3), invoice 6 and its payment (4), cash 1 (4)
+    // Netted: 731000-20 Dr 5,000; 751000 Dr 1,200; 501000 Dr 300; 148000 Dr 36;
+    // 260004 Cr 100 + 3; 221002 Cr 4,900 (the payment cancels invoice 6); 102101 Cr 1,200 + 333.
+    CHECK(t.debit == 653600);
+    CHECK(t.credit == 653600);
+    CHECK(t.lines == 7);
+
+    VoucherHeaders h(db.code);
+    VoucherLines l(db.code);
+    VoucherHeader header;
+    std::vector<VoucherLine> lines;
+    REQUIRE(LoadVoucher(h, l, 104, header, lines) == LoadResult::Loaded);
+    CHECK(header.mode == voucher_mode::kOpen);
+    CHECK(header.description == "Accounts Payable GL Update");
+    CHECK(header.date == "20261031");
+    CHECK(header.period == 7);
+    double ap = 0;
+    for (const VoucherLine& v : lines)
+        if (v.account == "221002") ap = v.credit - v.debit;
+    CHECK(ap == Approx(4900.0));
+
+    for (const JournalRow& j : LoadJournal(db.code)) CHECK(j.mode == (j.period == 5 ? "1" : "2"));
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 3)->mode == ap_mode::kTransferred);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 6)->mode == ap_mode::kTransferred);
+    CHECK(FindApVoucher(db.code, ApKind::Cash, 1)->mode == ap_mode::kTransferred);   // D10
+    CHECK(RecoverApVoucher(db.code, ApKind::Invoice, 3) == ApRecoverResult::Transferred);
+
+    // Nothing more to transfer in period 7.
+    CHECK(TransferAp(db.code, 99).vouchers.empty());
+
+    // Cancelling an ordinary voucher leaves AP alone; cancelling 104 puts the rows back.
+    CHECK(CancelVoucher(db.code, 101) == CancelResult::Cancelled);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 3)->mode == ap_mode::kTransferred);
+    CHECK(CancelVoucher(db.code, 104) == CancelResult::Cancelled);
+    for (const JournalRow& j : LoadJournal(db.code)) CHECK(j.mode == "1");
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, 3)->mode == ap_mode::kPosted);
+    CHECK(FindApVoucher(db.code, ApKind::Cash, 1)->mode == ap_mode::kPosted);
+    CHECK(UndoApTransfer(db.code, 104) == 0);   // the links went with it
+}
+
+TEST_CASE("The transfer's voucher posts with Spec #2", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const double ap0 = glBalance(db.code, "221002"), exp0 = glBalance(db.code, "731000", "20");
+    const ApTransferResult r = TransferAp(db.code, 99);
+    REQUIRE(r.vouchers.size() == 1);
+    const PostResult p = PostVoucher(db.code, r.vouchers[0].glVoucher);
+    REQUIRE(p.posted.size() == 1);
+    // 221002 carries the unpaid invoice 3 (4,900.00 credit); invoice 6's 1,200.00 came and went.
+    CHECK(glBalance(db.code, "221002") == Approx(ap0 - 4900.0));
+    CHECK(glBalance(db.code, "731000", "20") == Approx(exp0 + 5000.0));
+    CHECK(CancelVoucher(db.code, r.vouchers[0].glVoucher) == CancelResult::Posted);   // posted: Cancel refuses
 }

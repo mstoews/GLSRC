@@ -168,6 +168,11 @@ DIR=D:\GL\company.db
   - **The same vendor's invoice number** can't be entered twice (any voucher, invoice or cash, not cancelled).
   - **New and Close** ask whether to keep a voucher made in this session; No removes only that voucher.
   - Top / Bottom / Next / Previous go through the open vouchers; **Voucher** lists them all, **Vendors** the vendors, **Lists** the accounts.
+- **Transactions > Post Voucher > Purchase Vouchers** (1047) lists the open invoice vouchers. **OK** posts them all; double-clicking one posts just that one. Posting writes the invoice's open item (ready to pay) and its journal for the General Ledger. A voucher out of balance by a cent, with no lines, or using an account not in the chart is refused with a message.
+- **Transactions > Cancel Voucher > Purchase Vouchers** (1043) lists the open invoice vouchers. Double-click one and confirm: it is kept, marked cancelled.
+- **Transactions > Recover Purchase Voucher** (1015) lists the posted invoice vouchers. Double-click one and confirm to reopen it for editing, removing its open item and journal. A voucher whose journal has gone to the General Ledger, or whose invoice is in a payment, can't be recovered.
+- **Maintenance > Update AR and AP** (1030): AP's posted journal becomes one open General Ledger voucher per period, dated the period's end, with its lines netted by account ("Accounts Payable GL Update"). Post it with Transactions > Post Voucher > General Ledger Voucher. A closed period's rows wait. To undo a transfer before posting, cancel its GL voucher: the rows wait again. (The AR half comes with Spec #6.)
+- **The AP cycle so far:** enter the invoice, post it, Update AR and AP, then post the GL voucher. Payments come with S5-M5.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

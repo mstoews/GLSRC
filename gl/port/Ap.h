@@ -8,6 +8,9 @@
 //   ap_dist    the open-item ledger: one row per posted invoice (PAYMENTCTL)
 //   ap_reqst   the cheques
 //   ap_jsum    AP's journal, staged for the General Ledger
+//   ap_xfer    the port's own: which GL voucher each transferred ap_jsum row
+//              went into (spec #5 4.4; ap_jsum has no field for it), so
+//              cancelling that voucher puts its rows back (plan S5-M3)
 //   ap_linex   the port's own: each line's role (expense, VAT, W/H, credit)
 //              and an expense line's amount as typed (spec #5 4.1). The
 //              lines store the net expense, and the gross can't be recovered
@@ -53,7 +56,7 @@ inline constexpr char kCleared[] = "C";
 // ---- tables -------------------------------------------------------------------
 
 // Creates the AP tables (the deployed layouts and tags) when the company
-// lacks them, and ap_linex when missing; then migrates D3: an invoice or cash
+// lacks them, and ap_linex and ap_xfer when missing; then migrates D3: an invoice or cash
 // voucher with MODE "2" whose reference is "Cancelled" (string 1042, what the
 // original's Cancel wrote) becomes "X". Returns how many vouchers it
 // migrated. Run by every AP screen, the transfer and the reports.
@@ -292,6 +295,89 @@ bool DeleteExpenseLine(cb4sqlite::Code4& code, ApKind kind, long number, int lin
 // D5: "No" to keeping a voucher made in this session removes that voucher
 // (header, lines, ap_linex rows) and nothing else. Only an open voucher.
 bool DeleteApVoucher(cb4sqlite::Code4& code, ApKind kind, long number);
+
+// ---- Post, Cancel, Recover (spec #5 4.3, 5, D3, D7, D10, D11; plan S5-M3) ---------------
+
+enum class ApPostRefusal {
+    OutOfBalance,     // string 1007 (the lines' debits and credits differ by a cent or more)
+    NoLines,
+    UnknownAccount,   // a line's account and dept aren't in glaccts: the GL could never post it
+};
+
+struct ApRefusal {
+    long number = 0;
+    ApPostRefusal reason = ApPostRefusal::OutOfBalance;
+    ApAccount account;   // UnknownAccount
+};
+
+struct ApPostResult {
+    std::vector<long> posted;
+    std::vector<ApRefusal> refused;
+};
+
+// TAPPostBatch::Ok / HandleListBox (and the cash dialog's), in one
+// transaction: every open voucher of the kind, or only `number`. For each
+// that balances to the cent, has lines, and whose accounts are in the chart:
+//   invoice  an ap_dist row (PAYMENTCTL "O", D11: the original's "H" needed a
+//            manual release) and ap_jsum rows, TYPE "AP";
+//   cash     ap_jsum rows, TYPE "CA", with the cheque number; no ap_dist row:
+//            nothing is owed (D10);
+// the rows waiting ("1"), in the voucher's period, dated its invoice date;
+// then MODE "0". A voucher that isn't open is neither posted nor refused.
+ApPostResult PostApVouchers(cb4sqlite::Code4& code, ApKind kind, long number = 0);
+
+enum class ApCancelResult { Cancelled, NotFound, NotOpen };
+
+// TAPCancelBatch::HandleListBox: an open voucher becomes "X" (D3). Its lines
+// are kept for the record (the original zeroed them and wrote "Cancelled"
+// over the reference and descriptions).
+ApCancelResult CancelApVoucher(cb4sqlite::Code4& code, ApKind kind, long number);
+
+enum class ApRecoverResult {
+    Recovered,
+    NotPosted,     // not on file, or not "0"
+    Transferred,   // its journal is in a GL voucher: cancel that first
+    Paid,          // its invoice is in a payment (P, V or C)
+};
+
+// D7, in one transaction: reopens posted voucher `number` whose journal is
+// still waiting and whose invoice isn't paid. It removes exactly its own
+// ap_dist row and ap_jsum rows (the original removed AR's) and sets MODE "1".
+ApRecoverResult RecoverApVoucher(cb4sqlite::Code4& code, ApKind kind, long number);
+
+// ---- the transfer to the General Ledger (spec #5 4.4, D2, D10; plan S5-M3) ----------------
+
+struct ApTransferVoucher {
+    int period = 0;
+    long glVoucher = 0;     // 0: the period's rows netted to nothing; marked transferred, no voucher
+    int lines = 0;
+    std::int64_t debit = 0, credit = 0;
+    int rows = 0;           // ap_jsum rows it carries
+};
+
+struct ApTransferResult {
+    std::vector<ApTransferVoucher> vouchers;   // in period order
+    std::vector<int> closedPeriods;            // left waiting: their periods are closed (gl_pds STATUS "1")
+    std::vector<int> undatedPeriods;           // left waiting: no such period, or no end date
+};
+
+// Maintenance > Update AR and AP, the AP half (TGLAPUpdate::APUpdate), in one
+// transaction: the waiting ap_jsum rows ("1", or blank as the original read
+// them) become one open GL voucher per period (D2; the original made one, in
+// the GL's current period), its lines netted by account and dept, dated the
+// period's end, described "Accounts Payable GL Update" (string 1049),
+// numbered as Spec #2's SaveLine numbers a new voucher (`iniBatchno`: GL.INI
+// [PERIOD] BATCHNO). The rows get "2" and an ap_xfer row each; then every
+// posted invoice and cash voucher whose rows are all transferred gets "2"
+// (D10: the original never marked cash vouchers). The GL vouchers post with
+// Spec #2's Post Voucher.
+ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno);
+
+// Spec #2's CancelVoucher calls this inside its transaction (spec #5 4.4, as
+// Spec #4's UndoRun): the rows transferred into GL voucher `glVoucher` wait
+// again ("1"), and their vouchers go back from "2" to "0". Returns the rows
+// put back; 0 for an ordinary voucher or a company without AP.
+int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher);
 
 // ---- the ledger rows (read-only until their milestones) ------------------------------------
 

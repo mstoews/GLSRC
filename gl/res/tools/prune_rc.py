@@ -41,7 +41,9 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '4003',   # Spec #4 S4-M3: Create Voucher (the depreciation run)
            '1001',   # Spec #4 S4-M4: Disposal
            '1041',   # Spec #5 S5-M1: Vendors
-           '1042']   # Spec #5 S5-M2: Invoice voucher entry
+           '1042',   # Spec #5 S5-M2: Invoice voucher entry
+           '1047',   # Spec #5 S5-M3: Post purchase vouchers
+           '1030']   # Spec #5 S5-M3: Update AR and AP
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -65,6 +67,8 @@ MENU_EDITS = [
     ('MANILA', 'insert_after', '10071', '"Statement &Layout...", CM_STATEMENT_LAYOUT'),
     # Transactions > Voucher List: every voucher in an MDI grid (gl/port/VoucherBrowser.h).
     ('MANILA', 'insert_after', '10076', '"Voucher &List...", CM_VOUCHER_LIST'),
+    # Spec #5 D7 (S5-M3): Recover for purchase vouchers, beside the GL's.
+    ('MANILA', 'insert_after', '10122', '"Recover P&urchase Voucher...", CM_AP_RECOVER'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
