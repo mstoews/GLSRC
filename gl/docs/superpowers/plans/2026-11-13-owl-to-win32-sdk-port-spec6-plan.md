@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 to M4 built)
+**Plan status:** In progress (S6-M0 to M5 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -338,6 +338,26 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 5 — Purge Received Receivables (1062)
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): `TARPurgeBatch` listed every "C" item. Ok deleted them all, whatever their date; double-click deleted one after asking (6028). Both closed every table. Dialog 1062 is only in `gl.rc` (a "Purge Voucher Number" static and a "&Post" button).
+> - **`prune_rc.py`** (task 2):
+>   - 1062 from `gl.rc`, automatically: `gl_new.rc` has none.
+>   - The menu edits remove "Purge C&leared Accounts..." from Transactions and add "Purge Recei&ved Receivables..." (4062) after AP's purge on Maintenance (D11).
+>   - A new `STRING_TEXT` table rewrites 4062's status-bar help, which said "Delete all AR transactions that have already been cleared".
+> - **`Ar.h`** (task 3): `ArPurgeCandidates(before)`: the "C" items whose `DATEPAID` (the last receipt) is before the date. `PurgeReceived(before, only)`, in one transaction, deletes them, or the one picked, with their `AR_RCPT` rows. Open and partly received items are never touched, and the vouchers and journal stay.
+> - **Screen** (task 4), `RunArPurge` in `ArReceipts.cpp`, on AP's purge pattern:
+>   - "Purge Received Receivables", with a date control (`IDC_AR_PURGEDATE`, today) over the hidden 3031, labelled "Received before:".
+>   - The list: voucher, customer / reference, invoice, last received, amount.
+>   - "&Purge" (the template's "&Post") asks, then purges all; double-click asks 6028 and purges one.
+> - **Wire:** 4062 in `ManilaGL.cpp`, out of the AR not-ported list; `/checkres` loads 1062; `StressAr` opens it.
+> - **Tests** (task 5): candidates by date (on the date is not before it); settling 3 and a partial on 4; purging one, then all; 4 (R) never touched; vouchers and journal kept. `gl_tests`: 160 cases (`[ar]` 19).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (129 s). Driven in the app, on a scratch copy with the fixture, by messages to its own windows:
+>   - the list on today: voucher 5 (C003, S-1005, received 10/15/2026, 800.00);
+>   - before 10/10: "No settled invoice was last received before that date.";
+>   - before 10/16: Purge asked (answered No); double-click asked 6028, Yes: "1 invoice(s) and 1 receipt(s) purged."; its open item and receipt 2 gone, voucher 5 and its four journal rows kept; 3 (O) and 4 (R) untouched.
+>
+>   A screenshot checked the screen.
 
 **Goal:** settled invoices can be removed.
 

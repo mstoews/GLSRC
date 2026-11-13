@@ -14,3 +14,10 @@
 #include <Windows.h>
 
 INT_PTR RunArReceipts(HWND frame, bool closeAtOnce = false);
+
+// TARPurgeBatch (gl/src/ar_purge.cpp) on dialog 1062, gl.rc's: Maintenance >
+// Purge Received Receivables (4062, moved from Transactions beside AP's
+// purge; spec #6 6, D11; plan S6-M5). Lists the settled invoices whose last
+// receipt is before a date; Purge deletes them all, double-click one, after
+// asking.
+INT_PTR RunArPurge(HWND frame, bool closeAtOnce = false);

@@ -408,3 +408,21 @@ enum class ReverseResult {
 // REMAINDER, DATEPAID, bank and PAYMENTCTL go back to what they were before
 // it, and its ar_rcpt row is deleted.
 ReverseResult ReverseReceipt(cb4sqlite::Code4& code, long batchno, const std::string& date);
+
+// ---- Purge Received Receivables (spec #6 6, D11; plan S6-M5) -------------------------------
+
+struct ArPurgeOutcome {
+    int items = 0;      // open items deleted
+    int receipts = 0;   // their ar_rcpt rows
+};
+
+// What PurgeReceived would delete: the settled items ("C") whose last
+// receipt (DATEPAID) is before `before` (yyyymmdd), in voucher order.
+std::vector<ArOpenItem> ArPurgeCandidates(cb4sqlite::Code4& code, const std::string& before);
+
+// TARPurgeBatch::Ok (D11), in one transaction: deletes ArPurgeCandidates,
+// or only voucher `only` among them, with their receipts. Open and partly
+// received items are never touched (the original deleted every "C" item,
+// whatever its date, and left its receipts' fields nowhere). The vouchers
+// and their journal rows stay: they are the record of the sale.
+ArPurgeOutcome PurgeReceived(cb4sqlite::Code4& code, const std::string& before, long only = 0);

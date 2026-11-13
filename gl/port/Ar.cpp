@@ -1240,3 +1240,36 @@ std::vector<JournalRow> LoadArJournal(cb4sqlite::Code4& code)
     }
     return out;
 }
+
+// ---- Purge Received Receivables --------------------------------------------------------------
+
+std::vector<ArOpenItem> ArPurgeCandidates(cb4sqlite::Code4& code, const std::string& before)
+{
+    std::vector<ArOpenItem> out;
+    const std::string b = TrimText(before);
+    if (b.empty()) return out;
+    for (const ArOpenItem& i : LoadArOpenItems(code)) {
+        const std::string paid = TrimText(i.datePaid);
+        if (i.paymentCtl == ar_receipt::kSettled && !paid.empty() && paid < b) out.push_back(i);
+    }
+    return out;
+}
+
+ArPurgeOutcome PurgeReceived(cb4sqlite::Code4& code, const std::string& before, long only)
+{
+    ArPurgeOutcome out;
+    std::vector<long> batches;
+    for (const ArOpenItem& i : ArPurgeCandidates(code, before))
+        if (only == 0 || i.batchno == only) batches.push_back(i.batchno);
+    if (batches.empty()) return out;
+    cb4sqlite::Transaction tx(code);
+    for (long n : batches) {
+        out.receipts += static_cast<int>(
+            countOf(code, "SELECT count(*) FROM ar_rcpt WHERE _deleted = 0 AND batchno = ?1", n));
+        deleteWhere(code, "ar_rcpt", "batchno = ?1", n);
+        deleteWhere(code, "ar_dist", "batchno = ?1 AND trim(paymentctl) = 'C'", n);
+        ++out.items;
+    }
+    tx.commit();
+    return out;
+}

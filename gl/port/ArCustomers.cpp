@@ -500,7 +500,7 @@ int StressAr(int times)
     auto openAll = [] {
         return RunArCustomers(nullptr, true) != -1 && RunArInvoiceEntry(nullptr, true) != -1 &&
                RunArPost(nullptr, true) != -1 && RunArCancel(nullptr, true) != -1 && RunArRecover(nullptr, true) != -1 &&
-               RunArReceipts(nullptr, true) != -1;
+               RunArReceipts(nullptr, true) != -1 && RunArPurge(nullptr, true) != -1;
     };
     if (!openAll()) return -1;   // first open: class registration, cached bitmaps
     const int before = objects();
