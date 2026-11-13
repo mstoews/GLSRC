@@ -11,6 +11,7 @@
 #include "ArCustomers.h"
 #include "ArInvoiceEntry.h"
 #include "ArPosting.h"
+#include "ArReceipts.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
 #include "FixedAssetTypes.h"
@@ -64,7 +65,6 @@ const WORD kApCommands[] = {
     8079,  // AccountsPayable  CM_ACCOUNT_PAYABLE (an empty handler in gl.cpp)
 };
 const WORD kArCommands[] = {
-    4054,  // ARCreateSlip     ID_ARPAYMENT
     4062,  // ARPurgeAccts     ID_ARPURGE
     8080,  // AccountsReceive  CM_ACCOUNT_RECEIVABLE (an empty handler in gl.cpp)
 };
@@ -320,6 +320,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case CM_AR_RECOVER:                    // Transactions > Recover Sales Voucher (spec #6 D7, S6-M3)
         RunArRecover(hwnd());
+        return true;
+    case 4054:                             // TManilaGL::ARCreateSlip (ID_ARPAYMENT): Clear Receipts (spec #6 S6-M4)
+        RunArReceipts(hwnd());
         return true;
     case 1028:                             // TGlWindow::GLUpdateAP: Maintenance > Update AR and AP (S5-M3)
         RunApTransfer(hwnd());

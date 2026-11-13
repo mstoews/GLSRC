@@ -54,7 +54,9 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1063',   # Spec #6 S6-M1: Customer Account Options
            '1053',   # Spec #6 S6-M2: Sales invoice voucher entry
            '1060',   # Spec #6 S6-M2: the sales voucher's memo (its menu MEMO)
-           '1054']   # Spec #6 S6-M3: Cancel sales vouchers
+           '1054',   # Spec #6 S6-M3: Cancel sales vouchers
+           '1156',   # Spec #6 S6-M4: Clear Receipts, the list (gl_new.rc's)
+           '1155']   # Spec #6 S6-M4: Clear Receipts, one receipt (gl_new.rc's: gl.rc's has no amount)
 MENUS = ['MANILA', 'GLE', 'GLSUB', 'MEMO']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made

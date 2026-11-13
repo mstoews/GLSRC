@@ -344,3 +344,67 @@ struct Receipt {   // ar_rcpt
 std::vector<ArOpenItem> LoadArOpenItems(cb4sqlite::Code4& code);              // in voucher order
 std::vector<Receipt> LoadReceipts(cb4sqlite::Code4& code, long batchno = 0);   // in receipt order; 0: all
 std::vector<JournalRow> LoadArJournal(cb4sqlite::Code4& code);                // in table order
+
+// ---- receipts (spec #6 5, D8-D10; plan S6-M4) -----------------------------------------------
+
+// A line of Clear Receipts' list (1156), with what a receipt needs.
+struct ReceiptItem {
+    ArOpenItem item;
+    std::string customerName;   // VDSHORT, or VDNAME when blank
+    int vatRate = 0;            // the voucher's VATPERCENT
+    ApAccount sales;            // the voucher's (first) sales account: a discount's sales part
+    ApAccount vat;              // the voucher's VAT account: a discount's VAT part
+};
+
+// The list: the open items with something owed (O, R); with `all`, the
+// settled ones (C) too. In customer order, then invoice.
+std::vector<ReceiptItem> ReceiptItems(cb4sqlite::Code4& code, bool all = false);
+
+// The receipt item of voucher `batchno`, settled or not.
+std::optional<ReceiptItem> FindReceiptItem(cb4sqlite::Code4& code, long batchno);
+
+enum class ReceiptResult {
+    Recorded,
+    NotFound,       // no open item for the voucher
+    Settled,        // nothing is owed (string 8127)
+    Zero,           // nothing received (string 1037)
+    TooMuch,        // more than is owed (string 8133)
+    NoDiscount,     // a discount, but the whole amount was received (string 8134)
+    ClosedPeriod,   // the date isn't in an open period
+    UnknownBank,    // the bank account isn't in the chart (string 8131)
+};
+
+struct ReceiptOutcome {
+    ReceiptResult result = ReceiptResult::NotFound;
+    long number = 0;              // RCPTNO
+    std::int64_t discount = 0;    // written off
+    bool settled = false;         // nothing owed now (C)
+};
+
+// D8, D9, in one transaction: records `amount` received for voucher
+// `batchno`'s invoice on `date` into `bank`. With `discount`, what's left
+// after it is written off as an early-payment discount, split as a sale
+// (SplitSale) at the voucher's VAT rate. Writes the ar_rcpt row (numbered
+// NextReceiptNumber), the journal (TYPE "RC", waiting, in the date's period,
+// CHEQUE the receipt's number: Dr bank; Dr sales and VAT for a discount; Cr
+// the invoice's AR account), and the open item (AMOUNTPAID, REMAINDER,
+// DATEPAID, the bank; R, or C when nothing is owed).
+ReceiptOutcome RecordReceipt(cb4sqlite::Code4& code, long batchno, const std::string& date, const ApAccount& bank,
+                             std::int64_t amount, bool discount, const std::string& reference = {});
+
+// The next receipt number: the highest in ar_rcpt or on a receipt's journal
+// rows (a reversed receipt's number isn't reused), + 1.
+long NextReceiptNumber(cb4sqlite::Code4& code);
+
+enum class ReverseResult {
+    Reversed,
+    NoReceipt,      // the voucher has no receipt
+    ClosedPeriod,   // its journal is transferred and `date` isn't in an open period
+};
+
+// D10, in one transaction: reverses the latest receipt of voucher `batchno`.
+// Its waiting journal rows are removed; transferred ones are reversed by new
+// rows dated `date`, in its open period. The open item's AMOUNTPAID,
+// REMAINDER, DATEPAID, bank and PAYMENTCTL go back to what they were before
+// it, and its ar_rcpt row is deleted.
+ReverseResult ReverseReceipt(cb4sqlite::Code4& code, long batchno, const std::string& date);

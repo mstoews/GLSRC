@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 to M3 built)
+**Plan status:** In progress (S6-M0 to M4 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -283,6 +283,39 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 4 — Receipts (1156, 1155)
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.5 holds.
+>   - The list's Set View (`ID_SETDATA`) opened `TSetData`, a customer filter with no template in either `.rc`: hidden.
+>   - Reset only zeroed the marks: in the port it puts the receipt screen back as it opened.
+>   - The original asked about a short amount with no box ticked (8132), and the port keeps that question (now in §5.1).
+> - **`prune_rc.py`** (task 2): 1156 and 1155, `gl_new.rc`'s. `/checkres` found nothing too wide.
+> - **`Ar.h`** (task 3):
+>   - `ReceiptItems(all)` and `FindReceiptItem`: each item carries the customer's short name, and the voucher's VAT rate, first sales account and VAT account (the discount's accounts).
+>   - `RecordReceipt`, in one transaction. Refused: not found, settled, zero, too much, a discount on the whole amount, no open period for the date, a bank not in the chart. It writes the `AR_RCPT` row, the "RC" rows (`CHEQUE` = the receipt's number, dated the receipt, in its period) and the open item (R / C).
+>   - `NextReceiptNumber`: the highest in `AR_RCPT` or on an "RC" row, so a reversed transferred receipt's number isn't reused.
+>   - `ReverseReceipt` reverses the latest receipt only. It removes waiting rows, or adds reversing rows dated the reversal in its open period. It puts the open item back: the previous receipt's date and bank, "O" if none is left.
+> - **`gl/port/ArReceipts.{h,cpp}`** (task 4):
+>   - **The list (1156)**, titled "Clear Receipts": the original's ten columns, with a status line giving the count and what's owed. View All toggles to View Owed. **Create** is **Receipts**: it lists the picked invoice's receipts and offers to reverse the latest, dated today.
+>   - **The receipt (1155):** the amounts, today's date, the banks (preselecting the last receipt's), and the invoice's own sales, VAT and AR accounts, read-only. Discount and Partial toggle one at a time; the W/H box, its account and label are hidden (Q3). Clear records the receipt at once (D9).
+> - **Wire** (task 5): 4054 in `ManilaGL.cpp`, out of the AR not-ported list; `/checkres` loads 1156 and 1155; `StressAr` opens the list.
+> - **Tests** (task 6): three cases.
+>   - The list, owed and all.
+>   - Every refusal; in full; two partials; then 190.00 with a discount (110.00: 100.00 sales, 10.00 VAT, AR credited the whole 300.00 remainder).
+>   - Reversing waiting receipts back to "O", and a transferred one by new rows (a closed date refused), its number not reused.
+>
+>   `gl_tests`: 159 cases (`[ar]` 18).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (125 s). Driven in the app, on a scratch copy with the fixture, by messages to its own windows:
+>   - the list: S-1003 and S-1004, "2 invoice(s); 2,800.00 owed.";
+>   - S-1003: 1,000.00, no box, asked, No: a partial (R, 1,200.00 owed; Dr bank, Cr 111101, period 8, dated today);
+>   - then 1,100.00 with Discount: settled, 100.00 written off (Dr 410001-10 90.91, Dr 260007 9.09, Cr 111101 1,200.00);
+>   - S-1004's 600.00 in full: settled;
+>   - View All: three rows; a settled one picked: 8127;
+>   - Receipts on S-1004: both receipts listed, the latest reversed (its rows gone, R, 600.00 owed again);
+>   - 700.00 on 600.00 owed: 8133.
+>
+>   Screenshots checked the list and the receipt (the W/H box hidden).
+> - **Still assumed:** Q3 (no withholding on receipts).
 
 **Goal:** what customers pay is recorded and journalled, in full, in part or with a discount, and a mistaken receipt can be reversed.
 
