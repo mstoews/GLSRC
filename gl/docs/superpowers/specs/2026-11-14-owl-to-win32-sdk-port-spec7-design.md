@@ -1,6 +1,6 @@
 # Spec #7 — OWL-to-Win32 SDK Port: Report Writer
 
-**Status:** Draft for review (2026-11-14). Q1–Q7 open (§13). The plan comes after review.
+**Status:** Draft for review (2026-11-14). Q1–Q7 open (§13). The plan: `plans/2026-11-14-owl-to-win32-sdk-port-spec7-plan.md`.
 **Date:** 2026-11-14
 **Scope:** Seventh spec of the migration: a report writer, so users can make new reports without code:
 - report definitions kept in the company database;
