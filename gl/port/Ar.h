@@ -271,6 +271,47 @@ bool DeleteArVoucher(cb4sqlite::Code4& code, long number);
 // there is no such voucher.
 bool SaveArMemo(cb4sqlite::Code4& code, long number, const std::string& memo);
 
+// ---- Post, Cancel, Recover (spec #6 4.3, D3, D7; plan S6-M3) -----------------------------
+
+// TARPostBatch::Ok / HandleListBox, in one transaction: every open voucher,
+// or only `number`. For each that balances to the cent, has lines, and whose
+// accounts are in the chart: an ar_dist row (PAYMENTCTL "O", AMOUNT =
+// REMAINDER = the total, its VAT, AR account, invoice and due dates), its
+// ar_jsum rows (TYPE "AR", waiting "1", in the voucher's period, dated its
+// invoice date), then MODE "0". A voucher that isn't open is neither posted
+// nor refused. The refusals are AP's (Ap.h ApPostRefusal).
+ApPostResult PostArVouchers(cb4sqlite::Code4& code, long number = 0);
+
+// TARCancelBatch::HandleListBox: an open voucher becomes "X" (D3), its lines
+// kept for the record (the original zeroed them and wrote "0", as posted).
+ApCancelResult CancelArVoucher(cb4sqlite::Code4& code, long number);
+
+enum class ArRecoverResult {
+    Recovered,
+    NotPosted,     // not on file, or not "0"
+    Transferred,   // its journal is in a GL voucher: cancel that first
+    Received,      // a receipt has been entered against it
+};
+
+// D7, in one transaction: reopens posted voucher `number` whose journal is
+// still waiting and which has no receipt: its ar_dist row and its "AR"
+// ar_jsum rows go, and MODE becomes "1".
+ArRecoverResult RecoverArVoucher(cb4sqlite::Code4& code, long number);
+
+// ---- the transfer to the General Ledger (spec #6 4.4, D2; plan S6-M3) ---------------------
+
+// Maintenance > Update AR and AP, the AR half (TGLAPUpdate::ARUpdate), in one
+// transaction: as Ap.h TransferAp, on ar_jsum (invoices' and receipts' rows),
+// described "Accounts Receivable GL Update", linked in ar_xfer. Then each
+// posted voucher whose "AR" rows are all transferred gets "2"; cancelled ones
+// keep "X" (2.6 #13).
+ApTransferResult TransferAr(cb4sqlite::Code4& code, long iniBatchno);
+
+// Spec #2's CancelVoucher calls this beside UndoApTransfer: the rows
+// transferred into GL voucher `glVoucher` wait again, and their vouchers go
+// back from "2" to "0". Returns the rows put back.
+int UndoArTransfer(cb4sqlite::Code4& code, long glVoucher);
+
 // ---- the ledger rows (read-only until their milestones) ------------------------------------
 
 struct ArOpenItem {   // ar_dist

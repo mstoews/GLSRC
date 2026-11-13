@@ -17,12 +17,14 @@
 
 #include "Accounts.h"   // TrimText
 #include "Ar.h"
+#include "Vouchers.h"   // the transfer's GL vouchers
 
 #include <map>
 #include <string>
 #include <vector>
 
 using namespace gltest;
+using Catch::Approx;
 
 namespace {
 
@@ -656,4 +658,229 @@ TEST_CASE("Sale lines are refused on a voucher that isn't open; DeleteArVoucher 
     CHECK(memo->total == 330000);
     CHECK(LoadArLines(db.code, 1).size() == one);
     CHECK_FALSE(SaveArMemo(db.code, 2, "x"));
+}
+
+namespace {
+
+double arGlBalance(cb4sqlite::Code4& code, const char* account, const char* dept = "")
+{
+    cb4sqlite::Query q(code, "SELECT curr_bal FROM glaccts WHERE trim(account) = ?1 AND coalesce(trim(dept), '') = ?2");
+    q.bindText(1, account);
+    q.bindText(2, dept);
+    REQUIRE(q.next());
+    return q.number(0);
+}
+
+std::vector<JournalRow> arRows(cb4sqlite::Code4& code, long batchno, const char* type)
+{
+    std::vector<JournalRow> out;
+    for (const JournalRow& j : LoadArJournal(code))
+        if (j.batchno == batchno && TrimText(j.type) == type) out.push_back(j);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("PostArVouchers: the open item and the journal (S6-M3)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const auto items0 = LoadArOpenItems(db.code).size();
+
+    // Voucher 1 alone: C001, 3,300.00 with 300.00 VAT.
+    ApPostResult r = PostArVouchers(db.code, 1);
+    CHECK(r.posted == std::vector<long>{1});
+    CHECK(r.refused.empty());
+    const ArVoucher v1 = *FindArVoucher(db.code, 1);
+    CHECK(v1.mode == ar_mode::kPosted);
+    std::optional<ArOpenItem> item;
+    for (const ArOpenItem& i : LoadArOpenItems(db.code))
+        if (i.batchno == 1) item = i;
+    REQUIRE(item);
+    CHECK(item->paymentCtl == ar_receipt::kOpen);
+    CHECK(item->customer == "C001");
+    CHECK(item->invoiceNo == "S-1001");
+    CHECK(item->amount == 330000);
+    CHECK(item->remainder == 330000);
+    CHECK(item->received == 0);
+    CHECK(item->vat == 30000);
+    CHECK(item->ar.account == "111101");
+    CHECK(item->bank.empty());
+    CHECK(item->period == v1.period);
+    CHECK(TrimText(item->dueDate) == TrimText(v1.dueDate));
+    const auto rows = arRows(db.code, 1, "AR");
+    REQUIRE(rows.size() == 3);
+    std::int64_t dr = 0, cr = 0;
+    for (const JournalRow& j : rows) {
+        CHECK(j.mode == "1");
+        CHECK(j.period == v1.period);
+        CHECK(TrimText(j.date) == TrimText(v1.invoiceDate));
+        dr += j.debit;
+        cr += j.credit;
+    }
+    CHECK(dr == 330000);
+    CHECK(cr == 330000);
+    CHECK(PostArVouchers(db.code, 1).posted.empty());   // posted already: neither posted nor refused
+
+    // Refusals: no lines, out of balance, an account not in the chart.
+    ArVoucher h;
+    h.mode = ar_mode::kOpen;
+    h.customer = "C003";
+    h.invoiceNo = "S-3001";
+    h.date = h.invoiceDate = h.dueDate = "20261020";
+    h.period = 7;
+    h.account = {"111101", ""};
+    const long empty = SaveArVoucher(db.code, h, {});
+    ArLine s;
+    s.role = ArLineRole::Sales;
+    s.account = {"410001", "10"};
+    s.credit = 10000;
+    s.gross = 10000;
+    ArLine a;
+    a.role = ArLineRole::Receivable;
+    a.account = {"111101", ""};
+    a.debit = 9999;
+    h.invoiceNo = "S-3002";
+    const long unbalanced = SaveArVoucher(db.code, h, {s, a});
+    a.debit = 10000;
+    s.account = {"999999", ""};
+    h.invoiceNo = "S-3003";
+    const long unknown = SaveArVoucher(db.code, h, {s, a});
+
+    r = PostArVouchers(db.code);   // all: 2 posts, the three are refused
+    CHECK(r.posted == std::vector<long>{2});
+    REQUIRE(r.refused.size() == 3);
+    CHECK(r.refused[0].number == empty);
+    CHECK(r.refused[0].reason == ApPostRefusal::NoLines);
+    CHECK(r.refused[1].number == unbalanced);
+    CHECK(r.refused[1].reason == ApPostRefusal::OutOfBalance);
+    CHECK(r.refused[2].number == unknown);
+    CHECK(r.refused[2].reason == ApPostRefusal::UnknownAccount);
+    CHECK(r.refused[2].account.account == "999999");
+    for (long n : {empty, unbalanced, unknown}) CHECK(FindArVoucher(db.code, n)->mode == ar_mode::kOpen);
+    CHECK(LoadArOpenItems(db.code).size() == items0 + 2);
+    CHECK(FindArVoucher(db.code, 6)->mode == ar_mode::kCancelled);   // cancelled: untouched
+}
+
+TEST_CASE("CancelArVoucher and RecoverArVoucher (D3, D7)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+
+    // Cancel: "X", lines kept; only an open voucher.
+    const auto lines = LoadArLines(db.code, 2);
+    CHECK(CancelArVoucher(db.code, 2) == ApCancelResult::Cancelled);
+    CHECK(FindArVoucher(db.code, 2)->mode == ar_mode::kCancelled);
+    CHECK(FindArVoucher(db.code, 2)->total == 132000);
+    CHECK(LoadArLines(db.code, 2).size() == lines.size());
+    CHECK(CancelArVoucher(db.code, 2) == ApCancelResult::NotOpen);
+    CHECK(CancelArVoucher(db.code, 3) == ApCancelResult::NotOpen);
+    CHECK(CancelArVoucher(db.code, 99) == ApCancelResult::NotFound);
+    CHECK(PostArVouchers(db.code, 2).posted.empty());   // cancelled: never posted
+
+    // Recover: 3 (owed in full) reopens; 4 and 5 have receipts; 1, 2 and 6 aren't posted.
+    const auto jsum0 = LoadArJournal(db.code).size();
+    CHECK(RecoverArVoucher(db.code, 4) == ArRecoverResult::Received);
+    CHECK(RecoverArVoucher(db.code, 5) == ArRecoverResult::Received);
+    for (long n : {1L, 2L, 6L, 99L}) CHECK(RecoverArVoucher(db.code, n) == ArRecoverResult::NotPosted);
+    CHECK(RecoverArVoucher(db.code, 3) == ArRecoverResult::Recovered);
+    CHECK(FindArVoucher(db.code, 3)->mode == ar_mode::kOpen);
+    CHECK(arRows(db.code, 3, "AR").empty());
+    CHECK(LoadArJournal(db.code).size() == jsum0 - 3);   // only 3's three rows
+    for (const ArOpenItem& i : LoadArOpenItems(db.code)) CHECK(i.batchno != 3);
+    CHECK(LoadArOpenItems(db.code).size() == 2);         // 4 and 5 stay
+    CHECK(arRows(db.code, 4, "RC").size() == 2);         // receipts' rows untouched
+
+    // Posting it again gives it back its open item and rows.
+    CHECK(PostArVouchers(db.code, 3).posted == std::vector<long>{3});
+    CHECK(arRows(db.code, 3, "AR").size() == 3);
+    CHECK(LoadArOpenItems(db.code).size() == 3);
+}
+
+TEST_CASE("TransferAr: one GL voucher per period, and its undo (D2)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    EnsureApTables(db.code);
+
+    const ApTransferResult r = TransferAr(db.code, 99);
+    CHECK(r.closedPeriods.empty());
+    CHECK(r.undatedPeriods.empty());
+    REQUIRE(r.vouchers.size() == 1);
+    const ApTransferVoucher& t = r.vouchers[0];
+    CHECK(t.period == 7);
+    CHECK(t.glVoucher == 104);   // after the fixture's 100-103
+    CHECK(t.rows == 12);         // vouchers 3, 4, 5 (8) and the two receipts (4)
+    // Netted: 410001-10 Cr 2,800; 260007 Cr 300; 410001-20 Cr 1,000;
+    // 111101 Dr 4,100 - 1,300 = 2,800; 102101 Dr 1,300.
+    CHECK(t.lines == 5);
+    CHECK(t.debit == 410000);
+    CHECK(t.credit == 410000);
+
+    VoucherHeaders h(db.code);
+    VoucherLines l(db.code);
+    VoucherHeader header;
+    std::vector<VoucherLine> lines;
+    REQUIRE(LoadVoucher(h, l, 104, header, lines) == LoadResult::Loaded);
+    CHECK(header.mode == voucher_mode::kOpen);
+    CHECK(header.description == "Accounts Receivable GL Update");
+    CHECK(header.date == "20261031");
+    CHECK(header.period == 7);
+    std::map<std::string, double> net;
+    for (const VoucherLine& v : lines) net[v.account + "-" + v.dept] += v.debit - v.credit;
+    CHECK(net["111101-"] == Approx(2800.0));
+    CHECK(net["102101-"] == Approx(1300.0));
+    CHECK(net["410001-10"] == Approx(-2800.0));
+    CHECK(net["410001-20"] == Approx(-1000.0));
+    CHECK(net["260007-"] == Approx(-300.0));
+
+    for (const JournalRow& j : LoadArJournal(db.code)) CHECK(j.mode == "2");
+    for (long n : {3L, 4L, 5L}) CHECK(FindArVoucher(db.code, n)->mode == ar_mode::kTransferred);
+    for (long n : {1L, 2L}) CHECK(FindArVoucher(db.code, n)->mode == ar_mode::kOpen);
+    CHECK(FindArVoucher(db.code, 6)->mode == ar_mode::kCancelled);   // 2.6 #13: not "transferred"
+    CHECK(RecoverArVoucher(db.code, 3) == ArRecoverResult::Transferred);
+    for (const JournalRow& j : LoadJournal(db.code)) CHECK(j.mode != "2");   // AP's rows aren't AR's
+    CHECK(UndoApTransfer(db.code, 104) == 0);
+
+    // Nothing more; posting voucher 1 then gives a second voucher of its own.
+    CHECK(TransferAr(db.code, 99).vouchers.empty());
+    REQUIRE(PostArVouchers(db.code, 1).posted.size() == 1);
+    const ApTransferResult r2 = TransferAr(db.code, 99);
+    REQUIRE(r2.vouchers.size() == 1);
+    CHECK(r2.vouchers[0].glVoucher == 105);
+    CHECK(r2.vouchers[0].rows == 3);
+    CHECK(FindArVoucher(db.code, 1)->mode == ar_mode::kTransferred);
+
+    // Cancelling 104 puts its rows back; 105's stay transferred.
+    CHECK(CancelVoucher(db.code, 104) == CancelResult::Cancelled);
+    for (const JournalRow& j : LoadArJournal(db.code)) CHECK(j.mode == (j.batchno == 1 ? "2" : "1"));
+    for (long n : {3L, 4L, 5L}) CHECK(FindArVoucher(db.code, n)->mode == ar_mode::kPosted);
+    CHECK(FindArVoucher(db.code, 1)->mode == ar_mode::kTransferred);
+    CHECK(FindArVoucher(db.code, 6)->mode == ar_mode::kCancelled);
+    CHECK(UndoArTransfer(db.code, 104) == 0);   // the links went with it
+    CHECK(RecoverArVoucher(db.code, 3) == ArRecoverResult::Recovered);
+
+    // AP's transfer still runs beside it, leaving AR's rows alone.
+    const ApTransferResult ap = TransferAp(db.code, 99);
+    CHECK_FALSE(ap.vouchers.empty());
+    for (const JournalRow& j : LoadArJournal(db.code)) CHECK(j.mode == (j.batchno == 1 ? "2" : "1"));
+}
+
+TEST_CASE("The AR transfer's voucher posts with Spec #2", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const double ar0 = arGlBalance(db.code, "111101"), bank0 = arGlBalance(db.code, "102101"),
+                 sales0 = arGlBalance(db.code, "410001", "10");
+    const ApTransferResult r = TransferAr(db.code, 99);
+    REQUIRE(r.vouchers.size() == 1);
+    const PostResult p = PostVoucher(db.code, r.vouchers[0].glVoucher);
+    REQUIRE(p.posted.size() == 1);
+    // 111101 carries what's owed: 2,200.00 (voucher 3) + 600.00 (voucher 4's remainder).
+    CHECK(arGlBalance(db.code, "111101") == Approx(ar0 + 2800.0));
+    CHECK(arGlBalance(db.code, "102101") == Approx(bank0 + 1300.0));
+    CHECK(arGlBalance(db.code, "410001", "10") == Approx(sales0 - 2800.0));
+    std::int64_t owed = 0;
+    for (const ArOpenItem& i : LoadArOpenItems(db.code)) owed += i.remainder;
+    CHECK(owed == 280000);
 }

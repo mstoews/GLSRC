@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-13-owl-to-win32-sdk-port-spec6-design.md`
 **Date:** 2026-11-13
-**Plan status:** In progress (S6-M0 to M2 built)
+**Plan status:** In progress (S6-M0 to M3 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/ar_*.cpp` and `gl/src/gl_apupd.cpp` (`TGLAPUpdate::ARUpdate`), the AR report handlers in `gl/src/ap_repts.cpp`, the headers `gl/header/ar*.h`, the table classes `include/db_ar*.h` and `db_cust.h`, the dialogs in `gl/gl_new.rc` (1062 only in `gl/gl.rc`), and the Crystal files `dbf/AR*.RPT`. New code goes in `gl/port/` (the screens, and the portable `Ar.{h,cpp}`) and `gl/port/reports/` (the reports).
 
@@ -230,6 +230,35 @@ S is less than a day, M is 1–3 days. **Parallel work:** M5 needs only M4, and 
 ---
 
 ## Milestone 3 — Post, Cancel, Recover; the transfer (1028)
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.4 holds. `gl_new.rc`'s 1061 is cut short (no Close, no closing brace); `prune_rc.py` drops a truncated block, so gl.rc's is used. 1061 was already generated for Spec #2's GL Post, which uses the same template.
+> - **`Ap.cpp` refactor:** the transfer's per-period core is `TransferJournal` (no transaction of its own, the journal and link tables, description and reference as parameters), and the undo's is `UndoJournalTransfer`. `TransferAp` and `UndoApTransfer` wrap them, with AP's voucher marking, so the Spec #5 tests run unchanged.
+> - **`Ar.h`** (task 2), each in one transaction:
+>   - `PostArVouchers`: the refusals are AP's (no lines, out of balance by a cent, an account not in the chart). It writes the `AR_DIST` row ("O", `AMOUNT` = `REMAINDER`), the `AR_JSUM` rows ("AR", "1", in the voucher's period, dated its invoice date) and `MODE` "0".
+>   - `CancelArVoucher` sets "X" and keeps the lines.
+>   - `RecoverArVoucher` refuses "transferred" (any of its rows "2") and "received" (an `AR_RCPT` row, or the item not "O"). It removes the `AR_DIST` row and the "AR" rows only.
+>   - `TransferAr` runs `TransferJournal` on `ar_jsum` / `ar_xfer`, "Accounts Receivable GL Update". A posted voucher is "2" when all its "AR" rows are transferred; receipts' rows don't count, and cancelled vouchers keep "X".
+>   - `UndoArTransfer` is called beside `UndoApTransfer` from Spec #2's `CancelVoucher`.
+> - **`gl/port/ArPosting.{h,cpp}`** (task 3): Post (1061: pick one, or Post for all, then close), Cancel (1054, AR's own) and Recover (1015, "Recover Sales Voucher"), on `ApPosting`'s list shape.
+>   - The Recover menu item is "Recover Sal&es Voucher..." (`CM_AR_RECOVER` 20505, a `prune_rc.py` menu edit). Its access is Recover General Ledger Voucher's, as AP's.
+> - **`ApTransfer.cpp`** (task 4): the AR box is enabled, and both boxes start checked. The status line counts both journals' waiting rows. OK transfers AP, then AR, each in its own transaction; the message lists both, and if AR's fails, it says AP's stands.
+> - **Wire** (task 5): 4049 and 4053 in `ManilaGL.cpp`, out of the AR not-ported list; `CM_AR_RECOVER`; `/checkres` loads 1054; `StressAr` opens all three lists.
+> - **Tests** (task 6): four cases.
+>   - Post: one voucher, then all with three refusals.
+>   - Cancel and Recover, with every refusal; Recover's rows only, and posting again.
+>   - The transfer: one voucher of five netted lines, 4,100.00 each way, 12 rows. Vouchers 3–5 go "2", 6 keeps "X", 1 and 2 stay open, and AP's rows are untouched. A second transfer gives its own voucher. Cancelling the first puts its rows back, and AP's transfer still runs.
+>   - Posting it with Spec #2: 111101 up by 2,800.00, which is what's owed.
+>
+>   `gl_tests`: 156 cases (`[ar]` 15).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (129 s). Driven in the app, on a scratch copy with the fixture, by messages to its own windows:
+>   - Post, voucher 1 picked: its open item ("O", 3,300.00, VAT 300.00, 111101, period 7, due 11/21) and three "AR" rows;
+>   - Cancel, voucher 2: "X", its four lines kept;
+>   - Recover: voucher 4 refused ("a receipt has been entered"); voucher 1 recovered (its item and rows gone, "1"); posted again with Post (all): "1 sales voucher(s) posted.", closed;
+>   - Update AR and AP: "7 AP and 15 AR journal row(s)" waiting; GL vouchers 104 (AP, 6,200.00) and 105 (AR, 7,400.00), dated 10/31, period 7; every row "2"; vouchers 1, 3, 4, 5 "2", 2 and 6 "X";
+>   - Post Voucher > General Ledger (all): 104 and 105 posted (the fixture's 102 refused, out of balance by design). 111101 rose 6,100.00 from AR (3,300.00 + 2,200.00 + 600.00) plus the fixture's own 1,075.00.
+>
+>   Screenshots checked the three lists and the transfer.
 
 **Goal:** sales invoices post to AR's ledger, and AR's journal reaches the General Ledger.
 

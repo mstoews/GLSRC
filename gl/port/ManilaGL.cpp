@@ -10,6 +10,7 @@
 #include "ApVendors.h"
 #include "ArCustomers.h"
 #include "ArInvoiceEntry.h"
+#include "ArPosting.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
 #include "FixedAssetTypes.h"
@@ -63,8 +64,6 @@ const WORD kApCommands[] = {
     8079,  // AccountsPayable  CM_ACCOUNT_PAYABLE (an empty handler in gl.cpp)
 };
 const WORD kArCommands[] = {
-    4049,  // ARPostBatch      ID_ARPOST
-    4053,  // ARCancelBatch    ID_ARCANCEL
     4054,  // ARCreateSlip     ID_ARPAYMENT
     4062,  // ARPurgeAccts     ID_ARPURGE
     8080,  // AccountsReceive  CM_ACCOUNT_RECEIVABLE (an empty handler in gl.cpp)
@@ -313,6 +312,15 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case CM_AP_RECOVER:                    // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3)
         RunApRecover(hwnd(), ApKind::Invoice);
         return true;
+    case 4049:                             // TManilaGL::ARPostBatch (ID_ARPOST): Post Voucher > Sales Voucher (spec #6 S6-M3)
+        RunArPost(hwnd());
+        return true;
+    case 4053:                             // TManilaGL::ARCancelBatch (ID_ARCANCEL): Cancel Voucher > Sales Invoice Voucher (S6-M3)
+        RunArCancel(hwnd());
+        return true;
+    case CM_AR_RECOVER:                    // Transactions > Recover Sales Voucher (spec #6 D7, S6-M3)
+        RunArRecover(hwnd());
+        return true;
     case 1028:                             // TGlWindow::GLUpdateAP: Maintenance > Update AR and AP (S5-M3)
         RunApTransfer(hwnd());
         return true;
@@ -477,10 +485,11 @@ bool ManilaGL::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT&)
         if (menu)
             EnableMenuItem(menu, CM_STATEMENT_LAYOUT,
                            MF_BYCOMMAND | ((GetMenuState(menu, ID_ACCTADD, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
-        // Recover Purchase Voucher is behind Recover General Ledger Voucher's access.
+        // Recover Purchase / Sales Voucher are behind Recover General Ledger Voucher's access.
         if (menu)
-            EnableMenuItem(menu, CM_AP_RECOVER,
-                           MF_BYCOMMAND | ((GetMenuState(menu, ID_GLREPBATCH, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
+            for (UINT id : {CM_AP_RECOVER, CM_AR_RECOVER})
+                EnableMenuItem(menu, id,
+                               MF_BYCOMMAND | ((GetMenuState(menu, ID_GLREPBATCH, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
         // The voucher list opens Voucher Entry: behind its access.
         if (menu)
             EnableMenuItem(menu, CM_VOUCHER_LIST,

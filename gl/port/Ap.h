@@ -382,6 +382,22 @@ ApTransferResult TransferAp(cb4sqlite::Code4& code, long iniBatchno);
 // put back; 0 for an ordinary voucher or a company without AP.
 int UndoApTransfer(cb4sqlite::Code4& code, long glVoucher);
 
+// The transfer's shared part (TransferAp, and Ar.h TransferAr: spec #6 4.4),
+// with no transaction of its own: `journal`'s waiting rows become one GL
+// voucher per period, as TransferAp says, each row marked "2" and linked in
+// `xfer`. The caller marks its vouchers.
+struct JournalTransfer {
+    const char* journal;       // ap_jsum / ar_jsum
+    const char* xfer;          // ap_xfer / ar_xfer
+    const char* description;   // the GL voucher's
+    const char* reference;     // its lines'
+};
+ApTransferResult TransferJournal(cb4sqlite::Code4& code, long iniBatchno, const JournalTransfer& spec);
+
+// UndoApTransfer's shared part: the rows of `journal` linked to `glVoucher`
+// in `xfer` wait again ("1") and the links go. Returns the rows put back.
+int UndoJournalTransfer(cb4sqlite::Code4& code, long glVoucher, const char* journal, const char* xfer);
+
 // ---- the ledger rows (read-only until their milestones) ------------------------------------
 
 struct OpenItem {   // ap_dist

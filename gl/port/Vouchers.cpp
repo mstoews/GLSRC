@@ -39,6 +39,7 @@
 
 #include "Accounts.h"   // TrimText, AccountsTable, SeekAccount
 #include "Ap.h"         // UndoApTransfer: cancelling an AP transfer voucher (spec #5 4.4)
+#include "Ar.h"         // UndoArTransfer: cancelling an AR transfer voucher (spec #6 4.4)
 #include "Assets.h"     // UndoRun: cancelling a depreciation voucher (spec #4 4.3)
 #include "Company.h"    // UpdateUserTime
 #include "db_gl_dist.h"
@@ -597,6 +598,7 @@ CancelResult CancelVoucher(Code4& code, long number)
     DeleteVoucher(h, l, number);
     UndoRun(code, number);   // a depreciation voucher: its assets go back (spec #4 4.3); otherwise nothing
     UndoApTransfer(code, number);   // an AP transfer voucher: its rows wait again (spec #5 4.4); otherwise nothing
+    UndoArTransfer(code, number);   // an AR transfer voucher: the same (spec #6 4.4)
     tx.commit();
     return CancelResult::Cancelled;
 }
