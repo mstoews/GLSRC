@@ -133,6 +133,7 @@ const DialogCase kDialogs[] = {
     // Spec #6 S6-M4.
     {1156, L"Clear Receipts (TARCreatePayment)", true, Pics::Main, {1121}},
     {1155, L"Receipt (TARClear)", false, Pics::Main, {1094}},
+    {1062, L"Purge Received Receivables (TARPurgeBatch)", true, Pics::Main},   // Spec #6 S6-M5
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

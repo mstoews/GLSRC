@@ -74,6 +74,7 @@
 #define IDC_APC_RENUMBER        20174
 #define IDC_AP_VOID             20175   // Clear Cancel Cheque (1051, S5-M6): Void, added in code
 #define IDC_AP_PURGEDATE        20176   // Purge Paid Payables (1048, S5-M6): the date, added in code
+#define IDC_AR_PURGEDATE        20177   // Purge Received Receivables (1062, S6-M5): the date, added in code
 
 #define IDC_FRAME_TOOLBAR       20160   // the frame's toolbar (UI refresh spec 4.3; ManilaGL.cpp)
 #define IDC_FRAME_STATUS        20161   // the frame's status bar (UI refresh spec 4.4)

@@ -65,7 +65,6 @@ const WORD kApCommands[] = {
     8079,  // AccountsPayable  CM_ACCOUNT_PAYABLE (an empty handler in gl.cpp)
 };
 const WORD kArCommands[] = {
-    4062,  // ARPurgeAccts     ID_ARPURGE
     8080,  // AccountsReceive  CM_ACCOUNT_RECEIVABLE (an empty handler in gl.cpp)
 };
 // TManilaGL::GLPrePosting; no legacy header names it.
@@ -323,6 +322,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4054:                             // TManilaGL::ARCreateSlip (ID_ARPAYMENT): Clear Receipts (spec #6 S6-M4)
         RunArReceipts(hwnd());
+        return true;
+    case 4062:                             // TManilaGL::ARPurgeAccts (ID_ARPURGE): Maintenance > Purge Received Receivables (S6-M5)
+        RunArPurge(hwnd());
         return true;
     case 1028:                             // TGlWindow::GLUpdateAP: Maintenance > Update AR and AP (S5-M3)
         RunApTransfer(hwnd());

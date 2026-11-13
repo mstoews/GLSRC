@@ -253,7 +253,7 @@ Only the latest receipt of an invoice can be reversed, so the invoice's fields c
 
 ## 6. Purge (4062, dialog 1062; D11)
 
-Maintenance > **Purge Received Receivables** (the original's "Purge Cleared Accounts", on Transactions) deletes the fully received invoices (C) whose last receipt is before a date, with their receipts. Open and partly received invoices are never touched. As Spec #5's purge, the list shows what goes, and Purge asks first.
+Maintenance > **Purge Received Receivables** (the original's "Purge Cleared Accounts", on Transactions) deletes the fully received invoices (C) whose last receipt is before a date, with their receipts. Open and partly received invoices are never touched. As Spec #5's purge, the list shows what goes, and Purge asks first. The vouchers and their journal rows are kept: they are the record of the sale. The original's double-click, purging one, is kept. (S6-M5: the original purged every "C" item whatever its date, and closed every table.)
 
 ---
 

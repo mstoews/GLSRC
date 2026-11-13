@@ -24,6 +24,13 @@
 //     bank are on the receipt.
 //   - Receipts (D10) lists the invoice's receipts and offers to reverse the
 //     latest, dated today.
+//   - Purge (TARPurgeBatch, 1062; S6-M5, D11): Ok deleted every "C" item,
+//     whatever its date, and double-click one; both closed every table. The
+//     port lists the settled items whose last receipt is before a date (a
+//     date control added in code over 3031, whose label, "Purge Voucher
+//     Number :", is relabelled), deletes them with their receipts (Ar.h
+//     PurgeReceived) after asking, and keeps the vouchers and journal. The
+//     template's "&Post" button is "&Purge".
 //
 #include "ArReceipts.h"
 
@@ -33,11 +40,15 @@
 #include "MainDialog.h"
 #include "VoucherLists.h"   // FormatAmount
 
+#include "report/Format.h"   // rpt::FormatDate
+
 #include <cmath>
 #include <cstdio>
 #include <exception>
 #include <string>
 #include <vector>
+
+#include "PortIds.h"
 
 #include "LegacyIds.h"   // last: see LegacyIds.h
 
@@ -445,10 +456,143 @@ private:
     std::vector<ReceiptItem> items_;
 };
 
+// ---- TARPurgeBatch (1062) ----------------------------------------------------------
+
+class PurgeDialog : public MainDialog {
+public:
+    explicit PurgeDialog(bool closeAtOnce) : closeAtOnce_(closeAtOnce) {}
+
+protected:
+    bool OnInitDialog() override
+    {
+        MainDialog::OnInitDialog();
+        EnsureArTables(cb);
+        SetWindowTextW(hwnd(), L"Purge Received Receivables");
+        if (HWND l = findLabel(hwnd(), L"Purge Voucher Number :")) SetWindowTextW(l, L"Received before:");
+        // The date, over 3031 (a static the template had for a voucher number).
+        const HWND old = GetDlgItem(hwnd(), 3031);
+        RECT rc{};
+        GetWindowRect(old, &rc);
+        MapWindowPoints(nullptr, hwnd(), reinterpret_cast<POINT*>(&rc), 2);
+        ShowWindow(old, SW_HIDE);
+        const int dpi = static_cast<int>(GetDpiForWindow(hwnd()));
+        HWND date = CreateWindowExW(0, L"tbDate", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, rc.left - 20,
+                                    rc.top - 3, MulDiv(80, dpi, 96), MulDiv(14, dpi, 96) + 6, hwnd(),
+                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_AR_PURGEDATE)), hInst, nullptr);
+        SendMessageW(date, WM_SETFONT, SendMessageW(hwnd(), WM_GETFONT, 0, 0), TRUE);
+        SetField(IDC_AR_PURGEDATE, today());
+        SetDlgItemTextW(hwnd(), IDOK, L"&Purge");
+        grid_ = fx::Grid(GetDlgItem(hwnd(), kGrid));
+        if (grid_.IsGrid()) {
+            const int ch = grid_.CharWidth();
+            grid_.SetColumns({{L"Vch", 6 * ch},
+                              {L"Customer / Reference", 24 * ch},
+                              {L"Invoice", 10 * ch},
+                              {L"Received", 12 * ch},
+                              {L"Amount", 13 * ch, fx::GridAlign::Right}});
+            grid_.SetStretchColumn(2);
+        }
+        Fill();
+        if (closeAtOnce_) PostMessageW(hwnd(), WM_COMMAND, IDCANCEL, 0);
+        return true;
+    }
+
+    bool OnCommand(WORD id, WORD code, HWND ctl) override
+    {
+        if (id == kGrid) {
+            if (code == GRN_PICK) PurgeOne(grid_.ActiveRow());
+            return true;
+        }
+        if (id == IDC_AR_PURGEDATE) {
+            if (code == EN_CHANGE || code == EN_KILLFOCUS) Fill();
+            return true;
+        }
+        if (code == BN_CLICKED && id == IDOK) {
+            PurgeAll();
+            return true;
+        }
+        return MainDialog::OnCommand(id, code, ctl);
+    }
+
+private:
+    std::string Before() const { return GetDate(IDC_AR_PURGEDATE); }
+
+    void Fill()
+    {
+        items_ = ArPurgeCandidates(cb, Before());
+        if (!grid_.IsGrid()) return;
+        grid_.SetRedraw(false);
+        grid_.Clear();
+        int row = 0;
+        for (const ArOpenItem& i : items_) {
+            ++row;
+            grid_.SetData(1, row, std::to_wstring(i.batchno));
+            grid_.SetData(2, row, fx::Utf8ToWide(i.customer + "  " + TrimText(i.reference)));
+            grid_.SetData(3, row, fx::Utf8ToWide(i.invoiceNo));
+            grid_.SetData(4, row, fx::Utf8ToWide(rpt::FormatDate(TrimText(i.datePaid))));
+            grid_.SetData(5, row, amount(i.amount));
+        }
+        grid_.SetRedraw(true);
+    }
+
+    void PurgeAll()   // TARPurgeBatch::Ok
+    {
+        const std::string before = Before();
+        if (before.empty()) {
+            Message(GetString(8090), MB_ICONINFORMATION);   // "Double click on the date field to set the date."
+            return;
+        }
+        Fill();
+        if (items_.empty()) {
+            Message(L"No settled invoice was last received before that date.", MB_ICONINFORMATION);
+            return;
+        }
+        if (Message(fx::Format(L"Delete the %zu settled invoice(s) last received before %s, and their receipts?\n\n"
+                               L"Invoices with something still owed are kept, and so are the vouchers and their "
+                               L"journal.",
+                               items_.size(), fx::Utf8ToWide(rpt::FormatDate(before)).c_str()),
+                    MB_YESNO | MB_ICONQUESTION) != IDYES)
+            return;
+        Run(before, 0);
+    }
+
+    void PurgeOne(int row)   // TARPurgeBatch::SelectItem
+    {
+        if (row < 1 || row > static_cast<int>(items_.size())) return;
+        const ArOpenItem i = items_[static_cast<size_t>(row - 1)];
+        if (Message(GetString(6028), MB_ICONQUESTION | MB_YESNO) != IDYES) return;   // "...purge this paid account?"
+        Run(Before(), i.batchno);
+    }
+
+    void Run(const std::string& before, long only)
+    {
+        ArPurgeOutcome o;
+        try {
+            o = PurgeReceived(cb, before, only);
+        } catch (const std::exception& e) {
+            Message(fx::Format(L"The purge failed, and nothing was changed.\n\n%s", fx::Utf8ToWide(e.what()).c_str()),
+                    MB_ICONSTOP);
+            return;
+        }
+        Message(fx::Format(L"%d invoice(s) and %d receipt(s) purged.", o.items, o.receipts), MB_ICONINFORMATION);
+        Fill();
+    }
+
+    bool closeAtOnce_;
+    fx::Grid grid_;
+    std::vector<ArOpenItem> items_;
+};
+
 } // namespace
 
 INT_PTR RunArReceipts(HWND frame, bool closeAtOnce)
 {
     ReceiptsDialog dlg(closeAtOnce);
     return dlg.DoModal(1156, frame);
+}
+
+INT_PTR RunArPurge(HWND frame, bool closeAtOnce)
+{
+    PurgeDialog dlg(closeAtOnce);
+    return dlg.DoModal(1062, frame);
 }

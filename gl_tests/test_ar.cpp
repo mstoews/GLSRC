@@ -1069,3 +1069,51 @@ TEST_CASE("ReverseReceipt: the latest, waiting or transferred (D10)", "[ar]")
     CHECK(i.remainder == 220000);
     CHECK(NextReceiptNumber(db.code) == o.number + 1);   // a transferred receipt's number isn't reused
 }
+
+TEST_CASE("PurgeReceived: settled items received before a date, with their receipts (S6-M5, D11)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    // Voucher 5 is settled, last received 15 Oct; 4 is partly received; 3 is owed in full.
+    CHECK(ArPurgeCandidates(db.code, "20261015").empty());   // on the date: not before it
+    auto c = ArPurgeCandidates(db.code, "20261016");
+    REQUIRE(c.size() == 1);
+    CHECK(c[0].batchno == 5);
+    CHECK(ArPurgeCandidates(db.code, "").empty());
+
+    // Settle 3 on 25 Oct; a partial on 4 (still R).
+    REQUIRE(RecordReceipt(db.code, 3, "20261025", kBank, 220000, false).settled);
+    REQUIRE(RecordReceipt(db.code, 4, "20261025", kBank, 10000, false).result == ReceiptResult::Recorded);
+    c = ArPurgeCandidates(db.code, "20261101");
+    REQUIRE(c.size() == 2);
+    CHECK(c[0].batchno == 3);
+    CHECK(c[1].batchno == 5);
+
+    const auto jsum = LoadArJournal(db.code).size();
+    const auto vouchers = LoadArVouchers(db.code).size();
+    CHECK(PurgeReceived(db.code, "", 0).items == 0);
+
+    // Double-click one: only 3, with its receipt.
+    ArPurgeOutcome o = PurgeReceived(db.code, "20261101", 3);
+    CHECK(o.items == 1);
+    CHECK(o.receipts == 1);
+    CHECK(LoadReceipts(db.code, 3).empty());
+    CHECK(ArPurgeCandidates(db.code, "20261101").size() == 1);
+    CHECK(PurgeReceived(db.code, "20261101", 4).items == 0);   // not settled: never
+
+    // Then all: 5 and its receipt 2.
+    o = PurgeReceived(db.code, "20261101");
+    CHECK(o.items == 1);
+    CHECK(o.receipts == 1);
+    const auto items = LoadArOpenItems(db.code);
+    REQUIRE(items.size() == 1);
+    CHECK(items[0].batchno == 4);
+    CHECK(items[0].paymentCtl == ar_receipt::kPartial);
+    CHECK(LoadReceipts(db.code, 4).size() == 2);
+    CHECK(LoadReceipts(db.code).size() == 2);
+    // The vouchers and the journal are the record: kept.
+    CHECK(LoadArJournal(db.code).size() == jsum);
+    CHECK(LoadArVouchers(db.code).size() == vouchers);
+    CHECK(FindArVoucher(db.code, 3)->mode == ar_mode::kPosted);
+    CHECK(ArPurgeCandidates(db.code, "20261101").empty());
+}

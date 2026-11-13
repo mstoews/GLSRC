@@ -56,7 +56,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1060',   # Spec #6 S6-M2: the sales voucher's memo (its menu MEMO)
            '1054',   # Spec #6 S6-M3: Cancel sales vouchers
            '1156',   # Spec #6 S6-M4: Clear Receipts, the list (gl_new.rc's)
-           '1155']   # Spec #6 S6-M4: Clear Receipts, one receipt (gl_new.rc's: gl.rc's has no amount)
+           '1155',   # Spec #6 S6-M4: Clear Receipts, one receipt (gl_new.rc's: gl.rc's has no amount)
+           '1062']   # Spec #6 S6-M5: Purge Received Receivables (only in gl.rc)
 MENUS = ['MANILA', 'GLE', 'GLSUB', 'MEMO']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -88,6 +89,9 @@ MENU_EDITS = [
     # Spec #5 S5-M6: Confirm Printed replaces Set Cheque Numbers (D9); Purge goes on the menu (spec 6.4).
     ('MANILA', 'rename', '8074', '"Confirm Printed &Cheques..."'),
     ('MANILA', 'insert_after', '1068', '"Purge &Paid Payables...", 1066'),
+    # Spec #6 D11 (S6-M5): AR's purge moves from Transactions to beside AP's, renamed for what it does.
+    ('MANILA', 'remove', '4062', '"Purge C&leared Accounts..."'),
+    ('MANILA', 'insert_after', '1066', '"Purge Recei&ved Receivables...", 4062'),
     # Spec #5 7 (S5-M7): the AP report labels. 4091 was on Receipts/Payments
     # twice, once as "Customer Sales Statements"; 4092, "Customer Statement
     # Detail", is the cheques' Payment Detail; 1060 was on Reporting twice;
@@ -285,6 +289,13 @@ for r in icons:
     icon_lines.append(f'{r["name"]} ICON "icons/{fn}"')
 
 # ---- strings: gl_new.rc, plus gl.rc entries whose ID gl_new.rc lacks ------
+# The port's changes to a string's text (a menu item's status-bar help that
+# no longer says what the item does).
+STRING_TEXT = {
+    # Spec #6 D11 (S6-M5): Purge Received Receivables keeps open and partly received invoices.
+    '4062': '"Delete the settled receivables last received before a date."',
+}
+
 def entries(blocks):
     out = []
     for b in blocks:
@@ -302,7 +313,7 @@ for sid, s in str_new:
         notes.append(f'string {sid}: duplicate in gl_new.rc; first kept')
         continue
     ids[k] = sid
-    final_new.append((sid, s))
+    final_new.append((sid, STRING_TEXT.get(sid, s)))
 extra = []
 for sid, s in str_old:
     k = key(sid)
