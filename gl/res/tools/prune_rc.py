@@ -43,7 +43,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1041',   # Spec #5 S5-M1: Vendors
            '1042',   # Spec #5 S5-M2: Invoice voucher entry
            '1047',   # Spec #5 S5-M3: Post purchase vouchers
-           '1030']   # Spec #5 S5-M3: Update AR and AP
+           '1030',   # Spec #5 S5-M3: Update AR and AP
+           '1044']   # Spec #5 S5-M4: Cash voucher entry
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made

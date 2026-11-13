@@ -834,3 +834,60 @@ TEST_CASE("The transfer's voucher posts with Spec #2", "[ap]")
     CHECK(glBalance(db.code, "731000", "20") == Approx(exp0 + 5000.0));
     CHECK(CancelVoucher(db.code, r.vouchers[0].glVoucher) == CancelResult::Posted);   // posted: Cancel refuses
 }
+
+TEST_CASE("Cash vouchers: entry with a bank, post, transfer, cancel (S5-M4, D10)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const VoucherAccounts acc{{"148000", ""}, {"260004", ""}, {"102101", ""}, "", "", ""};
+
+    // V001 paid 560.00 at the counter by cheque 000124 from the checking account.
+    ApVoucher h;
+    h.kind = ApKind::Cash;
+    h.vendor = "V001";
+    h.invoiceNo = "INV-1010-C";   // ten characters: cash vouchers' INVOICENO is C10
+    h.reference = "Supplies";
+    h.invoiceDate = h.date = h.dueDate = "20261021";
+    h.period = 7;
+    h.vatRate = 12;
+    h.whRate = 1;
+    h.account = {"102101", ""};
+    h.vat = {"148000", ""};
+    h.cheque = "000124";
+    ExpenseEntry e;
+    e.account = {"501000", ""};
+    e.gross = 56000;
+    const long n = SaveExpenseLine(db.code, h, e, TaxMode::F, acc);
+    CHECK(n == 2);   // after the fixture's cash voucher 1
+    const auto v = FindApVoucher(db.code, ApKind::Cash, n);
+    REQUIRE(v);
+    CHECK(v->invoiceNo == "INV-1010-C");
+    CHECK(v->cheque == "000124");
+    CHECK(v->vat.account == "148000");
+    CHECK(v->account.account == "102101");
+    auto lines = LoadApLines(db.code, ApKind::Cash, n);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[3].role == ApLineRole::Credit);
+    CHECK(lines[3].account.account == "102101");   // the bank is credited, F: 560.00 - W/H 5.00
+    CHECK(lines[3].credit == 55500);
+    CHECK(lines[3].descript == "CHECKING ACCOUNT");
+    // The same invoice number for V001 is refused on an invoice voucher too (D6).
+    CHECK(DuplicateInvoice(db.code, "V001", "INV-1010-C")->kind == ApKind::Cash);
+
+    // Post: TYPE "CA" rows with the cheque; no open item.
+    const auto openBefore = LoadOpenItems(db.code).size();
+    CHECK(PostApVouchers(db.code, ApKind::Cash, n).posted == std::vector<long>{n});
+    CHECK(LoadOpenItems(db.code).size() == openBefore);
+    const auto rows = journalOf(db.code, "CA", n);
+    REQUIRE(rows.size() == 4);
+    for (const JournalRow& r : rows) CHECK(r.cheque == "000124");
+
+    // The transfer carries it and marks it "2" (D10).
+    TransferAp(db.code, 99);
+    CHECK(FindApVoucher(db.code, ApKind::Cash, n)->mode == ap_mode::kTransferred);
+
+    // Cancel: the fixture's open cash voucher 1.
+    CHECK(CancelApVoucher(db.code, ApKind::Cash, 1) == ApCancelResult::Cancelled);
+    CHECK(FindApVoucher(db.code, ApKind::Cash, 1)->cancelled());
+    CHECK(CancelApVoucher(db.code, ApKind::Cash, n) == ApCancelResult::NotOpen);
+}

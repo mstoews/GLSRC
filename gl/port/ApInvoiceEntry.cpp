@@ -32,6 +32,14 @@
 //     Accounts > Purchase Vendors, showing the vendor list.
 //   - Account and Dept are typed (the template made them read-only, filled
 //     from the account list only); the list still fills them.
+//   - Cash vouchers (TAPCashEntry, ap_cshbt.cpp, dialog 1044; S5-M4) are the
+//     same screen (D10): the bank combo box (1031, the GL_SETAT "CA"
+//     accounts) fills 1087 / 1086, the credit line is the bank, and the
+//     cheque number (6070) goes on the voucher and its journal. There is no
+//     due date or terms: the due date is the invoice date. The vendor field,
+//     read-only in 1044, is typed. TAPCashEntry's 1,573 lines of separate
+//     slip builders (CreateVatSlip, CreateRebateSlip, ...) are Ap.h's one
+//     recompute.
 //   - Debit and Credit (2030, 2031) show the line picked, read-only: the
 //     amounts are computed. Print (ID_PRINT) is hidden until the AP reports
 //     (S5-M7). Company and Individual are plain radio buttons the code
@@ -66,7 +74,8 @@
 
 namespace {
 
-// Dialog 1042's controls (ap_btche.cpp's names).
+// Dialog 1042's controls (ap_btche.cpp's names); 1044, the cash voucher's, has the same IDs
+// but kBank and kCheque in place of the due date and terms.
 constexpr int kBatchNo = 3031;     // ID_BATCHNO
 constexpr int kPeriod = 1091;      // ID_PERIOD
 constexpr int kPeriodDesc = 1084;
@@ -100,6 +109,8 @@ constexpr int kVendors = 3043;     // ID_SEARCHCUST: "Vendors"
 constexpr int kLists = 1121;       // ID_VIEW: "Lists" (the account list)
 constexpr int kVoucherList = 1074; // ID_SLIPLIST: "Voucher"
 constexpr int kPrintButton = 3068; // ID_PRINT
+constexpr int kBank = 1031;        // 1044: the bank (GL_SETAT "CA" accounts), shown in 1087 / 1086
+constexpr int kCheque = 6070;      // 1044: ID_CHEQUE
 constexpr LRESULT kNoCode = -1;    // the blank combo entry
 
 // A static whose text is `text`, among the dialog's children (the labels are -1).
@@ -137,7 +148,7 @@ std::string today()
 
 class InvoiceEntry : public MainDialog {
 public:
-    explicit InvoiceEntry(bool closeAtOnce) : closeAtOnce_(closeAtOnce) {}
+    InvoiceEntry(ApKind kind, bool closeAtOnce) : kind_(kind), closeAtOnce_(closeAtOnce) {}
 
 protected:
     bool OnInitDialog() override;
@@ -181,7 +192,9 @@ private:
     bool AskToKeep();
     void Navigate(WORD id);
     void Toggle(TableList& list, const std::string& seek);
+    void SelectBank(const ApAccount& account);
 
+    ApKind kind_;
     bool closeAtOnce_;
     TaxMode mode_ = TaxMode::F;
     ApAccounts setat_;
@@ -212,10 +225,21 @@ bool InvoiceEntry::OnInitDialog()
     // Spec #2's Voucher Entry; the list still fills them.
     SendDlgItemMessageW(hwnd(), kAccount, EM_SETREADONLY, FALSE, 0);
     SendDlgItemMessageW(hwnd(), kDept, EM_SETREADONLY, FALSE, 0);
+    SendDlgItemMessageW(hwnd(), kVendor, EM_SETREADONLY, FALSE, 0);   // read-only in 1044 (picked from the list only)
     EnableWindow(GetDlgItem(hwnd(), kCredit), FALSE);
 
     EnsureApTables(cb);
     setat_ = LoadApAccounts(cb);
+    if (kind_ == ApKind::Cash) {   // GetBankAccountDescription's banks
+        const HWND box = GetDlgItem(hwnd(), kBank);
+        for (size_t i = 0; i < setat_.banks.size(); ++i) {
+            const ApBank& b = setat_.banks[i];
+            const std::wstring text = fx::Utf8ToWide(b.shortName + " - " + TrimText(b.name) + " (" + b.account.account +
+                                                     (b.account.dept.empty() ? "" : "-" + b.account.dept) + ")");
+            const LRESULT at = SendMessageW(box, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+            SendMessageW(box, CB_SETITEMDATA, static_cast<WPARAM>(at), static_cast<LPARAM>(i));
+        }
+    }
     mode_ = ParseTaxMode(fx::WideToUtf8(GetIniString(L"GL.INI", L"WITHHOLDING", L"TAX")));
 
     glaccts_ = std::make_unique<AccountsTable>(cb);
@@ -241,10 +265,11 @@ bool InvoiceEntry::OnInitDialog()
         ShowVendor(vendorList_.RowText(row, 1), true);
     }, true, false);
     TableList::Spec vouchers;   // TBatchList on ap_btch
-    vouchers.section = L"AP_BTCH";
-    vouchers.table = "ap_btch";
+    const bool cash = kind_ == ApKind::Cash;
+    vouchers.section = cash ? L"AP_CASH" : L"AP_BTCH";
+    vouchers.table = cash ? "ap_cash" : "ap_btch";
     vouchers.tag = "batchno";
-    vouchers.caption = L"Purchase Invoice Vouchers";
+    vouchers.caption = cash ? L"Cash Vouchers" : L"Purchase Invoice Vouchers";
     vouchers.headers = {L"Voucher", L"Vendor", L"Invoice"};
     vouchers.fields = {1, 6, 8};   // BATCHNO, VENDORNO, INVOICENO
     vouchers.stretchColumn = 3;
@@ -262,6 +287,18 @@ bool InvoiceEntry::OnCommand(WORD id, WORD code, HWND ctl)
 {
     if (id == kPeriod) {
         if (code == CBN_SELCHANGE) ShowPeriodDescription();
+        return true;
+    }
+    if (id == kBank) {   // GetBankAccountDescription
+        if (code == CBN_SELCHANGE) {
+            const HWND box = GetDlgItem(hwnd(), kBank);
+            const LRESULT sel = SendMessageW(box, CB_GETCURSEL, 0, 0);
+            const LRESULT i = sel == CB_ERR ? -1 : SendMessageW(box, CB_GETITEMDATA, static_cast<WPARAM>(sel), 0);
+            if (i >= 0 && static_cast<size_t>(i) < setat_.banks.size()) {
+                SetField(kApAccount, setat_.banks[static_cast<size_t>(i)].account.account);
+                SetField(kApDept, setat_.banks[static_cast<size_t>(i)].account.dept);
+            }
+        }
         return true;
     }
     if (code != BN_CLICKED) return MainDialog::OnCommand(id, code, ctl);
@@ -445,8 +482,10 @@ bool InvoiceEntry::ShowVendor(const std::string& number, bool dueFromTerms)
     if (!v) return false;
     SetField(kVendor, v->number);
     SetField(kVendorName, v->name);
-    SetField(kApAccount, v->ap.account);
-    SetField(kApDept, v->ap.dept);
+    if (kind_ == ApKind::Invoice) {
+        SetField(kApAccount, v->ap.account);
+        SetField(kApDept, v->ap.dept);
+    }
     SetField(kVatAccount, v->vat.account);
     SetField(kVatDept, v->vat.dept);
     SetInt(kVatRate, v->vatRate);
@@ -480,9 +519,9 @@ void InvoiceEntry::EnterVendor()
 
 void InvoiceEntry::ShowVoucher(long number)   // TAPInvoiceEntry::CurrentBatch
 {
-    const std::optional<ApVoucher> v = FindApVoucher(cb, ApKind::Invoice, number);
+    const std::optional<ApVoucher> v = FindApVoucher(cb, kind_, number);
     if (!v) return;
-    shown_ = LoadApLines(cb, ApKind::Invoice, number);
+    shown_ = LoadApLines(cb, kind_, number);
     SetInt(kBatchNo, static_cast<int>(v->number));
     ShowVendor(v->vendor, false);   // the vendor's name and type; the voucher's own values follow
     SetField(kVendor, v->vendor);
@@ -498,6 +537,14 @@ void InvoiceEntry::ShowVoucher(long number)   // TAPInvoiceEntry::CurrentBatch
     SetInt(kWhRate, v->whRate);
     SetInt(kTerms, v->terms);
     SelectPeriod(v->period);
+    if (kind_ == ApKind::Cash) {
+        SetField(kCheque, v->cheque);
+        SelectBank(v->account);
+        if (!v->vat.empty()) {
+            SetField(kVatAccount, v->vat.account);
+            SetField(kVatDept, v->vat.dept);
+        }
+    }
     for (const ApLine& l : shown_) {   // the voucher's own VAT and W/H accounts
         if (l.role == ApLineRole::Vat) {
             SetField(kVatAccount, l.account.account);
@@ -528,7 +575,7 @@ void InvoiceEntry::ShowVoucher(long number)   // TAPInvoiceEntry::CurrentBatch
 
 void InvoiceEntry::PickVoucher(long number)   // the voucher list
 {
-    const std::optional<ApVoucher> v = FindApVoucher(cb, ApKind::Invoice, number);
+    const std::optional<ApVoucher> v = FindApVoucher(cb, kind_, number);
     if (!v) return;
     if (v->mode != ap_mode::kOpen) {
         const wchar_t* state = v->mode == ap_mode::kCancelled     ? L"cancelled"
@@ -580,10 +627,17 @@ void InvoiceEntry::Clear()   // TAPInvoiceEntry::Clear
     transaction_ = false;
     made_ = 0;
     shown_.clear();
-    SetInt(kBatchNo, static_cast<int>(NextApVoucherNumber(cb, ApKind::Invoice)));
+    SetInt(kBatchNo, static_cast<int>(NextApVoucherNumber(cb, kind_)));
     for (int id : {kVendor, kVendorName, kInvoiceNo, kOrderNo, kReference, kDueDate}) SetField(id, "");
-    SetField(kApAccount, setat_.ap.account);
-    SetField(kApDept, setat_.ap.dept);
+    if (kind_ == ApKind::Cash) {
+        SetField(kApAccount, "");
+        SetField(kApDept, "");
+        SetField(kCheque, "");
+        SendDlgItemMessageW(hwnd(), kBank, CB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+    } else {
+        SetField(kApAccount, setat_.ap.account);
+        SetField(kApDept, setat_.ap.dept);
+    }
     SetField(kVatAccount, setat_.vatInput.account);
     SetField(kVatDept, setat_.vatInput.dept);
     SetField(kInvDate, today());
@@ -625,7 +679,7 @@ void InvoiceEntry::Add()   // TAPInvoiceEntry::Ok
         Refuse(kInvDate, GetString(8090));   // "Double click on the date field to set the date."
         return;
     }
-    if (GetDate(kDueDate).empty()) SetField(kDueDate, AddDays(invDate, GetInt(kTerms)));
+    if (kind_ == ApKind::Invoice && GetDate(kDueDate).empty()) SetField(kDueDate, AddDays(invDate, GetInt(kTerms)));
     const int period = Period();
     if (period == 0) {
         Refuse(kPeriod, fx::Format(GetString(4072).c_str(), L"Period"));
@@ -637,8 +691,13 @@ void InvoiceEntry::Add()   // TAPInvoiceEntry::Ok
         return;
     }
     const VoucherAccounts accounts = Accounts();
+    if (kind_ == ApKind::Cash && accounts.credit.empty()) {
+        Refuse(kBank, L"Choose the bank the invoice was paid from.");
+        return;
+    }
     if (!ValidateAccount(cb, accounts.credit.account, accounts.credit.dept)) {
-        Refuse(kApAccount, L"The AP account isn't in the chart of accounts.");
+        Refuse(kApAccount, kind_ == ApKind::Cash ? L"The bank account isn't in the chart of accounts."
+                                                 : L"The AP account isn't in the chart of accounts.");
         return;
     }
     const int vatRate = GetInt(kVatRate), whRate = GetInt(kWhRate);
@@ -673,9 +732,9 @@ void InvoiceEntry::Add()   // TAPInvoiceEntry::Ok
         return;
     }
     const long number = Number();
-    const bool exists = FindApVoucher(cb, ApKind::Invoice, number).has_value();
+    const bool exists = FindApVoucher(cb, kind_, number).has_value();
     if (const auto dup = DuplicateInvoice(cb, vendor, GetField(kInvoiceNo),
-                                          exists ? std::optional<ApVoucherRef>(ApVoucherRef{ApKind::Invoice, number})
+                                          exists ? std::optional<ApVoucherRef>(ApVoucherRef{kind_, number})
                                                  : std::nullopt)) {
         Refuse(kInvoiceNo, fx::Format(L"%s\n\nVendor %s's invoice %s is on %s voucher %ld.",
                                       GetString(1039).c_str(), fx::Utf8ToWide(vendor).c_str(),
@@ -692,7 +751,7 @@ void InvoiceEntry::Add()   // TAPInvoiceEntry::Ok
     entry.drcode = ComboCode(kDoctors, doctorCodes_);
 
     ApVoucher h;
-    h.kind = ApKind::Invoice;
+    h.kind = kind_;
     h.number = exists ? number : 0;
     h.vendor = vendor;
     h.vendorName = StrTrim(GetField(kVendorName));
@@ -701,7 +760,11 @@ void InvoiceEntry::Add()   // TAPInvoiceEntry::Ok
     h.reference = StrTrim(GetField(kReference));
     h.date = invDate;
     h.invoiceDate = invDate;
-    h.dueDate = GetDate(kDueDate);
+    h.dueDate = kind_ == ApKind::Cash ? invDate : GetDate(kDueDate);   // paid when entered
+    if (kind_ == ApKind::Cash) {
+        h.cheque = StrTrim(GetField(kCheque));
+        h.vat = accounts.vat;
+    }
     h.period = period;
     h.terms = GetInt(kTerms);
     h.vatRate = vatRate;
@@ -726,7 +789,7 @@ void InvoiceEntry::DeleteLine()   // TAPInvoiceEntry::Delete
     const int line = GetInt(kLineNo);
     if (line < 1 || line > ExpenseCount()) return;   // no expense line picked
     if (Message(GetString(6098), MB_YESNO | MB_ICONQUESTION) != IDYES) return;   // "...delete the current line entry."
-    if (DeleteExpenseLine(cb, ApKind::Invoice, Number(), line, mode_, Accounts())) ShowVoucher(Number());
+    if (DeleteExpenseLine(cb, kind_, Number(), line, mode_, Accounts())) ShowVoucher(Number());
 }
 
 bool InvoiceEntry::AskToKeep()   // the ID_COMMIT question (D5)
@@ -735,7 +798,7 @@ bool InvoiceEntry::AskToKeep()   // the ID_COMMIT question (D5)
     switch (Message(GetString(1056), MB_YESNOCANCEL | MB_ICONQUESTION)) {   // "...save the current transaction?"
     case IDYES: transaction_ = false; return true;
     case IDNO:  // CM_ROLLBACK: only the voucher made in this session
-        DeleteApVoucher(cb, ApKind::Invoice, made_);
+        DeleteApVoucher(cb, kind_, made_);
         transaction_ = false;
         voucherList_.Redraw();
         Clear();
@@ -747,7 +810,7 @@ bool InvoiceEntry::AskToKeep()   // the ID_COMMIT question (D5)
 void InvoiceEntry::Navigate(WORD id)   // Top / Bottom / Next / Previous over the open vouchers
 {
     std::vector<long> open;
-    for (const ApVoucher& v : LoadApVouchers(cb, ApKind::Invoice))
+    for (const ApVoucher& v : LoadApVouchers(cb, kind_))
         if (v.mode == ap_mode::kOpen) open.push_back(v.number);
     if (open.empty()) {
         Message(GetString(8153), MB_ICONINFORMATION);   // "No invoices have yet been entered."
@@ -777,6 +840,20 @@ void InvoiceEntry::Navigate(WORD id)   // Top / Bottom / Next / Previous over th
     ShowVoucher(to);
 }
 
+void InvoiceEntry::SelectBank(const ApAccount& account)
+{
+    const HWND box = GetDlgItem(hwnd(), kBank);
+    const LRESULT count = SendMessageW(box, CB_GETCOUNT, 0, 0);
+    for (LRESULT at = 0; at < count; ++at) {
+        const LRESULT i = SendMessageW(box, CB_GETITEMDATA, static_cast<WPARAM>(at), 0);
+        if (i >= 0 && static_cast<size_t>(i) < setat_.banks.size() && setat_.banks[static_cast<size_t>(i)].account == account) {
+            SendMessageW(box, CB_SETCURSEL, static_cast<WPARAM>(at), 0);
+            return;
+        }
+    }
+    SendMessageW(box, CB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+}
+
 void InvoiceEntry::Toggle(TableList& list, const std::string& seek)
 {
     const HWND w = list.hwnd();
@@ -793,6 +870,12 @@ void InvoiceEntry::Toggle(TableList& list, const std::string& seek)
 
 INT_PTR RunApInvoiceEntry(HWND frame, bool closeAtOnce)
 {
-    InvoiceEntry dlg(closeAtOnce);
+    InvoiceEntry dlg(ApKind::Invoice, closeAtOnce);
     return dlg.DoModal(1042, frame);
+}
+
+INT_PTR RunApCashEntry(HWND frame, bool closeAtOnce)
+{
+    InvoiceEntry dlg(ApKind::Cash, closeAtOnce);
+    return dlg.DoModal(1044, frame);
 }
