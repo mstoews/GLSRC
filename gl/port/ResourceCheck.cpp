@@ -352,11 +352,11 @@ void checkImages(HINSTANCE inst, Report& r)
         const std::wstring bitmap = n.substr(1);
         const bool numeric = bitmap.find_first_not_of(L"0123456789") == std::wstring::npos;
         const LPCWSTR res = numeric ? MAKEINTRESOURCEW(std::stoi(bitmap)) : bitmap.c_str();
-        HICON small = fx::LoadModernIcon(inst, res, 16), large = fx::LoadModernIcon(inst, res, 48);
+        HICON icon16 = fx::LoadModernIcon(inst, res, 16), icon48 = fx::LoadModernIcon(inst, res, 48);
         const bool hasBitmap = FindResourceW(inst, res, MAKEINTRESOURCEW(2)) != nullptr;   // RT_BITMAP
-        r.check(small && large && hasBitmap, L"icon " + n + (hasBitmap ? L"" : L": no bitmap " + bitmap));
-        if (small) DestroyIcon(small);
-        if (large) DestroyIcon(large);
+        r.check(icon16 && icon48 && hasBitmap, L"icon " + n + (hasBitmap ? L"" : L": no bitmap " + bitmap));
+        if (icon16) DestroyIcon(icon16);
+        if (icon48) DestroyIcon(icon48);
     }
     r.check(modern == 31, fx::Format(L"%d modern icons (31 expected: icons/fluent/map.csv)", modern));
     r.check(LoadAcceleratorsW(inst, L"GL") != nullptr, L"accelerators GL");
