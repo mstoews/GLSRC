@@ -8,6 +8,7 @@
 #include "ApPosting.h"
 #include "ApTransfer.h"
 #include "ApVendors.h"
+#include "ArCustomers.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
 #include "FixedAssetTypes.h"
@@ -64,7 +65,6 @@ const WORD kArCommands[] = {
     4049,  // ARPostBatch      ID_ARPOST
     4053,  // ARCancelBatch    ID_ARCANCEL
     4054,  // ARCreateSlip     ID_ARPAYMENT
-    4059,  // ARAddVendors     ID_AR_CUSTOMER
     4062,  // ARPurgeAccts     ID_ARPURGE
     5045,  // ARBatch          ID_ARBATCH
     8080,  // AccountsReceive  CM_ACCOUNT_RECEIVABLE (an empty handler in gl.cpp)
@@ -273,6 +273,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4045:                             // TManilaGL::APAddVendors (ID_ADDVENDOR): Accounts > Purchase Vendors (spec #5 S5-M1)
         RunApVendors(hwnd());
+        return true;
+    case 4059:                             // TManilaGL::ARAddVendors (ID_AR_CUSTOMER): Accounts > Sales Customers (spec #6 S6-M1)
+        RunArCustomers(hwnd());
         return true;
     case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
         RunApInvoiceEntry(hwnd());

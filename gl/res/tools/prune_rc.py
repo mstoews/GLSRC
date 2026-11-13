@@ -49,7 +49,9 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '1066',   # Spec #5 S5-M5: Hold or Force
            '1046',   # Spec #5 S5-M6: Bank Reconciliation
            '1051',   # Spec #5 S5-M6: Clear Cancel Cheque
-           '1048']   # Spec #5 S5-M6: Purge Paid Payables
+           '1048',   # Spec #5 S5-M6: Purge Paid Payables
+           '1052',   # Spec #6 S6-M1: Customers
+           '1063']   # Spec #6 S6-M1: Customer Account Options
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -350,6 +352,9 @@ PATCHES = {
     ('1041', '"W/H Tax percentage"'): (0, 0, '"W/H %"'),   # text 59 px, room 58 px
     # Create Cheques (1045, S5-M5): the date field follows at once; "Due Date" is above it.
     ('1045', '"Payment Date"'): (0, 0, '"Pay Date"'),   # wraps to 30 px high, room 15 px
+    # Customers (1052, S6-M1): both addresses' labels, 34 and 35 units wide, wrap to 45 px
+    # high in 15 px; their fields are at x 60, so they can grow 15 units, as "Postal Code".
+    ('1052', '"Postal Code/Zip Code"'): (15, 0, '"Postal Code"'),
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)

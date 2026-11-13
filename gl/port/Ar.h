@@ -113,6 +113,28 @@ std::optional<Customer> FindCustomer(cb4sqlite::Code4& code, const std::string& 
 // 2.1, Q7); a new customer gets them blank, and a replaced one keeps them.
 bool SaveCustomer(cb4sqlite::Code4& code, const Customer& c);
 
+// What Customers' Add refuses (plan S6-M1), in the order the screen checks it.
+// `field` names the input to put the focus on: the number and names are on
+// the main screen (1052), the rest on its Options (1063).
+enum class CustomerField { None, Number, ShortName, Name, VatRate, ArAccount, SalesAccount, VatAccount };
+struct CustomerProblem {
+    CustomerField field = CustomerField::None;
+    enum class Kind {
+        Required,           // string 8101, naming the field (TARVendorAdd::Ok's szEnterError)
+        BadRate,            // a VAT rate outside 0-99
+        BadAccount,         // the account and dept aren't in the chart (TARVendorOptions::Ok)
+        VatAccountNeeded,   // a VAT rate with no VAT account: invoices would book VAT nowhere
+    } kind = Kind::Required;
+};
+std::optional<CustomerProblem> CheckCustomer(cb4sqlite::Code4& code, const Customer& c);
+
+// TARVendorAdd::Delete, refusing a customer still in use (D12): any sales
+// voucher (cancelled ones too: they're the record), open item or receipt.
+// `usedBy` describes the first found ("sales voucher 1", "receipt 2").
+// Otherwise the record is deleted and the table packed, as the original.
+enum class DeleteCustomerResult { Deleted, NotFound, InUse };
+DeleteCustomerResult DeleteCustomer(cb4sqlite::Code4& code, const std::string& number, std::string* usedBy = nullptr);
+
 // ---- vouchers ---------------------------------------------------------------------
 
 struct ArVoucher {

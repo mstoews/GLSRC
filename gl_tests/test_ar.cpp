@@ -1,6 +1,6 @@
 //
 // gl_tests: the Accounts Receivable core (spec #6 2.1, 4.1, 5.3, D3, D4, D6,
-// D8; plan S6-M0) on the dev fixture's AR data (make_dev_fixture.py
+// D8, D12; plans S6-M0 and S6-M1) on the dev fixture's AR data (make_dev_fixture.py
 // accounts_receivable):
 //
 //   C001 hospital, VAT 10 %, terms 30, sales 410001-10    C002 doctor, VAT 10 %, sales 410001-20
@@ -15,6 +15,7 @@
 //
 #include "GlTestDb.h"
 
+#include "Accounts.h"   // TrimText
 #include "Ar.h"
 
 #include <map>
@@ -406,4 +407,115 @@ TEST_CASE("SaveCustomer and SaveArVoucher leave the others alone", "[ar]")
     CHECK(LoadArLines(db.code, 7).size() == 3);
     CHECK(count(db.code, "SELECT count(*) FROM ar_linex WHERE _deleted = 0 AND batchno = 2") == 3);
     CHECK(count(db.code, "SELECT count(*) FROM ar_linex WHERE _deleted = 0") == 18 - 4 + 3 + 3);
+}
+
+TEST_CASE("CheckCustomer: what Customers' Add refuses (S6-M1)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const Customer c = *FindCustomer(db.code, "C001");
+    CHECK_FALSE(CheckCustomer(db.code, c));
+    CHECK_FALSE(CheckCustomer(db.code, *FindCustomer(db.code, "C003")));   // no VAT, no VAT account
+
+    auto refused = [&](const Customer& x) { return CheckCustomer(db.code, x); };
+    using K = CustomerProblem::Kind;
+    {
+        Customer x = c;
+        x.number = " ";
+        CHECK(refused(x)->field == CustomerField::Number);
+        CHECK(refused(x)->kind == K::Required);
+        x = c;
+        x.shortName.clear();
+        CHECK(refused(x)->field == CustomerField::ShortName);
+        x = c;
+        x.name = "  ";
+        CHECK(refused(x)->field == CustomerField::Name);
+    }
+    {
+        Customer x = c;
+        x.vatRate = 100;
+        CHECK(refused(x)->field == CustomerField::VatRate);
+        CHECK(refused(x)->kind == K::BadRate);
+        x.vatRate = -1;
+        CHECK(refused(x)->kind == K::BadRate);
+    }
+    {
+        Customer x = c;
+        x.ar = {};
+        CHECK(refused(x)->field == CustomerField::ArAccount);
+        CHECK(refused(x)->kind == K::BadAccount);
+        x.ar = {"111199", ""};   // the deployed customers' AR: not in the fixture's chart
+        CHECK(refused(x)->field == CustomerField::ArAccount);
+    }
+    {
+        Customer x = c;
+        x.sales = {"410001", ""};   // GL_SETAT SALE: the chart has 410001 only with depts 10 and 20
+        CHECK(refused(x)->field == CustomerField::SalesAccount);
+        CHECK(refused(x)->kind == K::BadAccount);
+        x.sales = {"410001", "20"};
+        CHECK_FALSE(refused(x));
+    }
+    {
+        Customer x = c;
+        x.vat = {"999999", ""};
+        CHECK(refused(x)->field == CustomerField::VatAccount);
+        CHECK(refused(x)->kind == K::BadAccount);
+        x.vat = {};
+        CHECK(refused(x)->kind == K::VatAccountNeeded);   // VAT 10 % with nowhere to book it
+        x.vatRate = 0;
+        CHECK_FALSE(refused(x));
+    }
+    // The defaults a new customer gets (D12) pass once the sales dept is given.
+    const ArAccounts a = LoadArAccounts(db.code);
+    Customer n;
+    n.number = "C004";
+    n.shortName = "NEW";
+    n.name = "New Customer";
+    n.ar = a.ar;
+    n.sales = a.sales;
+    n.vat = a.vatPayable;
+    n.vatRate = 10;
+    CHECK(refused(n)->field == CustomerField::SalesAccount);
+    n.sales.dept = "10";
+    CHECK_FALSE(refused(n));
+}
+
+TEST_CASE("DeleteCustomer refuses a customer in use (D12)", "[ar]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    std::string usedBy;
+    CHECK(DeleteCustomer(db.code, "C001", &usedBy) == DeleteCustomerResult::InUse);
+    CHECK(usedBy == "sales voucher 1");
+    CHECK(DeleteCustomer(db.code, "C999") == DeleteCustomerResult::NotFound);
+
+    // C003's only voucher is 5: still refused by its open item and receipt
+    // once the voucher is gone, and by the receipt alone after that.
+    auto run = [&](const char* table) {
+        Data4 d(&db.code, table);
+        Field4 no(d, "vendorno");
+        for (d.top(); !d.eof(); d.skip())
+            if (TrimText(no.str()) == "C003") d.deleteRec();
+        d.pack();
+        d.close();
+    };
+    run("ar_btch");
+    CHECK(DeleteCustomer(db.code, "C003", &usedBy) == DeleteCustomerResult::InUse);
+    CHECK(usedBy == "the open item of voucher 5");
+    run("ar_dist");
+    CHECK(DeleteCustomer(db.code, "C003", &usedBy) == DeleteCustomerResult::InUse);
+    CHECK(usedBy == "receipt 2");
+    run("ar_rcpt");
+    CHECK(DeleteCustomer(db.code, " C003 ") == DeleteCustomerResult::Deleted);
+    CHECK_FALSE(FindCustomer(db.code, "C003"));
+    CHECK(LoadCustomers(db.code).size() == 2);
+
+    // A customer with nothing at all goes at once; the others stay.
+    Customer n;
+    n.number = "C004";
+    n.name = "Short-lived";
+    REQUIRE(SaveCustomer(db.code, n));
+    CHECK(DeleteCustomer(db.code, "C004") == DeleteCustomerResult::Deleted);
+    CHECK(LoadCustomers(db.code).size() == 2);
+    CHECK(FindCustomer(db.code, "C001"));
 }
