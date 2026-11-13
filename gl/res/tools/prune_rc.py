@@ -40,7 +40,8 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '4004',   # Spec #4 S4-M2: Fixed Assets Add/Modify
            '4003',   # Spec #4 S4-M3: Create Voucher (the depreciation run)
            '1001',   # Spec #4 S4-M4: Disposal
-           '1041']   # Spec #5 S5-M1: Vendors
+           '1041',   # Spec #5 S5-M1: Vendors
+           '1042']   # Spec #5 S5-M2: Invoice voucher entry
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made

@@ -180,6 +180,41 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M3, and 
 
 ## Milestone 2 — Invoice voucher entry (1042)
 
+> **As built (2026-11-13; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): spec §2.3 and §2.6 hold. One Add posts the amount in 1030 (labelled "Total") on one expense account. Further findings in dialog 1042:
+>   - **Account and Dept are read-only** (`tbES_STATIC`): the original filled them only from the account list.
+>   - **The line fields:** 3037 "Description" is the line's description, and 3036 "Document" the voucher's reference. Debit and Credit (2030, 2031) were never read.
+>   - **The rest:** Company and Individual are plain radio buttons the code checks. The original read GL_SETAT VATP as the default VAT account, then the vendor's.
+> - **`prune_rc.py`** (task 2): 1042 added. `/checkres` fits it as it is.
+> - **`Ap.h`** (task 3):
+>   - **`SaveExpenseLine`** adds or replaces an expense line, then recomputes the VAT, W/H and credit lines from every expense line with the header's rates (D4). It writes the totals: `PAYABLE` the typed amounts, `VATAMT`, and `REBATEAMT` signed by the mode. A new voucher is numbered after the last, in mode open. It refuses any voucher that isn't open.
+>   - **`DeleteExpenseLine`** removes a line and recomputes.
+>   - **`DeleteApVoucher`** removes only the voucher made in this session, for D5's No.
+>   - **Helpers:** `AddDays` (the due date) and `AccountName` (blank descriptions and the computed lines' text).
+> - **`gl/port/ApInvoiceEntry.{h,cpp}`** (task 4), on Spec #2's Voucher Entry pattern:
+>   - **The header:** Enter on the vendor fills in the name, accounts, rates, terms and type, and the due date as invoice date + terms. A typed due date is kept. The invoice date defaults to today.
+>   - **Add** checks the vendor, invoice number, date, period, document and type; the AP, VAT and W/H accounts; the rates; the line's account; an amount above 0; and duplicates (D6, string 1039 naming the voucher). It then calls `SaveExpenseLine`.
+>   - **The Distribution List** is Spec #2's `LineList`. A computed line can't be picked; a message says why.
+>   - **Navigation:** New and Close ask 1056 for a voucher made in this session (D5). Top / Bottom / Next / Previous go through the open vouchers. The voucher list refuses a posted, transferred or cancelled voucher, naming its state.
+>   - **Lists:** Vendors, Lists (accounts) and Voucher open their lists.
+>   - **Template fixes in code:** Account and Dept made editable; "Total" relabelled "Amount"; Debit/Credit read-only; Print hidden until S5-M7; the radio buttons checked by code.
+>   - **A cleared line leaves the amount blank.** With "0.00" in it, typing "1120" landed before the zeros and gave 11,200.00 (found while driving it).
+> - **Wire** (task 5): 4044 (`ID_APBATCH`, the toolbar's AP voucher button too) in `ManilaGL.cpp`, out of `kApCommands`. `/checkres` loads 1042; `StressAp` opens it.
+> - **Tests** (task 6), 3 cases. `gl_tests`: 128 cases.
+>   - `AddDays`: month and year ends, a leap year, invalid dates.
+>   - The spec's 1,120.00 invoice, line by line: a blank description gets the account's name. A second line, with its analysis codes in their own columns (D13). Replacing line 1, deleting it, and changing the rates all recompute. Posted vouchers are refused.
+>   - `DeleteApVoucher` removes that open voucher only.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (69 s). Driven in the app (a scratch copy with the fixture), checked in the database and the Distribution List:
+>   - V001 and Enter: the vendor's accounts, 12 / 1, terms 30, Company, the due date 30 days on.
+>   - 1,120.00 on 501000: Dr 1,000.00, VAT 120.00, Cr W/H 10.00, Cr AP 1,110.00.
+>   - A second line, 560.00 on 751000: 1,680.00 payable, VAT 180.00, W/H 15.00, AP 1,665.00.
+>   - Line 1 picked and changed to 2,240.00: replaced; 2,800.00 each way.
+>   - The VAT line picked: the message. Line 1 deleted: recomputed from 560.00 alone (AP 555.00).
+>   - V001 INV-1001 refused: "on invoice voucher 1".
+>   - A new V003 voucher, then New and No: removed; voucher 7 untouched.
+>
+>   **How it was driven:** messages posted to the app's own windows. Keystrokes sent to the foreground window had reached another program when gl.exe wasn't in front, and are no longer used.
+
 **Goal:** purchase invoices are entered with their VAT, W/H and AP lines computed.
 
 ### Tasks

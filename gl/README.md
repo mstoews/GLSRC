@@ -161,6 +161,13 @@ DIR=D:\GL\company.db
   - **Add** checks the required fields, the type (company or individual: it chooses the W/H account), the rates, and the accounts against the chart; it updates an existing vendor after asking.
   - **Delete** is refused while the vendor has vouchers, open items or cheques, naming one.
   - Typing a number and pressing Enter (or **Set Data**) shows the vendor; **Search** shows the list (`GL.INI [AP_VEND]`).
+- **Transactions > Purchase Invoice Vouchers** (1042, Spec #5; also the toolbar's AP voucher button): a vendor's invoice.
+  - **The header:** type the vendor and press Enter to fill in the name, the AP and VAT accounts, the rates, the terms and company or individual; the due date becomes the invoice date plus the terms (a due date you type is kept). Then the invoice number, the document (the voucher's reference) and the period.
+  - **Each Add** saves an expense line: the amount as invoiced (VAT included), the account and dept, a description, and the medical rep, product and doctor. The voucher's VAT, withholding tax and AP lines are recomputed from all its expense lines, so it always balances. With `GL.INI [WITHHOLDING] TAX=F` (the default) VAT is taken out of the amount and W/H is withheld from the payment, on the amount before VAT.
+  - **The Distribution List** shows every line. Double-click an expense line to change it (then Add) or Delete it; the computed lines can't be picked. Changing the rates and adding recomputes every line.
+  - **The same vendor's invoice number** can't be entered twice (any voucher, invoice or cash, not cancelled).
+  - **New and Close** ask whether to keep a voucher made in this session; No removes only that voucher.
+  - Top / Bottom / Next / Previous go through the open vouchers; **Voucher** lists them all, **Vendors** the vendors, **Lists** the accounts.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

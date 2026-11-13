@@ -109,6 +109,8 @@ const DialogCase kDialogs[] = {
     {1001, L"Disposal (TGLFixedDelete)", false, Pics::Main, {1074}},
     // Spec #5 S5-M1.
     {1041, L"Vendors (TAPVendorAdd)", false, Pics::Main, {ID_SETDATA}, {{4082, ID_NEW}, {3043, 4054}}},
+    // Spec #5 S5-M2.
+    {1042, L"Invoice voucher entry (TAPInvoiceEntry)", false, Pics::Main, {1121}, {{3043, 4054}}},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},

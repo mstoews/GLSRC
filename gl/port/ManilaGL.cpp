@@ -3,6 +3,7 @@
 //
 #include "ManilaGL.h"
 
+#include "ApInvoiceEntry.h"
 #include "ApVendors.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
@@ -59,7 +60,6 @@ const WORD kApCommands[] = {
     1085,  // APCancelCash     ID_CASHCANCEL
     1088,  // APPostCash       ID_APPOSTCASH
     3064,  // APCancelBatch    ID_BATCHCANCEL
-    4044,  // APBatch          ID_APBATCH
     4046,  // APDelVendors     ID_DELVENDOR
     4047,  // APModVendors     ID_MODVENDOR
     6085,  // APPayment        ID_PAYMENT
@@ -282,6 +282,9 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
         return true;
     case 4045:                             // TManilaGL::APAddVendors (ID_ADDVENDOR): Accounts > Purchase Vendors (spec #5 S5-M1)
         RunApVendors(hwnd());
+        return true;
+    case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
+        RunApInvoiceEntry(hwnd());
         return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)

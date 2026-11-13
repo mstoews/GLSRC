@@ -487,3 +487,133 @@ TEST_CASE("DeleteVendor refuses a vendor in use (D12)", "[ap]")
     CHECK(DeleteVendor(db.code, "V005", &usedBy) == DeleteVendorResult::InUse);
     CHECK(usedBy == "cash voucher 2");
 }
+
+TEST_CASE("AddDays: the due date (S5-M2)", "[ap]")
+{
+    CHECK(AddDays("20261005", 30) == "20261104");
+    CHECK(AddDays("20261012", 30) == "20261111");
+    CHECK(AddDays("20270215", 15) == "20270302");   // February, not a leap year
+    CHECK(AddDays("20281215", 30) == "20290114");   // over the year end
+    CHECK(AddDays("20280228", 1) == "20280229");    // a leap year
+    CHECK(AddDays("20261005", 0) == "20261005");
+    CHECK(AddDays("", 30).empty());
+    CHECK(AddDays("2026105", 30).empty());
+}
+
+TEST_CASE("SaveExpenseLine / DeleteExpenseLine recompute the voucher (D4)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    const VoucherAccounts acc{{"148000", ""}, {"260004", ""}, {"221002", ""}, "", "", ""};
+
+    // Spec #5 10: a V001 invoice of 1,120.00 in F mode.
+    ApVoucher h;
+    h.vendor = "V001";
+    h.vendorName = "Office Supplies Co.";
+    h.invoiceNo = "INV-1009";
+    h.reference = "Toner";
+    h.invoiceDate = h.date = "20261020";
+    h.dueDate = AddDays(h.invoiceDate, 30);
+    h.period = 7;
+    h.terms = 30;
+    h.vatRate = 12;
+    h.whRate = 1;
+    h.account = {"221002", ""};
+    ExpenseEntry e;
+    e.account = {"501000", ""};
+    e.gross = 112000;
+    const long n = SaveExpenseLine(db.code, h, e, TaxMode::F, acc);
+    CHECK(n == 7);
+    auto v = FindApVoucher(db.code, ApKind::Invoice, n);
+    REQUIRE(v);
+    CHECK(v->mode == ap_mode::kOpen);
+    CHECK(v->payable == 112000);
+    CHECK(v->vatAmount == 12000);
+    CHECK(v->whAmount == -1000);
+    CHECK(v->dueDate == "20261119");
+    auto lines = LoadApLines(db.code, ApKind::Invoice, n);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[0].debit == 100000);   // Dr expense 1,000.00
+    CHECK(lines[0].descript == "COST OF SALES");   // a blank description gets the account's name
+    CHECK(lines[1].debit == 12000);    // Dr VAT 120.00
+    CHECK(lines[1].descript == "PREPAID VAT");
+    CHECK(lines[2].credit == 1000);    // Cr W/H 10.00
+    CHECK(lines[3].credit == 111000);  // Cr AP 1,110.00
+
+    // A second expense line recomputes; the voucher still balances.
+    h.number = n;
+    ExpenseEntry e2;
+    e2.account = {"751000", ""};
+    e2.descript = "Shelving";
+    e2.gross = 56000;
+    e2.medrep = "MR001";
+    e2.product = "P100";
+    e2.drcode = "DR002";
+    CHECK(SaveExpenseLine(db.code, h, e2, TaxMode::F, acc) == n);
+    lines = LoadApLines(db.code, ApKind::Invoice, n);
+    REQUIRE(lines.size() == 5);
+    CHECK(lines[1].descript == "Shelving");
+    CHECK(lines[1].product == "P100");    // D13: each code in its own column
+    CHECK(lines[1].drcode == "DR002");
+    CHECK(lines[1].medrep == "MR001");
+    std::int64_t dr = 0, cr = 0;
+    for (const ApLine& l : lines) {
+        dr += l.debit;
+        cr += l.credit;
+    }
+    CHECK(dr == cr);
+    CHECK(lines[4].credit == 168000 - 1500);   // AP = 1,680.00 - W/H (10.00 + 5.00)
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, n)->payable == 168000);
+
+    // Changing line 1's amount replaces it, not appends.
+    e.line = 1;
+    e.gross = 224000;
+    CHECK(SaveExpenseLine(db.code, h, e, TaxMode::F, acc) == n);
+    lines = LoadApLines(db.code, ApKind::Invoice, n);
+    REQUIRE(lines.size() == 5);
+    CHECK(lines[0].gross == 224000);
+    CHECK(lines[0].debit == 200000);
+    CHECK(FindApVoucher(db.code, ApKind::Invoice, n)->vatAmount == 24000 + 6000);
+
+    // Deleting line 1 recomputes from line 2 alone.
+    CHECK(DeleteExpenseLine(db.code, ApKind::Invoice, n, 1, TaxMode::F, acc));
+    lines = LoadApLines(db.code, ApKind::Invoice, n);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[0].descript == "Shelving");
+    CHECK(lines[1].debit == 6000);
+    v = FindApVoucher(db.code, ApKind::Invoice, n);
+    CHECK(v->payable == 56000);
+    CHECK(v->whAmount == -500);
+    CHECK_FALSE(DeleteExpenseLine(db.code, ApKind::Invoice, n, 2, TaxMode::F, acc));   // the VAT line isn't an expense line
+
+    // Changing the rates on the header recomputes every line with them.
+    h.vatRate = 0;
+    h.whRate = 0;
+    e2.line = 1;
+    CHECK(SaveExpenseLine(db.code, h, e2, TaxMode::F, acc) == n);
+    lines = LoadApLines(db.code, ApKind::Invoice, n);
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[1].credit == 56000);
+
+    // Posted, transferred and cancelled vouchers aren't changed.
+    ApVoucher posted = *FindApVoucher(db.code, ApKind::Invoice, 3);
+    CHECK(SaveExpenseLine(db.code, posted, e, TaxMode::F, acc) == 0);
+    CHECK_FALSE(DeleteExpenseLine(db.code, ApKind::Invoice, 3, 1, TaxMode::F, acc));
+    CHECK(LoadApLines(db.code, ApKind::Invoice, 3).size() == 3);
+}
+
+TEST_CASE("DeleteApVoucher removes only that open voucher (D5)", "[ap]")
+{
+    FixtureDb db;
+    EnsureApTables(db.code);
+    CHECK(DeleteApVoucher(db.code, ApKind::Invoice, 2));
+    CHECK_FALSE(FindApVoucher(db.code, ApKind::Invoice, 2));
+    CHECK(LoadApLines(db.code, ApKind::Invoice, 2).empty());
+    CHECK(LoadApLines(db.code, ApKind::Invoice, 1).size() == 4);   // the others stay, with their roles
+    CHECK(LoadApLines(db.code, ApKind::Invoice, 1)[0].gross == 112000);
+    CHECK(LoadApLines(db.code, ApKind::Cash, 1)[0].gross == 33600);
+    CHECK_FALSE(DeleteApVoucher(db.code, ApKind::Invoice, 3));   // posted
+    CHECK_FALSE(DeleteApVoucher(db.code, ApKind::Invoice, 4));   // cancelled
+    CHECK_FALSE(DeleteApVoucher(db.code, ApKind::Invoice, 99));
+    CHECK(LoadApVouchers(db.code, ApKind::Invoice).size() == 5);
+}
