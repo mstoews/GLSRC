@@ -72,6 +72,7 @@
     <ClCompile Include="src\controls\IntEdit.cpp" />
     <ClCompile Include="src\controls\SuperBtn.cpp" />
     <ClCompile Include="src\controls\Grid.cpp" />
+    <ClCompile Include="src\controls\StatusPane.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

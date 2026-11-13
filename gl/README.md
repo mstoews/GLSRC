@@ -40,6 +40,8 @@ For the Spec #2 voucher screens, the fixture also has:
 - **Archive:** `gl_distb` is empty.
 
 For the Spec #3 reports (S3-M2), it also has a year of activity on 14 more accounts (bank 102201, equipment and depreciation, a loan, share capital, sales, cost of sales, salaries in depts 10 and 20, rent, interest, tax, and 999000 Suspense): twelve posted journals in periods 1–7 with their `gl_dist` lines, one period-6 movement with no lines (F2 marks it `*`), one deleted `gl_dist` line, and prior-year and budget amounts on the income accounts. `make_dev_fixture.py`'s `FINANCE_*` tables list them. Every account satisfies `curr_bal = openbal + period1..12`.
+For Spec #5 (Accounts Payable, S5-M0) it also has three vendors (V001 a company with 12 % VAT and 1 % W/H, V002 an individual with 2 % W/H, V003 with neither), six invoice vouchers (1 and 2 open, 3 posted and unpaid, 4 cancelled, 5 cancelled the original's way, 6 posted and paid by cheque 5001, printed but not cleared), one open cash voucher, and AP's journal for them, not yet transferred to the GL, so no GL balance includes it. `make_dev_fixture.py`'s `accounts_payable()` lists the figures.
+
 - **`GL.INI`:** `[PERIOD] BATCHNO=99`.
 
 To regenerate the `.dbf` files after editing them, run `python3 gl/test/dev-fixture/make_dev_fixture.py`.
@@ -153,6 +155,33 @@ DIR=D:\GL\company.db
   3. Print the Fixed Assets Listing: its check against the ledger should agree.
 
   To undo a run before posting, cancel its voucher. After disposing of an asset, record the entry Disposal gives in Voucher Entry, so the check agrees again.
+- **Accounts > Purchase Vendors** (1041, Spec #5): the Accounts Payable vendors.
+  - **Fields:** number, short name and name, address, phone and fax, contact, VAT number, VAT % and W/H %, company or individual, terms, discount, the vendor's AP account and VAT account, medical rep.
+  - **New** fills in the default AP account (Company Profile > Account Setup, AP) and VAT account (VATR).
+  - **Add** checks the required fields, the type (company or individual: it chooses the W/H account), the rates, and the accounts against the chart; it updates an existing vendor after asking.
+  - **Delete** is refused while the vendor has vouchers, open items or cheques, naming one.
+  - Typing a number and pressing Enter (or **Set Data**) shows the vendor; **Search** shows the list (`GL.INI [AP_VEND]`).
+- **Transactions > Purchase Invoice Vouchers** (1042, Spec #5; also the toolbar's AP voucher button): a vendor's invoice.
+  - **The header:** type the vendor and press Enter to fill in the name, the AP and VAT accounts, the rates, the terms and company or individual; the due date becomes the invoice date plus the terms (a due date you type is kept). Then the invoice number, the document (the voucher's reference) and the period.
+  - **Each Add** saves an expense line: the amount as invoiced (VAT included), the account and dept, a description, and the medical rep, product and doctor. The voucher's VAT, withholding tax and AP lines are recomputed from all its expense lines, so it always balances. With `GL.INI [WITHHOLDING] TAX=F` (the default) VAT is taken out of the amount and W/H is withheld from the payment, on the amount before VAT.
+  - **The Distribution List** shows every line. Double-click an expense line to change it (then Add) or Delete it; the computed lines can't be picked. Changing the rates and adding recomputes every line.
+  - **The same vendor's invoice number** can't be entered twice (any voucher, invoice or cash, not cancelled).
+  - **New and Close** ask whether to keep a voucher made in this session; No removes only that voucher.
+  - Top / Bottom / Next / Previous go through the open vouchers; **Voucher** lists them all, **Vendors** the vendors, **Lists** the accounts.
+- **Transactions > Cash Invoice Vouchers** (1044, also the toolbar's cash button): an invoice paid when it is entered. The same screen as purchase invoices, but the voucher names the **bank** it was paid from (the Bank Account box lists the cash accounts of Company Profile > Cash Accounts) and the cheque number; the bank is credited instead of AP. There is no due date. Post it with **Post Voucher > Cash Vouchers** and cancel it with **Cancel Voucher > Cash Invoice Vouchers**: posting writes the journal (with the cheque number) and no open item, since nothing is owed. Update AR and AP carries it to the General Ledger with the invoices.
+- **Transactions > Post Voucher > Purchase Vouchers** (1047) lists the open invoice vouchers. **OK** posts them all; double-clicking one posts just that one. Posting writes the invoice's open item (ready to pay) and its journal for the General Ledger. A voucher out of balance by a cent, with no lines, or using an account not in the chart is refused with a message.
+- **Transactions > Cancel Voucher > Purchase Vouchers** (1043) lists the open invoice vouchers. Double-click one and confirm: it is kept, marked cancelled.
+- **Transactions > Recover Purchase Voucher** (1015) lists the posted invoice vouchers. Double-click one and confirm to reopen it for editing, removing its open item and journal. A voucher whose journal has gone to the General Ledger, or whose invoice is in a payment, can't be recovered.
+- **Maintenance > Update AR and AP** (1030): AP's posted journal becomes one open General Ledger voucher per period, dated the period's end, with its lines netted by account ("Accounts Payable GL Update"). Post it with Transactions > Post Voucher > General Ledger Voucher. A closed period's rows wait. To undo a transfer before posting, cancel its GL voucher: the rows wait again. (The AR half comes with Spec #6.)
+- **Receipts/Payments > Create Cheques** (1045): pays the invoices due.
+  - The list shows the posted invoices due by the **Due Date**, and any forced, with what each still owes (the amount less the W/H withheld). **Set Date** refreshes it for another date; **View All** shows every open item, paid ones included, with its state (H held, O open, F forced, P cheque made, V printed, C cleared).
+  - **Double-click an invoice** to hold it (it isn't paid until released), force it (paid even if not yet due) or open it again. An invoice already in a payment can't be changed.
+  - **Create**, with the bank chosen and the **Starting Cheque No** (the next free one is filled in): one cheque per vendor for its open invoices due and its forced ones. Each invoice is marked paid with its cheque; the payment's GL entry (Dr AP, Cr the bank) goes in AP's journal, dated the **Pay Date**, in that date's period, which must be open. A cheque number already used is refused.
+- **Receipts/Payments > Print Cheques** previews the cheques made and not yet printed, one a page: the cheque number and date, the payee and address, the amount in figures and words, the bank, and a stub of the invoices it pays. Print them from the preview, on plain paper.
+- **Receipts/Payments > Confirm Printed Cheques** lists the cheques made and not yet confirmed. Enter the range that printed correctly and **Confirm**; they can't be renumbered after that. A spoiled cheque: select it, enter its new number and **Renumber** (the number moves to its invoices and journal), then print it again.
+- **Receipts/Payments > Bank Reconciliation** lists the cheques not yet cleared. Double-click one: **Clear** it (printed cheques only) with the date it cleared, or **Void** it: its invoices are open again, and its payment is undone (its journal rows removed, or reversed with new rows dated the void if they have gone to the General Ledger).
+- **Maintenance > Purge Paid Payables** deletes the cleared invoices paid before a date, and their cheques. Nothing open, unpaid or uncleared is touched.
+- **The AP cycle:** enter the invoice (or cash voucher), post it, create the cheques, print them, confirm them, Update AR and AP, post the GL voucher; clear the cheques from the bank statement; purge the cleared ones now and then.
 - **Reports**: see [Reports](#reports).
 - **Help > About.**
 - **Everything else:**

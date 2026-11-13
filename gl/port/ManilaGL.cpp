@@ -3,6 +3,11 @@
 //
 #include "ManilaGL.h"
 
+#include "ApInvoiceEntry.h"
+#include "ApPayments.h"
+#include "ApPosting.h"
+#include "ApTransfer.h"
+#include "ApVendors.h"
 #include "Company.h"
 #include "ChartOfAccounts.h"
 #include "FixedAssetTypes.h"
@@ -50,20 +55,9 @@ constexpr wchar_t kGleProp[] = L"GL.UseGle";
 // the other handlers in gl_man.h's "Accounts Payable" / "Accounts
 // Receivable" sections are AP / AR. Everything else is General Ledger.
 const WORD kApCommands[] = {
-    1048,  // APPostBatch      ID_APPOSTBATCH
-    1057,  // APCreateGLSlip   ID_GLSLIP
-    1066,  // APPurgeAccts     ID_PURGEACCTS
-    1079,  // APCash           ID_APCASH
     1084,  // APPostAdj        ID_APPOSTADJ
-    1085,  // APCancelCash     ID_CASHCANCEL
-    1088,  // APPostCash       ID_APPOSTCASH
-    3064,  // APCancelBatch    ID_BATCHCANCEL
-    4044,  // APBatch          ID_APBATCH
-    4045,  // APAddVendors     ID_ADDVENDOR
     4046,  // APDelVendors     ID_DELVENDOR
     4047,  // APModVendors     ID_MODVENDOR
-    6085,  // APPayment        ID_PAYMENT
-    8074,  // APChequeAP       CM_CHEQUE_AP
     8079,  // AccountsPayable  CM_ACCOUNT_PAYABLE (an empty handler in gl.cpp)
 };
 const WORD kArCommands[] = {
@@ -87,7 +81,7 @@ constexpr WORD kFixedAssetTypes = 1020;
 // The fixed-asset reports 1019 and 1020 are ported with Spec #4 (S4-M5).
 const WORD kApReports[] = {
     1049, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1077, 1078, 1081, 1082, 1990,
-    4091, 4092,
+    4092,
     8067, 8068, 8069, 8071, 8072, 8073, 8075, 8076, 8077, 8078,
 };
 const WORD kArReports[] = {
@@ -280,6 +274,48 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
     case kFixedAssetTypes:                 // ... > Fixed asset types (GL_FATYP.RPT)
         RunFixedAssetTypes(*this);
         return true;
+    case 4045:                             // TManilaGL::APAddVendors (ID_ADDVENDOR): Accounts > Purchase Vendors (spec #5 S5-M1)
+        RunApVendors(hwnd());
+        return true;
+    case 4044:                             // TManilaGL::APBatch (ID_APBATCH): Transactions > Purchase Invoice Vouchers, toolbar (S5-M2)
+        RunApInvoiceEntry(hwnd());
+        return true;
+    case 4091:                             // Print Cheques (AP_CHEQ.RPT): the cheques made, to print (S5-M6)
+        RunApCheques(*this);
+        return true;
+    case 8074:                             // TManilaGL::APChequeAP: Confirm Printed Cheques (S5-M6, D9)
+        RunApConfirmCheques(hwnd());
+        return true;
+    case 6085:                             // TManilaGL::APPayment: Bank Reconciliation (S5-M6)
+        RunApBankReconciliation(hwnd());
+        return true;
+    case 1066:                             // TManilaGL::APPurgeAccts: Maintenance > Purge Paid Payables (S5-M6)
+        RunApPurge(hwnd());
+        return true;
+    case 1057:                             // TManilaGL::APCreateGLSlip: Receipts/Payments > Create Cheques (S5-M5)
+        RunApCreateCheques(hwnd());
+        return true;
+    case 1079:                             // TManilaGL::APCash: Transactions > Cash Invoice Vouchers, toolbar (S5-M4)
+        RunApCashEntry(hwnd());
+        return true;
+    case 1088:                             // TManilaGL::APPostCash: Post Voucher > Cash Vouchers (S5-M4)
+        RunApPost(hwnd(), ApKind::Cash);
+        return true;
+    case 1085:                             // TManilaGL::APCancelCash: Cancel Voucher > Cash Invoice Vouchers (S5-M4)
+        RunApCancel(hwnd(), ApKind::Cash);
+        return true;
+    case 1048:                             // TManilaGL::APPostBatch: Post Voucher > Purchase Vouchers (S5-M3)
+        RunApPost(hwnd(), ApKind::Invoice);
+        return true;
+    case 3064:                             // TManilaGL::APCancelBatch: Cancel Voucher > Purchase Vouchers (S5-M3)
+        RunApCancel(hwnd(), ApKind::Invoice);
+        return true;
+    case CM_AP_RECOVER:                    // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3)
+        RunApRecover(hwnd(), ApKind::Invoice);
+        return true;
+    case 1028:                             // TGlWindow::GLUpdateAP: Maintenance > Update AR and AP (S5-M3)
+        RunApTransfer(hwnd());
+        return true;
     case ID_MODBATCH:                      // TGlWindow::GLModifyBatch: Transactions > GL Voucher, GLSUB, toolbar
     case ID_BATCHENT:                      // TGlWindow::GLBatchEnt (the same dialog)
         RunVoucherEntry(hwnd());
@@ -442,6 +478,10 @@ bool ManilaGL::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT&)
         if (menu)
             EnableMenuItem(menu, CM_STATEMENT_LAYOUT,
                            MF_BYCOMMAND | ((GetMenuState(menu, ID_ACCTADD, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
+        // Recover Purchase Voucher is behind Recover General Ledger Voucher's access.
+        if (menu)
+            EnableMenuItem(menu, CM_AP_RECOVER,
+                           MF_BYCOMMAND | ((GetMenuState(menu, ID_GLREPBATCH, MF_BYCOMMAND) & MF_GRAYED) ? MF_GRAYED : MF_ENABLED));
         // The voucher list opens Voucher Entry: behind its access.
         if (menu)
             EnableMenuItem(menu, CM_VOUCHER_LIST,

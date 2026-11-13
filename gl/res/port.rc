@@ -132,3 +132,25 @@ STRINGTABLE
 // gl/res/tools/make_icons.py from icons/fluent/map.csv.
 
 #include "icons/fluent/icons.rc"
+
+// ---- Receipts/Payments > Confirm Printed Cheques (spec #5 6.2, D9; plan S5-M6) ----
+// Replaces Set Cheque Numbers (1157), which zapped AP_REQST and renumbered
+// every cheque: the cheques made and not yet confirmed are listed; Confirm
+// marks a range printed, and Renumber gives a spoiled one a new number.
+IDD_AP_CONFIRM DIALOGEX 0, 0, 300, 196
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Confirm Printed Cheques"
+FONT 9, "Segoe UI"
+{
+ LTEXT "Cheques made, not yet confirmed printed:", -1, 7, 7, 200, 9
+ CONTROL "", IDC_APC_GRID, "tbSpread", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 7, 18, 286, 100
+ LTEXT "Printed correctly: cheques &from", -1, 7, 128, 110, 9
+ EDITTEXT IDC_APC_FROM, 120, 126, 46, 13, ES_NUMBER | WS_TABSTOP
+ LTEXT "&to", -1, 172, 128, 12, 9
+ EDITTEXT IDC_APC_TO, 186, 126, 46, 13, ES_NUMBER | WS_TABSTOP
+ DEFPUSHBUTTON "&Confirm", IDOK, 238, 125, 55, 14
+ LTEXT "Spoiled: the selected cheque's &new number", -1, 7, 150, 150, 9
+ EDITTEXT IDC_APC_NEWNO, 160, 148, 46, 13, ES_NUMBER | WS_TABSTOP
+ PUSHBUTTON "&Renumber", IDC_APC_RENUMBER, 238, 147, 55, 14
+ PUSHBUTTON "Close", IDCANCEL, 238, 175, 55, 14
+}

@@ -78,6 +78,10 @@ void RunDoctorCodesListing(fx::MdiFrame& frame);
 void RunFixedAssetListing(fx::MdiFrame& frame);
 void RunFixedAssetTypes(fx::MdiFrame& frame);
 
+// The AP reports (ApReports.h, spec #5 7): 4091 Cheques (S5-M6), the cheques
+// made and not yet printed. No options.
+void RunApCheques(fx::MdiFrame& frame);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5, then every original report), pages through it at every zoom, and closes it. Returns the GDI + USER

@@ -64,6 +64,7 @@ struct DialogCase {
     bool hasGrid;   // contains a tbSpread grid (fx::Grid, Spec #2 S2-M0): checked to hold its ListView
     Pics pics = Pics::None;
     std::vector<int> morePics = {};   // the screen's own SetBitmap calls
+    std::vector<std::pair<int, int>> borrowedPics = {};   // {button, picture}: a picture of another ID
 };
 
 // Spec 6.2 as corrected in M4. The three named in the M4 exit criteria come first.
@@ -106,11 +107,28 @@ const DialogCase kDialogs[] = {
     {4003, L"Create Voucher (TGLCreateDeprSlip)", false, Pics::Main},
     // Spec #4 S4-M4.
     {1001, L"Disposal (TGLFixedDelete)", false, Pics::Main, {1074}},
+    // Spec #5 S5-M1.
+    {1041, L"Vendors (TAPVendorAdd)", false, Pics::Main, {ID_SETDATA}, {{4082, ID_NEW}, {3043, 4054}}},
+    // Spec #5 S5-M2.
+    {1042, L"Invoice voucher entry (TAPInvoiceEntry)", false, Pics::Main, {1121}, {{3043, 4054}}},
+    // Spec #5 S5-M3 (1043 and 1015, the Cancel and Recover lists, are Spec #2's).
+    {1047, L"Post purchase vouchers (TAPPostBatch)", true, Pics::Main},
+    {1030, L"Update AR and AP (TGLAPUpdate)", false, Pics::Main},
+    // Spec #5 S5-M4.
+    {1044, L"Cash voucher entry (TAPCashEntry)", false, Pics::Main, {1121}, {{3043, 4054}}},
+    // Spec #5 S5-M5.
+    {1045, L"Create Cheques (TAPCreatePayment)", true, Pics::Main, {1121}},
+    {1066, L"Hold or Force (TAPHoldForce)", false},
+    // Spec #5 S5-M6.
+    {1046, L"Bank Reconciliation (TAPPayment)", true, Pics::Main},
+    {1051, L"Clear Cancel Cheque (TAPSetChequeNumber)", false},
+    {1048, L"Purge Paid Payables (TAPPurgeBatch)", true, Pics::Main},
     // The port's own (gl/res/port.rc, spec #3 3).
     {IDD_SAMPLE_OPTIONS, L"Sample Report options (port.rc, S3-M1)", false},
     {IDD_TB_OPTIONS, L"Trial balance options (port.rc, S3-M2)", false},
     {IDD_STMT_OPTIONS, L"Financial statement options (port.rc, S3-M3)", false},
     {IDD_STMT_LAYOUT, L"Statement Layout (port.rc, S3-M4)", false},   // its grid is IDC_SL_GRID, not ID_DISTLIST
+    {IDD_AP_CONFIRM, L"Confirm Printed Cheques (port.rc, S5-M6)", false},   // its grid is IDC_APC_GRID
 };
 
 void applyPictures(HWND dlg, const DialogCase& d)
@@ -121,6 +139,8 @@ void applyPictures(HWND dlg, const DialogCase& d)
     if (d.pics == Pics::Main)
         for (const int id : kMainPictures) set(id);
     for (const int id : d.morePics) set(id);
+    for (const auto& [button, picture] : d.borrowedPics)
+        SendDlgItemMessageW(dlg, button, SBM_SETPICT, SUPERBTN_PICT_BITMAP, static_cast<LPARAM>(picture));
 }
 
 bool isChildTemplate(HWND dlg) { return (GetWindowLongPtrW(dlg, GWL_STYLE) & WS_CHILD) != 0; }

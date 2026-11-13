@@ -12,6 +12,7 @@
 #define ID_BOTTOM                4067
 #define ID_CASH                  1031
 #define ID_DATE                  3035
+#define ID_DEBIT                 2030
 #define ID_DELETE                1118
 #define ID_DEPRECIATION          1034
 #define ID_DESCRIPT              2015

@@ -4,7 +4,9 @@
 #include "RunReport.h"
 
 #include "AccountReports.h"
+#include "ApReports.h"
 #include "AssetReports.h"
+#include "../Ap.h"       // EnsureApTables
 #include "../Assets.h"   // EnsureAssetTables
 #include "MasterReports.h"
 #include "ReportOptions.h"
@@ -250,6 +252,12 @@ void RunFixedAssetTypes(fx::MdiFrame& frame)
     RunReport(frame, {}, [](const ReportContext& ctx) { return FixedAssetTypesListing(cb, ctx); });
 }
 
+void RunApCheques(fx::MdiFrame& frame)
+{
+    EnsureApTables(cb);
+    RunReport(frame, {}, [](const ReportContext& ctx) { return ApCheques(cb, ctx); });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -286,6 +294,7 @@ int StressReports(int times)
         [](const ReportContext& ctx) { return DoctorCodesListing(cb, ctx); },
         [](const ReportContext& ctx) { return FixedAssetListing(cb, ctx); },
         [](const ReportContext& ctx) { return FixedAssetTypesListing(cb, ctx); },
+        [](const ReportContext& ctx) { return ApCheques(cb, ctx); },
     };
     auto round = [&] {
         for (const ReportBuilder& b : builders)

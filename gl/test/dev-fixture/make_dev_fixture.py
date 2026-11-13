@@ -362,6 +362,198 @@ def fixed_assets(d):
     ])
 
 
+def accounts_payable(d):
+    """Spec #5 9: the AP tables and the port's AP_LINEX.
+
+    Layouts and tags copy the real AP_* tables (checked 2026-11-13); the rows
+    are made up, in period 7 (Oct 26), F mode (GL.INI [WITHHOLDING] TAX=F).
+    Every AP_JSUM row is waiting ("1"), not transferred, so no GL balance
+    moves. AP_LINEX holds the lines' roles and typed amounts for the vouchers
+    the port would have written; invoice 3 and the migrated-style invoice 5
+    have none, as the deployed vouchers, so LoadApLines classifies them.
+
+      invoice 1  open        V001 INV-1001  501000 1,120.00 -> 1,000.00 + VAT 120.00; W/H 10.00; AP 1,110.00
+      invoice 2  open        V001 INV-1002  501000 560.00 + 751000 224.00 -> 700.00 + VAT 84.00; W/H 7.00; AP 777.00
+      invoice 3  posted      V002 INV-2001  731000-20 5,000.00, no VAT, W/H 2 % 100.00; AP 4,900.00; open item "O"
+      invoice 4  cancelled   V003 INV-3001  751000 1,500.00 ("X", lines kept)
+      invoice 5  "2" + "Cancelled": the original's cancel, migrated to "X" by EnsureApTables
+      invoice 6  posted      V003 INV-3002  751000 1,200.00; paid by cheque 5001 (102101), printed ("V"), not cleared
+      cash 1     open        V001 INV-1003  501000 336.00 -> 300.00 + VAT 36.00; W/H 3.00; bank 102101 333.00
+    """
+    vend_fields = [
+        ("VENDORNO", "C", 6, 0), ("VDSHORT", "C", 12, 0), ("VDNAME", "C", 40, 0), ("ADDRESS1", "C", 30, 0),
+        ("ADDRESS2", "C", 30, 0), ("ADDRESS3", "C", 30, 0), ("POSTAL", "C", 7, 0), ("PHONE", "C", 16, 0),
+        ("FAX", "C", 16, 0), ("DEPART", "C", 4, 0), ("ACCOUNT", "C", 7, 0), ("VAT_DEPT", "C", 4, 0),
+        ("VAT_ACCT", "C", 7, 0), ("AP_ACCT", "C", 7, 0), ("AP_DEPT", "C", 4, 0), ("DESCRIPT", "C", 40, 0),
+        ("CONTACT", "C", 12, 0), ("TYPE", "C", 3, 0), ("MEDREP", "C", 6, 0), ("STATUS", "C", 3, 0),
+        ("TERMS", "N", 3, 0), ("VAT", "N", 1, 0), ("FIVE", "N", 1, 0), ("THREE", "N", 1, 0),
+        ("PERCENTAGE", "N", 2, 0), ("REBATE", "N", 2, 0), ("VIN", "C", 10, 0), ("DIS_DAYS", "N", 2, 0),
+        ("DIS_PERCT", "N", 2, 0)]
+
+    def vendor(no, short, name, typ, vat, wh, terms, contact):
+        return (no, short, name, "2 Supplier Lane", None, "Vancouver BC", "V6B1A2", "(604) 555 - 0150", None,
+                None, "221002", None, "148000", None, None, None, contact, typ, None, "ACT",
+                terms, 0, 0, 0, vat, wh, "123-456-78", 0, 0)
+    dbf(os.path.join(d, "AP_VEND.DBF"), vend_fields, [
+        vendor("V001", "OFFICESUP", "Office Supplies Co.", "C", 12, 1, 30, "M. Reyes"),
+        vendor("V002", "SANTOS", "J. Santos (consultant)", "I", 0, 2, 15, "J. Santos"),
+        vendor("V003", "LANDLORD", "City Landlord Inc.", "C", 0, 0, 30, "Leasing"),
+    ], mdx=True)
+    mdx(os.path.join(d, "AP_VEND.MDX"), "AP_VEND", [("VENDORNO", "VENDORNO", "C", False, False, "")])
+
+    def head_fields(cash):
+        f = [("BATCHNO", "N", 6, 0), ("MODE", "C", 1, 0), ("TYPE", "C", 2, 0), ("ADJ", "C", 1, 0),
+             ("PERIOD", "N", 2, 0), ("VENDORNO", "C", 6, 0), ("VDNAME", "C", 40, 0),
+             ("INVOICENO", "C", 10 if cash else 8, 0)]
+        if cash:
+            f.append(("CHEQUENO", "C", 10, 0))
+        f += [("ORDERNO", "C", 10, 0), ("DUEDATE", "D", 8, 0), ("INVDATE", "D", 8, 0), ("REFERENCE", "C", 40, 0),
+              ("DESCRIPT", "C", 40, 0), ("DATE", "D", 8, 0), ("ACCOUNT", "C", 7, 0), ("DEPART", "C", 4, 0),
+              ("PAYABLE", "N", 16, 2), ("REBATEAMT", "N", 16, 2), ("ENTRYNO", "N", 3, 0),
+              ("VATPERCENT", "N", 2, 0), ("REBATE", "N", 2, 0), ("TERMS", "N", 3, 0), ("VATAMT", "N", 16, 2)]
+        f += [("VATACCT", "C", 7, 0), ("VATDEPT", "C", 4, 0)] if cash else [("ADJAMT", "N", 16, 2)]
+        return f
+
+    def line_fields(cash):
+        return [("BATCHNO", "N", 6, 0), ("ENTRYNO", "N", 3, 0), ("DESCRIPT", "C", 40, 0), ("MEDREP", "C", 5, 0),
+                ("DRCODES" if cash else "DRCODE", "C", 5, 0), ("PRODUCT", "C", 7, 0), ("ACCOUNT", "C", 7, 0),
+                ("DEPT", "C", 4, 0), ("DEBIT", "N", 14, 2), ("CREDIT", "N", 14, 2)]
+
+    def head_tags(name):
+        return [("ACCOUNT", "ACCOUNT+DEPART", "C", False, False, ""),
+                ("BATCHNO", "BATCHNO", "N", False, False, ""),
+                ("INVOICENO", "VENDORNO+INVOICENO", "C", False, False, ""),
+                ("RECNO", "RECNO()", "N", False, False, "")]
+
+    line_tags = [("BATCHNO", "BATCHNO", "N", False, False, ""), ("RECNO", "RECNO()", "N", False, False, "")]
+
+    # (batchno, mode, period, vendor, name, invoice, due, invdate, reference, date, ap account,
+    #  payable, rebateamt, lines, vat %, w/h %, terms, vatamt)
+    def inv(no, mode, vend, name, invoice, due, invdate, ref, payable, wh, lines, vat_pct, wh_pct, terms, vat):
+        return (no, mode, None, None, 7, vend, name, invoice, None, due, invdate, ref, None, invdate,
+                "221002", None, payable, wh, lines, vat_pct, wh_pct, terms, vat, 0.0)
+    dbf(os.path.join(d, "AP_BTCH.DBF"), head_fields(False), [
+        inv(1, "1", "V001", "Office Supplies Co.", "INV-1001", "20261104", "20261005", "Paper and toner",
+            1120.0, -10.0, 4, 12, 1, 30, 120.0),
+        inv(2, "1", "V001", "Office Supplies Co.", "INV-1002", "20261111", "20261012", "Stock and office items",
+            784.0, -7.0, 5, 12, 1, 30, 84.0),
+        inv(3, "0", "V002", "J. Santos (consultant)", "INV-2001", "20261016", "20261001", "Consulting, September",
+            5000.0, -100.0, 3, 0, 2, 15, 0.0),
+        inv(4, "X", "V003", "City Landlord Inc.", "INV-3001", "20261031", "20261001", "Rent entered twice",
+            1500.0, 0.0, 2, 0, 0, 30, 0.0),
+        inv(5, "2", "V003", "City Landlord Inc.", "INV-3000", "20261031", "20261001", "Cancelled",
+            0.0, 0.0, 2, 0, 0, 30, 0.0),
+        inv(6, "0", "V003", "City Landlord Inc.", "INV-3002", "20261101", "20261002", "Rent, October",
+            1200.0, 0.0, 2, 0, 0, 30, 0.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AP_BTCH.MDX"), "AP_BTCH", head_tags("AP_BTCH"))
+
+    def line(no, entry, desc, acct, dept, dr, cr):
+        return (no, entry, desc, None, None, None, acct, dept, dr, cr)
+    dbf(os.path.join(d, "AP_BTCHD.DBF"), line_fields(False), [
+        line(1, 1, "COST OF SALES", "501000", None, 1000.0, 0.0),
+        line(1, 2, "PREPAID VAT", "148000", None, 120.0, 0.0),
+        line(1, 3, "WITHHOLDING TAX PAYABLE", "260004", None, 0.0, 10.0),
+        line(1, 4, "ACCOUNTS PAYABLE - TRADE", "221002", None, 0.0, 1110.0),
+        line(2, 1, "COST OF SALES", "501000", None, 500.0, 0.0),
+        line(2, 2, "OFFICE RENT", "751000", None, 200.0, 0.0),
+        line(2, 3, "PREPAID VAT", "148000", None, 84.0, 0.0),
+        line(2, 4, "WITHHOLDING TAX PAYABLE", "260004", None, 0.0, 7.0),
+        line(2, 5, "ACCOUNTS PAYABLE - TRADE", "221002", None, 0.0, 777.0),
+        line(3, 1, "SALARIES - GENERAL", "731000", "20", 5000.0, 0.0),
+        line(3, 2, "WITHHOLDING TAX PAYABLE", "260004", None, 0.0, 100.0),
+        line(3, 3, "ACCOUNTS PAYABLE - TRADE", "221002", None, 0.0, 4900.0),
+        line(4, 1, "OFFICE RENT", "751000", None, 1500.0, 0.0),
+        line(4, 2, "ACCOUNTS PAYABLE - TRADE", "221002", None, 0.0, 1500.0),
+        line(5, 1, "Cancelled", "751000", None, 0.0, 0.0),
+        line(5, 2, "Cancelled", "221002", None, 0.0, 0.0),
+        line(6, 1, "OFFICE RENT", "751000", None, 1200.0, 0.0),
+        line(6, 2, "ACCOUNTS PAYABLE - TRADE", "221002", None, 0.0, 1200.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AP_BTCHD.MDX"), "AP_BTCHD", line_tags)
+
+    dbf(os.path.join(d, "AP_CASH.DBF"), head_fields(True), [
+        (1, "1", None, None, 7, "V001", "Office Supplies Co.", "INV-1003", "000123", None, "20261020",
+         "20261020", "Supplies paid at the counter", None, "20261020", "102101", None, 336.0, -3.0, 4, 12, 1, 30,
+         36.0, "148000", None),
+    ], mdx=True)
+    mdx(os.path.join(d, "AP_CASH.MDX"), "AP_CASH", head_tags("AP_CASH"))
+    dbf(os.path.join(d, "AP_CASHD.DBF"), line_fields(True), [
+        line(1, 1, "COST OF SALES", "501000", None, 300.0, 0.0),
+        line(1, 2, "PREPAID VAT", "148000", None, 36.0, 0.0),
+        line(1, 3, "WITHHOLDING TAX PAYABLE", "260004", None, 0.0, 3.0),
+        line(1, 4, "CHECKING ACCOUNT", "102101", None, 0.0, 333.0),
+    ], mdx=True)
+    mdx(os.path.join(d, "AP_CASHD.MDX"), "AP_CASHD", line_tags)
+
+    # The port's line roles and typed amounts (Ap.h): E expense, V VAT, W W/H, C credit.
+    linex = [("I", 1, 1, "E", 1120.0), ("I", 1, 2, "V", 0.0), ("I", 1, 3, "W", 0.0), ("I", 1, 4, "C", 0.0),
+             ("I", 2, 1, "E", 560.0), ("I", 2, 2, "E", 224.0), ("I", 2, 3, "V", 0.0), ("I", 2, 4, "W", 0.0),
+             ("I", 2, 5, "C", 0.0),
+             ("I", 4, 1, "E", 1500.0), ("I", 4, 2, "C", 0.0),
+             ("I", 6, 1, "E", 1200.0), ("I", 6, 2, "C", 0.0),
+             ("C", 1, 1, "E", 336.0), ("C", 1, 2, "V", 0.0), ("C", 1, 3, "W", 0.0), ("C", 1, 4, "C", 0.0)]
+    dbf(os.path.join(d, "AP_LINEX.DBF"),
+        [("KIND", "C", 1, 0), ("BATCHNO", "N", 6, 0), ("ENTRYNO", "N", 3, 0), ("ROLE", "C", 1, 0),
+         ("GROSS", "N", 16, 2)], linex, mdx=True)
+    mdx(os.path.join(d, "AP_LINEX.MDX"), "AP_LINEX", [("BATCHNO", "BATCHNO", "N", False, False, "")])
+
+    dbf(os.path.join(d, "AP_DIST.DBF"),
+        [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("APACCOUNT", "C", 7, 0), ("APDEPART", "C", 4, 0),
+         ("PERIOD", "N", 2, 0), ("DATE", "D", 8, 0), ("DUEDATE", "D", 8, 0), ("BATCHNO", "N", 6, 0),
+         ("INVOICENO", "C", 8, 0), ("PAYMENTCTL", "C", 1, 0), ("VENDORNO", "C", 6, 0), ("CHEQUENO", "N", 10, 0),
+         ("REFERENCE", "C", 40, 0), ("DESCRIPT", "C", 40, 0), ("AMOUNT", "N", 16, 2), ("REBATEAMT", "N", 16, 2),
+         ("AMOUNTPAID", "N", 16, 2), ("PAYMENTREQ", "N", 10, 0), ("DATEPAID", "D", 8, 0), ("VATAMT", "N", 16, 2),
+         ("ADJUSTMENT", "N", 16, 2), ("REBATE", "C", 2, 0)],
+        [(None, None, "221002", None, 7, "20261001", "20261016", 3, "INV-2001", "O", "V002", 0,
+          "Consulting, September", None, 5000.0, -100.0, 0.0, 0, None, 0.0, 0.0, None),
+         ("102101", None, "221002", None, 7, "20261002", "20261101", 6, "INV-3002", "V", "V003", 5001,
+          "Rent, October", None, 1200.0, 0.0, 1200.0, 0, "20261015", 0.0, 0.0, None)], mdx=True)
+    mdx(os.path.join(d, "AP_DIST.MDX"), "AP_DIST", [
+        ("ACCOUNT", "ACCOUNT", "C", False, False, ""),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+        ("CHEQUENO", "CHEQUENO", "N", False, False, ""),
+        ("CHEQUES", "VENDORNO", "C", False, False, 'PAYMENTCTL="P"'),
+        ("DEPT", "DEPT", "C", False, False, ""),
+        ("INVOICENO", "VENDORNO+INVOICENO", "C", False, False, ""),
+        ("PAYMENTREQ", "PAYMENTREQ", "N", False, False, ""),
+        ("VENDORNO", "VENDORNO", "C", False, False, ""),
+    ])
+
+    dbf(os.path.join(d, "AP_REQST.DBF"),
+        [("VENDORNO", "C", 6, 0), ("PAYMENTREQ", "N", 10, 0), ("REFERENCE", "C", 20, 0),
+         ("AMOUNTPAID", "N", 16, 2), ("DATEPAID", "D", 8, 0), ("CHEQUE", "N", 10, 0), ("BANKACCT", "C", 7, 0),
+         ("BANKDEPT", "C", 4, 0), ("CLEARED", "C", 1, 0)],
+        [("V003", 0, "Rent, October", 1200.0, "20261015", 5001, "102101", None, None)], mdx=True)
+    mdx(os.path.join(d, "AP_REQST.MDX"), "AP_REQST", [
+        ("PAYMENTREQ", "PAYMENTREQ", "N", False, False, ""),
+        ("VENDORNO", "VENDORNO", "C", False, False, ""),
+    ])
+
+    # AP's journal, all waiting: invoices 3 and 6, and invoice 6's payment.
+    def jsum(acct, dept, date, batch, ref, cheque, desc, dr, cr):
+        return (acct, dept, " 7", "1", date, "AP", batch, ref, cheque, desc, dr, cr)
+    dbf(os.path.join(d, "AP_JSUM.DBF"),
+        [("ACCOUNT", "C", 7, 0), ("DEPT", "C", 4, 0), ("PERIOD", "C", 4, 0), ("MODE", "C", 1, 0),
+         ("DATE", "D", 8, 0), ("TYPE", "C", 3, 0), ("BATCHNO", "N", 6, 0), ("REFERENCE", "C", 30, 0),
+         ("CHEQUE", "C", 7, 0), ("DESCRIPT", "C", 40, 0), ("DEBIT", "N", 16, 2), ("CREDIT", "N", 16, 2)],
+        [jsum("731000", "20", "20261001", 3, "Consulting, September", None, "SALARIES - GENERAL", 5000.0, 0.0),
+         jsum("260004", None, "20261001", 3, "Consulting, September", None, "WITHHOLDING TAX PAYABLE", 0.0, 100.0),
+         jsum("221002", None, "20261001", 3, "Consulting, September", None, "ACCOUNTS PAYABLE - TRADE", 0.0, 4900.0),
+         jsum("751000", None, "20261002", 6, "Rent, October", None, "OFFICE RENT", 1200.0, 0.0),
+         jsum("221002", None, "20261002", 6, "Rent, October", None, "ACCOUNTS PAYABLE - TRADE", 0.0, 1200.0),
+         jsum("221002", None, "20261015", 6, "Rent, October", "5001", "ACCOUNTS PAYABLE - TRADE", 1200.0, 0.0),
+         jsum("102101", None, "20261015", 6, "Rent, October", "5001", "CHECKING ACCOUNT", 0.0, 1200.0)],
+        mdx=True)
+    mdx(os.path.join(d, "AP_JSUM.MDX"), "AP_JSUM", [
+        ("ACCOUNT", "ACCOUNT+DEPT", "C", False, False, ""),
+        ("APDIST", "BATCHNO", "N", False, False, 'TYPE="AP "'),
+        ("ARDIST", "BATCHNO", "N", False, False, 'TYPE="AR "'),
+        ("BATCHNO", "BATCHNO", "N", False, False, ""),
+        ("DESCRIPT", "DESCRIPT", "C", False, False, ""),
+    ])
+
+
 def main():
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT)
@@ -486,6 +678,7 @@ def main():
 
     vouchers(d)
     fixed_assets(d)
+    accounts_payable(d)
 
     print(f"dev fixture written to {OUT}: {len(items)} accessm rows")
 

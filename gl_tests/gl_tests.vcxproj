@@ -55,6 +55,7 @@
     <ClInclude Include="..\gl\port\db_gl_dist.h" />
     <ClInclude Include="..\gl\port\db_gl_distb.h" />
     <ClInclude Include="..\gl\port\MasterTables.h" />
+    <ClInclude Include="..\gl\port\Ap.h" />
     <ClInclude Include="..\gl\port\Assets.h" />
     <ClInclude Include="..\gl\port\Vouchers.h" />
     <ClInclude Include="..\gl\port\CompanyFiles.h" />
@@ -67,6 +68,7 @@
     <ClInclude Include="..\gl\port\reports\AccountReports.h" />
     <ClInclude Include="..\gl\port\reports\VoucherReports.h" />
     <ClInclude Include="..\gl\port\reports\MasterReports.h" />
+    <ClInclude Include="..\gl\port\reports\ApReports.h" />
     <ClInclude Include="..\gl\port\reports\AssetReports.h" />
   </ItemGroup>
   <ItemGroup>
@@ -85,10 +87,12 @@
     <ClCompile Include="test_reports_vouchers.cpp" />
     <ClCompile Include="test_reports_master.cpp" />
     <ClCompile Include="test_reports_assets.cpp" />
+    <ClCompile Include="test_ap.cpp" />
     <ClCompile Include="test_assets.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
     <ClCompile Include="..\gl\port\MasterTables.cpp" />
+    <ClCompile Include="..\gl\port\Ap.cpp" />
     <ClCompile Include="..\gl\port\Assets.cpp" />
     <ClCompile Include="..\gl\port\Vouchers.cpp" />
     <ClCompile Include="..\gl\port\CompanyFiles.cpp" />
@@ -101,6 +105,7 @@
     <ClCompile Include="..\gl\port\reports\AccountReports.cpp" />
     <ClCompile Include="..\gl\port\reports\VoucherReports.cpp" />
     <ClCompile Include="..\gl\port\reports\MasterReports.cpp" />
+    <ClCompile Include="..\gl\port\reports\ApReports.cpp" />
     <ClCompile Include="..\gl\port\reports\AssetReports.cpp" />
   </ItemGroup>
   <ItemGroup>

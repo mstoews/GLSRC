@@ -44,6 +44,12 @@
   <ItemGroup>
     <ClInclude Include="port\AccountList.h" />
     <ClInclude Include="port\Accounts.h" />
+    <ClInclude Include="port\Ap.h" />
+    <ClInclude Include="port\ApInvoiceEntry.h" />
+    <ClInclude Include="port\ApPayments.h" />
+    <ClInclude Include="port\ApPosting.h" />
+    <ClInclude Include="port\ApTransfer.h" />
+    <ClInclude Include="port\ApVendors.h" />
     <ClInclude Include="port\Assets.h" />
     <ClInclude Include="port\Backup.h" />
     <ClInclude Include="port\ChartOfAccounts.h" />
@@ -76,6 +82,7 @@
     <ClInclude Include="port\db_gl_dist.h" />
     <ClInclude Include="port\db_gl_distb.h" />
     <ClInclude Include="port\reports\AccountReports.h" />
+    <ClInclude Include="port\reports\ApReports.h" />
     <ClInclude Include="port\reports\AssetReports.h" />
     <ClInclude Include="port\reports\Balances.h" />
     <ClInclude Include="port\reports\MasterReports.h" />
@@ -95,6 +102,12 @@
   <ItemGroup>
     <ClCompile Include="port\AccountList.cpp" />
     <ClCompile Include="port\Accounts.cpp" />
+    <ClCompile Include="port\Ap.cpp" />
+    <ClCompile Include="port\ApInvoiceEntry.cpp" />
+    <ClCompile Include="port\ApPayments.cpp" />
+    <ClCompile Include="port\ApPosting.cpp" />
+    <ClCompile Include="port\ApTransfer.cpp" />
+    <ClCompile Include="port\ApVendors.cpp" />
     <ClCompile Include="port\App.cpp" />
     <ClCompile Include="port\Assets.cpp" />
     <ClCompile Include="port\Backup.cpp" />
@@ -122,6 +135,7 @@
     <ClCompile Include="port\Vouchers.cpp" />
     <ClCompile Include="port\YearEnd.cpp" />
     <ClCompile Include="port\reports\AccountReports.cpp" />
+    <ClCompile Include="port\reports\ApReports.cpp" />
     <ClCompile Include="port\reports\AssetReports.cpp" />
     <ClCompile Include="port\reports\Balances.cpp" />
     <ClCompile Include="port\reports\MasterReports.cpp" />

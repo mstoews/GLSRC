@@ -39,7 +39,17 @@ DIALOGS = ['1008', '1010', '1011', '1021', '1028', '1032', '1033', '1034', '1035
            '4002',   # Spec #4 S4-M1: Asset Types
            '4004',   # Spec #4 S4-M2: Fixed Assets Add/Modify
            '4003',   # Spec #4 S4-M3: Create Voucher (the depreciation run)
-           '1001']   # Spec #4 S4-M4: Disposal
+           '1001',   # Spec #4 S4-M4: Disposal
+           '1041',   # Spec #5 S5-M1: Vendors
+           '1042',   # Spec #5 S5-M2: Invoice voucher entry
+           '1047',   # Spec #5 S5-M3: Post purchase vouchers
+           '1030',   # Spec #5 S5-M3: Update AR and AP
+           '1044',   # Spec #5 S5-M4: Cash voucher entry
+           '1045',   # Spec #5 S5-M5: Create Cheques (only in gl.rc)
+           '1066',   # Spec #5 S5-M5: Hold or Force
+           '1046',   # Spec #5 S5-M6: Bank Reconciliation
+           '1051',   # Spec #5 S5-M6: Clear Cancel Cheque
+           '1048']   # Spec #5 S5-M6: Purge Paid Payables
 MENUS = ['MANILA', 'GLE', 'GLSUB']
 
 # The port's changes to those menus (spec #3 3: D13 and the new items), made
@@ -63,6 +73,11 @@ MENU_EDITS = [
     ('MANILA', 'insert_after', '10071', '"Statement &Layout...", CM_STATEMENT_LAYOUT'),
     # Transactions > Voucher List: every voucher in an MDI grid (gl/port/VoucherBrowser.h).
     ('MANILA', 'insert_after', '10076', '"Voucher &List...", CM_VOUCHER_LIST'),
+    # Spec #5 D7 (S5-M3): Recover for purchase vouchers, beside the GL's.
+    ('MANILA', 'insert_after', '10122', '"Recover P&urchase Voucher...", CM_AP_RECOVER'),
+    # Spec #5 S5-M6: Confirm Printed replaces Set Cheque Numbers (D9); Purge goes on the menu (spec 6.4).
+    ('MANILA', 'rename', '8074', '"Confirm Printed &Cheques..."'),
+    ('MANILA', 'insert_after', '1068', '"Purge &Paid Payables...", 1066'),
 ]
 
 STRIP = re.compile(r'\s+\b(LOADONCALL|PRELOAD|MOVEABLE|FIXED|DISCARDABLE|PURE|IMPURE)\b', re.I)
@@ -306,6 +321,10 @@ PATCHES = {
     ('1013', '"Cheque No."'): 4,      # wraps to 26 px high, room 20 px; its field is at x 50
     # Recover / Post (1015): the voucher number is at x 250.
     ('1015', '"Posting Voucher Number :"'): 16,   # wraps to 30 px high, room 15 px
+    # Vendors (1041, S5-M1): the W/H field follows at once; "VAT %" is beside it.
+    ('1041', '"W/H Tax percentage"'): (0, 0, '"W/H %"'),   # text 59 px, room 58 px
+    # Create Cheques (1045, S5-M5): the date field follows at once; "Due Date" is above it.
+    ('1045', '"Payment Date"'): (0, 0, '"Pay Date"'),   # wraps to 30 px high, room 15 px
 }
 CONTROL_LINE = re.compile(r'^(\s*)(\w+)\s+("(?:[^"]|"")*")\s*,\s*([^,]+?)\s*,\s*(.*)$')
 DIALOG_HEAD = re.compile(r'^(\S+\s+DIALOG\s+)(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)(.*)$', re.I)
@@ -355,10 +374,17 @@ def patch_dialog(name, lines):
 
 
 # ---- emit -----------------------------------------------------------------
+# RADIOBUTTON already has BS_RADIOBUTTON (4); OR-ed with BS_AUTORADIOBUTTON (9)
+# it is 0xD, BS_SPLITBUTTON on Win32 (Win16 had none), so the buttons drew as
+# split buttons that never show a check (dialog 1041, S5-M1). What was meant:
+RADIO_AUTO = re.compile(r'^(\s*)RADIOBUTTON(\s.*?),\s*BS_AUTORADIOBUTTON\s*$')
+
+
 def clean(block, dialog=None):
     out = [STRIP.sub('', block[0]).rstrip()] + [l.rstrip() for l in block[1:]]
     if dialog is not None:
         out = patch_dialog(dialog, out)
+        out = [RADIO_AUTO.sub(r'\1AUTORADIOBUTTON\2', l) for l in out]
     return out
 
 # A control line's ID: the first field, or the second when the first is its text.

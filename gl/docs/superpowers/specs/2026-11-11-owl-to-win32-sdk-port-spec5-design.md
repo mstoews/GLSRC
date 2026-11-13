@@ -156,7 +156,7 @@ Checked against the deployed company (`dbf/`):
 - **Everything else is test data from March 1995:**
   - 9 invoice vouchers, all period 2, with references like "SAMPLE INVOICE" and "Sample cheque printing";
   - 1 cash voucher ("TEST INVOICE NO. 1");
-  - 3 cheques (29145–29147), all marked cleared.
+  - 3 cheques (29145–29147). Their `AP_REQST.CLEARED` is "1", which the original's `Tapreqst::bCleared` reads as *not* cleared (it means cleared when "0"; `AddCheque` writes "1" for a new cheque). Six of the invoices they paid are marked "C" in `AP_DIST` (found in S5-M6).
 - **The 40 `AP_JSUM` rows were transferred:** their effect is in the GL balances. For example, 102101 is −36,500.00, and 711000 clinical-trial samples is 16,000.00.
 - **No AP-typed line is in `GL_DIST`.**
 
@@ -204,6 +204,7 @@ All amounts are in cents (`rpt::ToCents`), as Spec #2 D12.
   - one AP line on the voucher's AP account (Cr): F: Σa − W/H; T: Σa.
 
   The voucher always balances to the cent; rounding stays in the VAT/W/H lines (D4).
+- **The typed amounts are kept** (found in S5-M0). The lines store each expense's net, and the gross can't be recovered from it: VAT rounding maps two grosses to one net (at 12 %, 11.24 and 11.25 both give 10.04). Nor can a line's role be told from its account alone, since in T mode W/H is a debit like VAT. So a port table, `AP_LINEX` (kind, voucher, line, role, gross), keeps each line's role and an expense line's typed amount, as Spec #4 kept its run history in `gl_fadep`. The deployed vouchers have no rows there; their lines are classified by the header's VAT and W/H amounts, and an expense line's gross is computed back from its net.
 - **The mode** is the Company Profile setting (`GL.INI [WITHHOLDING] TAX`), as in the original. Its default is "F" when the key is missing (the original's "T" default contradicts the deployed `gl.ini`; Q2).
 
 ### 4.2 The entry screen (1042)
@@ -224,15 +225,16 @@ The Spec #2 Voucher Entry pattern:
   - its `AP_JSUM` rows (`TYPE` "AP", the voucher's period and invoice date);
   - `MODE` "0".
 - **Cancel** lists the open vouchers. It marks the voucher cancelled, `MODE` "X" (D3), keeping its lines for the record.
-- **Recover** (new, on the Post list's sibling: Transactions > Recover Voucher > Purchase Vouchers) reopens a posted voucher whose journal isn't yet transferred and whose invoice isn't in a payment. It removes its `AP_DIST` row and its `AP_JSUM` rows, and sets `MODE` "1".
+- **Recover** (new: Transactions > Recover Purchase Voucher, beside Recover General Ledger Voucher) reopens a posted voucher whose journal isn't yet transferred and whose invoice isn't in a payment. It removes its `AP_DIST` row and its `AP_JSUM` rows, and sets `MODE` "1".
 
 ### 4.4 The transfer (1028, D2)
 
 Maintenance > **Update AR and AP**:
 - `AP_JSUM` rows with `MODE` "1" become **one GL voucher per period** (Spec #2 `SaveLine`, mode 1, numbered `NextVoucherNumber`). Its lines are netted by account and dept, it is dated the period's end, and its description is "Accounts Payable GL Update" (1049).
 - A period that is closed in `gl_pds` is reported and left untransferred, rather than moved into another period.
-- The rows get `MODE` "2", and the GL voucher's number is recorded with them. `AP_JSUM` has no field for it, so where it is kept is settled in plan S5-M3, as Spec #4 kept its run history in a table of its own (`gl_fadep`). Posted invoice and cash vouchers get `MODE` "2" (transferred).
-- The GL vouchers post with Spec #2's Post Voucher; Cancel Voucher on one sets its rows back to "1" (as Spec #4's undo).
+- The rows get `MODE` "2", and the GL voucher's number is recorded with them. `AP_JSUM` has no field for it, so a port table, **`AP_XFER`** (the `AP_JSUM` row, the GL voucher, the period), holds it, as Spec #4 kept its run history in `gl_fadep` (settled in S5-M3). The link is the row's record number: a transferred row is never deleted (Recover removes only waiting rows, and a pack doesn't renumber). Posted invoice and cash vouchers whose rows are all transferred get `MODE` "2".
+- The GL vouchers post with Spec #2's Post Voucher; Cancel Voucher on one sets its rows back to "1", and their vouchers back to "0" (as Spec #4's undo).
+- A period with no end date in `GL_PDS` is reported and left waiting too.
 
 ---
 
@@ -268,7 +270,7 @@ Maintenance > **Update AR and AP**:
 ### 6.3 Bank Reconciliation (6085, 1046)
 
 - **The list:** the printed cheques not yet cleared, by bank.
-- **Clear:** double-click one, or select several, to clear it ("C", `AP_REQST.CLEARED`), with the clearing date.
+- **Clear:** double-click one to clear it: its invoices get "C" and `AP_REQST.CLEARED` "0" (the original's meaning), with the clearing date kept in the cheque's reference (`AP_REQST` has no date field for it).
 - **Void a cheque (new):** for a cheque not cleared. It reverses the payment's `AP_JSUM` rows (or, if transferred, writes reversing rows) and returns its invoices to "O".
 
 ### 6.4 Purge (1066)
@@ -312,7 +314,7 @@ On Spec #3's engine; all in the report list. Accounts come from `GL_SETAT`, not 
 | D1 | **Port AP, fixing the cycle.** Screens keep their templates, IDs and strings where they work. | AP was never run in production (§2.7); as written, invoices can't be paid and reconciled reliably (§2.6). |
 | D2 | **The transfer makes one GL voucher per period**, dated its end, from the rows' own periods. Closed periods are reported, not moved. Cash vouchers are marked transferred too. | §2.6 #8. The GL must show AP activity in the period it happened. |
 | D3 | **Separate modes:** "1" open, "0" posted, "2" transferred, "X" cancelled. Migrated "2" rows whose reference is "Cancelled" become "X". | §2.6 #2. |
-| D4 | **One set of VAT/W/H formulas in cents.** The voucher's VAT, W/H and AP lines are recomputed from its expense lines. Rates are whole percentages, 0 meaning none. | §2.6 #4–6. |
+| D4 | **One set of VAT/W/H formulas in cents.** The voucher's VAT, W/H and AP lines are recomputed from its expense lines, whose typed amounts are kept in `AP_LINEX` (§4.1). Rates are whole percentages, 0 meaning none. | §2.6 #4–6. |
 | D5 | **"No" to saving removes only a voucher created in this session**, as Spec #2's Voucher Entry. | §2.6 #4. |
 | D6 | **The duplicate check works:** the same vendor and invoice number in any voucher not cancelled, invoice or cash. | §2.6 #1. |
 | D7 | **Recover** reopens a posted, untransferred, unpaid voucher, removing exactly its own `AP_DIST` and `AP_JSUM` rows. | §2.6 #3. |
