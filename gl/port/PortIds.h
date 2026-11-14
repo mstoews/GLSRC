@@ -24,6 +24,7 @@
 #define IDD_STMT_OPTIONS        20002   // Income Statement / Balance Sheet / Cash Flow options (S3-M3)
 #define IDD_STMT_LAYOUT         20003   // Accounts > Statement Layout (S3-M4)
 #define IDD_AP_CONFIRM          20004   // Receipts/Payments > Confirm Printed Cheques (spec #5 6.2, D9, S5-M6)
+#define IDD_RW_DESIGN           20005   // the report writer's designer (spec #7 6.2, S7-M2)
 
 // ---- controls --------------------------------------------------------------
 
@@ -75,6 +76,47 @@
 #define IDC_AP_VOID             20175   // Clear Cancel Cheque (1051, S5-M6): Void, added in code
 #define IDC_AP_PURGEDATE        20176   // Purge Paid Payables (1048, S5-M6): the date, added in code
 #define IDC_AR_PURGEDATE        20177   // Purge Received Receivables (1062, S6-M5): the date, added in code
+
+// The report writer's designer (IDD_RW_DESIGN, spec #7 6.2, S7-M2), and Custom Report's Copy (added in code).
+#define IDC_RW_NAME            20180
+#define IDC_RW_TITLE           20181
+#define IDC_RW_LANDSCAPE       20182
+#define IDC_RW_DESCRIPTION     20183
+#define IDC_RW_SUBTITLE        20184
+#define IDC_RW_SOURCE          20185
+#define IDC_RW_SOURCEINFO      20186
+#define IDC_RW_FIELDS          20187
+#define IDC_RW_ADDCOL          20188
+#define IDC_RW_REMOVECOL       20189
+#define IDC_RW_UP              20190
+#define IDC_RW_DOWN            20191
+#define IDC_RW_COLUMNS         20192
+#define IDC_RW_COLLABEL        20193
+#define IDC_RW_COLWIDTH        20194
+#define IDC_RW_COLTOTAL        20195
+#define IDC_RW_COLBLANK        20196
+#define IDC_RW_SORT1           20197
+#define IDC_RW_DESC1           20198
+#define IDC_RW_SORT2           20199
+#define IDC_RW_DESC2           20200
+#define IDC_RW_SORT3           20201
+#define IDC_RW_DESC3           20202
+#define IDC_RW_GROUP1          20203
+#define IDC_RW_PAGE1           20204
+#define IDC_RW_GROUP2          20205
+#define IDC_RW_PAGE2           20206
+#define IDC_RW_FILTERS         20207
+#define IDC_RW_FFIELD          20208
+#define IDC_RW_FTEST           20209
+#define IDC_RW_FVALUE1         20210
+#define IDC_RW_FVALUE2         20211
+#define IDC_RW_FADD            20212
+#define IDC_RW_FREMOVE         20213
+#define IDC_RW_GRANDTOTAL      20214
+#define IDC_RW_COUNT           20215
+#define IDC_RW_PREVIEW         20216
+#define IDC_RW_SAVE            20217
+#define IDC_RW_COPY             20220
 
 #define IDC_FRAME_TOOLBAR       20160   // the frame's toolbar (UI refresh spec 4.3; ManilaGL.cpp)
 #define IDC_FRAME_STATUS        20161   // the frame's status bar (UI refresh spec 4.4)

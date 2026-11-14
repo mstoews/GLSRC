@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 and M1 built)
+**Plan status:** In progress (S7-M0 to M2 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -135,6 +135,39 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 2 — The designer
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): `GL_ADDREPORT` took a description, a name and a path. The port's Statement Layout dialog is the pattern: a `MainDialog`, its working copy in memory, and a preview over the dialog with `rpt::win32::ShowPreviewWindow`.
+> - **`IDD_RW_DESIGN`** (task 2, `port.rc`; IDs `IDC_RW_*` 20180–20217 in `PortIds.h`). One dialog, 470 × 316 units:
+>   - name, title, description, subtitle, landscape; the source, with its description beside it;
+>   - fields and columns, with Add, Remove, Up, Down, and the selected column's label, width, total and blank-when-zero (the last two only for amounts and numbers);
+>   - three sort fields with "desc.", two groups with "new page";
+>   - the filter list, with a field, a test (is, is not, from ... to, one of, contains, is blank, isn't blank) and one or two values, Add filter and Remove filter;
+>   - grand total, row counts, Preview, Save, Close.
+> - **`gl/port/reports/ReportDesigner.{h,cpp}`** (task 3), `RunReportDesigner(owner, number, copy)`:
+>   - **Editing:** the working copy is a `ReportDefinition`, and each control writes its part as it changes. A new column on an amount starts totalled.
+>   - **Changing the source** with columns asks first, and clears what named the old fields.
+>   - **Preview** builds the definition as it stands into a preview window over the dialog.
+>   - **Save** runs `CheckDefinition`, then `SaveDefinition` in place: Modify changes its row, with no duplicate. Without logins the user is stored blank, not "NOLOGIN".
+>   - **Close** asks to save changes.
+>   - **Missing fields:** a field the source no longer has shows "(missing)", with a message on opening (D9). Asked filters are kept and shown, and made in M3.
+> - **`ReportWriter`** (task 6): `CheckDefinition` (name, 40 at most, not another's; source; a column; each filter's values), `FilterProblem` (a filter's values suit its field's type: the drive caught "Date is one of Posted"), `CopyName` ("Copy of X", "(2)", ...), `MissingFields`, `DescribeFilter`.
+> - **`ReportList.cpp`** (task 4):
+>   - **The buttons:** Add/Mod is "Add...", Modify is "Modify...", and a Copy button is added in code (`IDC_RW_COPY`, `tbSuperBtn` like the others). The six are stacked in the template's column: Print, Add, Modify, Copy, Delete, Close.
+>   - **What they do:** Modify and Copy say so on a built-in report. After the designer closes, the list refills and selects the report saved.
+> - **Wire** (task 5): `/checkres` loads `IDD_RW_DESIGN`; `/stress` gains a designer step, `StressReportDesigner`, which opens and closes it on a new and an existing report.
+> - **Tests:** two cases (`CheckDefinition`, `CopyName`, `MissingFields`, `DescribeFilter`; `FilterProblem`). `gl_tests`: 171 cases (`[reportwriter]` 8).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (211 s). Driven in the app, on a scratch copy migrated from the fixture, by messages to its own windows:
+>   - **Add:** "Sales by med rep", built from nothing: four columns (sales and VAT totalled), grouped by med rep, filtered to posted and transferred. "Date is one of Posted" was refused first.
+>   - **Preview:** MR001 2,800.00 / 200.00, MR002 1,000.00 / 100.00, total 3,800.00 / 300.00.
+>   - **Save:** report 4, with its description and a blank user.
+>   - **Modify:** a new title, then Close, asked, Yes; the same row changed.
+>   - **Copy:** "Copy of Sales by med rep" saved as report 5.
+>   - **Built-in reports:** Modify and Copy on Trial Balance say so.
+>   - **Refusals:** Save with no name says "Give the report a name."; changing the source with columns asks, and No keeps it.
+>   - **Run:** the new report runs from the list ("Sales by medical representative").
+>
+>   Screenshots checked the designer and the preview.
 
 **Goal:** a user makes, changes and copies a report without code.
 

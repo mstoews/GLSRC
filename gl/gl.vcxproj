@@ -94,6 +94,7 @@
     <ClInclude Include="port\reports\Balances.h" />
     <ClInclude Include="port\reports\MasterReports.h" />
     <ClInclude Include="port\reports\ReportContext.h" />
+    <ClInclude Include="port\reports\ReportDesigner.h" />
     <ClInclude Include="port\reports\ReportList.h" />
     <ClInclude Include="port\reports\ReportOptions.h" />
     <ClInclude Include="port\reports\RunReport.h" />
@@ -154,6 +155,7 @@
     <ClCompile Include="port\reports\Balances.cpp" />
     <ClCompile Include="port\reports\MasterReports.cpp" />
     <ClCompile Include="port\reports\ReportContext.cpp" />
+    <ClCompile Include="port\reports\ReportDesigner.cpp" />
     <ClCompile Include="port\reports\ReportList.cpp" />
     <ClCompile Include="port\reports\ReportOptions.cpp" />
     <ClCompile Include="port\reports\RunReport.cpp" />

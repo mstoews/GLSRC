@@ -191,4 +191,32 @@ bool DeleteDefinition(cb4sqlite::Code4& code, long number);
 // Another definition (not `except`) has this name, ignoring case and spaces at the ends.
 bool DefinitionNameTaken(cb4sqlite::Code4& code, const std::string& name, long except = 0);
 
+// ---- the designer's checks (spec #7 6.2; plan S7-M2) -----------------------------------
+
+// Why the designer's Save refuses `def` (definition `except` being changed),
+// with the setting to put the focus on; nothing when it can be saved.
+enum class DefinitionSetting { Name, Source, Columns, Filters };
+struct DefinitionProblem {
+    DefinitionSetting setting = DefinitionSetting::Name;
+    std::string text;
+};
+std::optional<DefinitionProblem> CheckDefinition(cb4sqlite::Code4& code, const ReportDefinition& def, long except = 0);
+
+// A free name for a copy of `name`: "Copy of <name>", then "Copy of <name> (2)", ...
+std::string CopyName(cb4sqlite::Code4& code, const std::string& name);
+
+// The fields `def` names (columns, sort, groups, filters) that its source
+// doesn't have, in that order, once each (D9: the designer marks them).
+std::vector<std::string> MissingFields(const ReportDefinition& def);
+
+// Why a filter's values don't suit its field ("Date: \"x\" isn't a date");
+// "" when they do, or when they are asked when run. The designer checks each
+// filter as it's added, and CheckDefinition checks them all.
+std::string FilterProblem(const Source& source, const Filter& filter);
+
+// A filter in words, as the report's subtitle says it: "Period from 7 to 8";
+// an asked one: "Period: asked when run (Periods)". The field's key when the
+// source lacks it.
+std::string DescribeFilter(const Source& source, const Filter& filter);
+
 } // namespace rw

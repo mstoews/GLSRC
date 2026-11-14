@@ -8,17 +8,21 @@
 //   - HandlePrint ran the active row's .RPT through Crystal; Print here
 //     returns the row's command, which the frame runs as if it had been
 //     chosen from the menu, after the dialog has closed.
-//   - Add/Mod (4095) and Modify (2026) are hidden, and Print and Close move
-//     up into their places. (Modify appended a duplicate record instead of
-//     changing one.)
 //   - Spec #7 (S7-M1): the user reports (gl_rptdef) follow the built-in ones,
-//     a "Made by" column telling them apart. Delete (1118) shows again: it
-//     removes a user report after asking, and refuses a built-in one.
+//     a "Made by" column telling them apart. Delete (1118) removes a user
+//     report after asking, and refuses a built-in one.
+//   - S7-M2: Add/Mod (4095) is "Add...": the designer on a new report. Modify
+//     (2026) opens the chosen user report in it (the original's appended a
+//     duplicate record instead of changing one); Copy, a button added in code
+//     (IDC_RW_COPY), opens a copy. Built-in reports can't be modified or
+//     copied, and say so. The six buttons are stacked in code in the
+//     template's column: Print, Add, Modify, Copy, Delete, Close.
 //
 #include "ReportList.h"
 
 #include "../Globals.h"
 #include "../ReportWriter.h"
+#include "ReportDesigner.h"
 
 #include "win32fx.h"
 
@@ -105,10 +109,7 @@ public:
 protected:
     bool OnInitDialog() override
     {
-        // Print and Close take the places of Add/Mod and Modify; Delete keeps its own.
-        moveInto(kPrintId, kAddModId);
-        moveInto(IDCANCEL, kModifyId);
-        for (int id : {kAddModId, kModifyId}) ShowWindow(GetDlgItem(hwnd(), id), SW_HIDE);
+        Buttons();
 
         grid_ = fx::Grid(GetDlgItem(hwnd(), kGridId));
         if (!grid_.IsGrid()) return true;
@@ -132,9 +133,18 @@ protected:
             End(IDOK);
             return true;
         }
-        if (id == kDeleteId && code == BN_CLICKED) {
-            Delete();
-            return true;
+        if (code == BN_CLICKED) {
+            switch (id) {
+            case kDeleteId: Delete(); return true;
+            case kAddModId: Design(0, false); return true;
+            case kModifyId:
+                if (const long n = Chosen(L"changed")) Design(n, false);
+                return true;
+            case IDC_RW_COPY:
+                if (const long n = Chosen(L"copied")) Design(n, true);
+                return true;
+            default: break;
+            }
         }
         return false;   // IDCANCEL: closes (fx::Dialog)
     }
@@ -185,6 +195,65 @@ private:
         grid_.SetActiveCell(1, std::min(std::max(activeRow, 1), static_cast<int>(entries_.size())));
     }
 
+    // The template's five buttons and Copy, stacked in its button column:
+    // Print, Add, Modify, Copy, Delete, Close.
+    void Buttons()
+    {
+        HWND add = GetDlgItem(hwnd(), kAddModId);
+        RECT r{};
+        GetWindowRect(add, &r);
+        MapWindowPoints(nullptr, hwnd(), reinterpret_cast<POINT*>(&r), 2);
+        const LONG style = GetWindowLongW(add, GWL_STYLE);
+        HWND copy = CreateWindowExW(0, L"tbSuperBtn", L"C&opy...", static_cast<DWORD>(style) | WS_VISIBLE, r.left, r.top,
+                                    r.right - r.left, r.bottom - r.top, hwnd(),
+                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RW_COPY)), hInst, nullptr);
+        SendMessageW(copy, WM_SETFONT, SendMessageW(hwnd(), WM_GETFONT, 0, 0), TRUE);
+        SetWindowTextW(add, L"&Add...");
+        SetWindowTextW(GetDlgItem(hwnd(), kModifyId), L"&Modify...");
+        RECT unit{0, 4, 0, 17};   // dialog units: the first button's top, and the step
+        MapDialogRect(hwnd(), &unit);
+        int y = unit.top;
+        HWND after = HWND_TOP;
+        for (int id : {kPrintId, kAddModId, kModifyId, static_cast<int>(IDC_RW_COPY), kDeleteId, static_cast<int>(IDCANCEL)}) {
+            HWND b = GetDlgItem(hwnd(), id);
+            SetWindowPos(b, after, r.left, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);   // and the tab order
+            after = b;
+            y += unit.bottom;
+        }
+    }
+
+    // The chosen user report's number; 0, with a message, for none or a built-in one.
+    long Chosen(const wchar_t* verb)
+    {
+        const Entry* e = At(grid_.ActiveRow());
+        if (!e) {
+            MessageBeep(MB_OK);
+            return 0;
+        }
+        if (!e->definition) {
+            MessageBoxW(hwnd(),
+                        (L"\u201C" + e->name + L"\u201D is built into the program: it can't be " + verb +
+                         L". Add makes a report of your own.")
+                            .c_str(),
+                        szApp, MB_OK | MB_ICONINFORMATION);
+            return 0;
+        }
+        return e->definition;
+    }
+
+    // The designer on a new report (number 0, not a copy), a user report, or a copy of one.
+    void Design(long number, bool copy)
+    {
+        const long saved = RunReportDesigner(hwnd(), number, copy);
+        int row = grid_.ActiveRow();
+        Fill(row);
+        const long show = saved > 0 ? saved : number;
+        for (size_t i = 0; i < entries_.size(); ++i)
+            if (show && entries_[i].definition == show) row = static_cast<int>(i) + 1;
+        grid_.SetActiveCell(1, row);
+        SetFocus(grid_.hwnd());
+    }
+
     void Delete()
     {
         const int row = grid_.ActiveRow();
@@ -209,16 +278,6 @@ private:
         }
         Fill(row);
         SetFocus(grid_.hwnd());
-    }
-
-    void moveInto(int id, int placeOf)
-    {
-        HWND from = GetDlgItem(hwnd(), placeOf), to = GetDlgItem(hwnd(), id);
-        if (!from || !to) return;
-        RECT rc{};
-        GetWindowRect(from, &rc);
-        MapWindowPoints(nullptr, hwnd(), reinterpret_cast<POINT*>(&rc), 2);
-        SetWindowPos(to, nullptr, rc.left, rc.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 };
 
