@@ -8,9 +8,11 @@
 //   - D9: a field the source no longer has stays in the definition, marked
 //     "(missing)" in the columns and filters; Preview leaves it out with a
 //     note, as the report does when run.
-//   - Asked filters ("ask when run") come in S7-M3: a definition that has one
-//     keeps it, and the filter list shows it, but the designer doesn't make
-//     one yet.
+//   - D6: a filter can ask its values when the report runs ("Ask when run",
+//     with the question the prompt shows); Preview asks them (ReportPrompt).
+//   - Calculated columns (sum, difference, count, percentages) come from the
+//     Calculation dialog (IDD_RW_CALC); their header is rw::ColumnLabel's
+//     unless a label is typed.
 //   - The working copy is the dialog's ReportDefinition: each control writes
 //     its part as it changes, so Preview and Save read one place.
 //
@@ -20,6 +22,7 @@
 #include "../Globals.h"
 #include "../MainDialog.h"
 #include "../ReportWriter.h"
+#include "ReportPrompt.h"
 #include "RunReport.h"     // CurrentReportContext
 
 #include "report/win32/Preview.h"
@@ -62,6 +65,110 @@ const int kSorts[] = {IDC_RW_SORT1, IDC_RW_SORT2, IDC_RW_SORT3};
 const int kDescs[] = {IDC_RW_DESC1, IDC_RW_DESC2, IDC_RW_DESC3};
 const int kGroups[] = {IDC_RW_GROUP1, IDC_RW_GROUP2};
 const int kPages[] = {IDC_RW_PAGE1, IDC_RW_PAGE2};
+
+// IDD_RW_CALC: a calculated column over the source's numeric fields.
+const struct {
+    rw::Calc calc;
+    bool ofGroup;
+    const wchar_t* text;
+} kCalcs[] = {
+    {rw::Calc::Sum, false, L"Sum of two fields"},
+    {rw::Calc::Difference, false, L"Difference of two fields"},
+    {rw::Calc::Count, false, L"Count of lines"},
+    {rw::Calc::Percent, false, L"Percent of the report total"},
+    {rw::Calc::Percent, true, L"Percent of the group total"},
+};
+
+class CalcDialog : public MainDialog {
+public:
+    CalcDialog(const rw::Source& source, bool closeAtOnce) : source_(source), closeAtOnce_(closeAtOnce) {}
+
+    rw::ColumnDef column;
+
+protected:
+    bool OnInitDialog() override
+    {
+        MainDialog::OnInitDialog();
+        for (const auto& k : kCalcs) Send(IDC_RWC_KIND, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(k.text));
+        for (size_t i = 0; i < source_.fields.size(); ++i) {
+            const rw::Field& f = source_.fields[i];
+            if (f.type != rw::FieldType::Amount && f.type != rw::FieldType::Integer) continue;
+            numeric_.push_back(i);
+            const std::wstring t = wide(f.label);
+            for (int id : {IDC_RWC_FIELDA, IDC_RWC_FIELDB}) Send(id, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.c_str()));
+        }
+        Send(IDC_RWC_KIND, CB_SETCURSEL, 0, 0);
+        Send(IDC_RWC_FIELDA, CB_SETCURSEL, 0, 0);
+        Send(IDC_RWC_FIELDB, CB_SETCURSEL, numeric_.size() > 1 ? 1 : 0, 0);
+        ShowKind();
+        if (closeAtOnce_) PostMessageW(hwnd(), WM_COMMAND, IDCANCEL, 0);
+        return true;
+    }
+
+    bool OnCommand(WORD id, WORD code, HWND ctl) override
+    {
+        if (id == IDC_RWC_KIND && code == CBN_SELCHANGE) {
+            ShowKind();
+            return true;
+        }
+        if (code == BN_CLICKED && id == IDOK) {
+            Ok();
+            return true;
+        }
+        if (code == BN_CLICKED && id == IDCANCEL) {   // not MainDialog::Cancel: the designer's tables stay open
+            End(IDCANCEL);
+            return true;
+        }
+        return MainDialog::OnCommand(id, code, ctl);
+    }
+
+private:
+    LRESULT Send(int id, UINT msg, WPARAM wp, LPARAM lp) const { return SendDlgItemMessageW(hwnd(), id, msg, wp, lp); }
+
+    size_t Kind() const
+    {
+        const LRESULT k = Send(IDC_RWC_KIND, CB_GETCURSEL, 0, 0);
+        return k >= 0 && k < static_cast<LRESULT>(std::size(kCalcs)) ? static_cast<size_t>(k) : 0;
+    }
+
+    // Count takes no field; sum and difference take two.
+    void ShowKind()
+    {
+        const rw::Calc c = kCalcs[Kind()].calc;
+        const bool two = c == rw::Calc::Sum || c == rw::Calc::Difference;
+        EnableWindow(GetDlgItem(hwnd(), IDC_RWC_FIELDA), c != rw::Calc::Count);
+        SetDlgItemTextW(hwnd(), IDC_RWC_BETWEEN, c == rw::Calc::Sum ? L"&Plus:" : c == rw::Calc::Difference ? L"&Less:" : L"");
+        ShowWindow(GetDlgItem(hwnd(), IDC_RWC_FIELDB), two ? SW_SHOW : SW_HIDE);
+    }
+
+    std::string Picked(int id) const
+    {
+        const LRESULT i = Send(id, CB_GETCURSEL, 0, 0);
+        return i >= 0 && i < static_cast<LRESULT>(numeric_.size()) ? source_.fields[numeric_[static_cast<size_t>(i)]].key
+                                                                   : std::string();
+    }
+
+    void Ok()
+    {
+        const auto& k = kCalcs[Kind()];
+        rw::ColumnDef c;
+        c.calc = k.calc;
+        c.ofGroup = k.ofGroup;
+        if (k.calc != rw::Calc::Count) c.field = Picked(IDC_RWC_FIELDA);
+        if (k.calc == rw::Calc::Sum || k.calc == rw::Calc::Difference) c.field2 = Picked(IDC_RWC_FIELDB);
+        c.total = k.calc != rw::Calc::Percent || !k.ofGroup;
+        if (const std::string why = rw::ColumnProblem(source_, c); !why.empty()) {
+            Message(wide(why), MB_ICONINFORMATION);
+            return;
+        }
+        column = c;
+        End(IDOK);
+    }
+
+    const rw::Source& source_;
+    bool closeAtOnce_;
+    std::vector<size_t> numeric_;   // the field combos' entries: source field indexes
+};
 
 class DesignerDialog : public MainDialog {
 public:
@@ -129,6 +236,8 @@ protected:
         case IDC_RW_GRANDTOTAL:
         case IDC_RW_COUNT: ReadHeader(); return true;
         case IDC_RW_ADDCOL: AddColumn(); return true;
+        case IDC_RW_ADDCALC: AddCalc(); return true;
+        case IDC_RW_FASK: ShowFilterInputs(); return true;
         case IDC_RW_REMOVECOL: RemoveColumn(); return true;
         case IDC_RW_UP: MoveColumn(-1); return true;
         case IDC_RW_DOWN: MoveColumn(1); return true;
@@ -170,6 +279,16 @@ private:
     }
 
     const rw::Source* Src() const { return rw::FindSource(def_.source); }
+
+    // A column's text in the list: its label, else its field's (or calculation's).
+    std::wstring ColumnText(const rw::ColumnDef& c) const
+    {
+        std::wstring t = !c.label.empty()                   ? wide(c.label)
+                         : c.calc != rw::Calc::None && Src() ? wide(rw::ColumnLabel(*Src(), c))
+                                                             : FieldLabel(c.field);
+        if (c.total) t += L"  [total]";
+        return t;
+    }
 
     std::wstring FieldLabel(const std::string& key) const
     {
@@ -289,8 +408,7 @@ private:
         filling_ = true;
         List(IDC_RW_COLUMNS, LB_RESETCONTENT);
         for (const rw::ColumnDef& c : def_.columns) {
-            std::wstring t = c.label.empty() ? FieldLabel(c.field) : wide(c.label);
-            if (c.total) t += L"  [total]";
+            const std::wstring t = ColumnText(c);
             List(IDC_RW_COLUMNS, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.c_str()));
         }
         if (!def_.columns.empty())
@@ -320,7 +438,7 @@ private:
             // A total only means something for amounts and numbers.
             const rw::Source* s = Src();
             const int f = s ? s->fieldIndex(c.field) : -1;
-            const bool numeric = f >= 0 && (s->fields[static_cast<size_t>(f)].type == rw::FieldType::Amount ||
+            const bool numeric = c.calc != rw::Calc::None || f >= 0 && (s->fields[static_cast<size_t>(f)].type == rw::FieldType::Amount ||
                                             s->fields[static_cast<size_t>(f)].type == rw::FieldType::Integer);
             EnableWindow(GetDlgItem(hwnd(), IDC_RW_COLTOTAL), numeric);
             EnableWindow(GetDlgItem(hwnd(), IDC_RW_COLBLANK), numeric);
@@ -355,6 +473,12 @@ private:
         const bool none = t == rw::Test::Blank || t == rw::Test::NotBlank;
         ShowWindow(GetDlgItem(hwnd(), IDC_RW_FVALUE1), none ? SW_HIDE : SW_SHOW);
         ShowWindow(GetDlgItem(hwnd(), IDC_RW_FVALUE2), t == rw::Test::Between ? SW_SHOW : SW_HIDE);
+        // A blank test has nothing to ask; an asked filter's values come when it runs.
+        EnableWindow(GetDlgItem(hwnd(), IDC_RW_FASK), !none);
+        if (none) SetCheck(IDC_RW_FASK, false);
+        const bool ask = IsChecked(IDC_RW_FASK);
+        for (int id : {IDC_RW_FVALUE1, IDC_RW_FVALUE2}) EnableWindow(GetDlgItem(hwnd(), id), !ask);
+        EnableWindow(GetDlgItem(hwnd(), IDC_RW_FQUESTION), ask);
     }
 
     // ---- reading the controls into the definition ----------------------------------
@@ -421,6 +545,18 @@ private:
         ShowColumns(at);
     }
 
+    void AddCalc()
+    {
+        const rw::Source* s = Src();
+        if (!s) return;
+        CalcDialog dlg(*s, false);
+        if (dlg.DoModal(IDD_RW_CALC, hwnd()) != IDOK) return;
+        const int at = SelectedColumn() < 0 ? static_cast<int>(def_.columns.size()) : SelectedColumn() + 1;
+        def_.columns.insert(def_.columns.begin() + at, dlg.column);
+        Changed();
+        ShowColumns(at);
+    }
+
     void RemoveColumn()
     {
         const int i = SelectedColumn();
@@ -451,8 +587,7 @@ private:
         c.blankZero = IsChecked(IDC_RW_COLBLANK) && IsWindowEnabled(GetDlgItem(hwnd(), IDC_RW_COLBLANK));
         Changed();
         // Refresh the list's text without losing the edit box's caret.
-        std::wstring t = c.label.empty() ? FieldLabel(c.field) : wide(c.label);
-        if (c.total) t += L"  [total]";
+        const std::wstring t = ColumnText(c);
         filling_ = true;
         List(IDC_RW_COLUMNS, LB_DELETESTRING, static_cast<WPARAM>(i));
         List(IDC_RW_COLUMNS, LB_INSERTSTRING, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(t.c_str()));
@@ -490,6 +625,22 @@ private:
         rw::Filter flt;
         flt.field = s->fields[static_cast<size_t>(f)].key;
         flt.test = SelectedTest();
+        flt.ask = IsChecked(IDC_RW_FASK) && flt.test != rw::Test::Blank && flt.test != rw::Test::NotBlank;
+        if (flt.ask) {
+            size_t asked = 0;
+            for (const rw::Filter& g : def_.filters) asked += g.ask ? 1 : 0;
+            if (asked >= rw::kMaxQuestions) {
+                Message(fx::Format(L"A report can ask at most %d questions when it runs.", static_cast<int>(rw::kMaxQuestions)),
+                        MB_ICONINFORMATION);
+                return;
+            }
+            flt.question = TrimText(Text(IDC_RW_FQUESTION));
+            def_.filters.push_back(flt);
+            Changed();
+            ShowFilters();
+            SetDlgItemTextW(hwnd(), IDC_RW_FQUESTION, L"");
+            return;
+        }
         const std::string a = TrimText(Text(IDC_RW_FVALUE1)), b = TrimText(Text(IDC_RW_FVALUE2));
         switch (flt.test) {
         case rw::Test::Blank:
@@ -552,8 +703,9 @@ private:
         if (TrimText(d.name).empty()) d.name = "(new report)";
         if (TrimText(d.title).empty()) d.title = d.name;
         try {
+            if (!AskReportQuestions(hwnd(), d, previewAnswers_)) return;
             const ReportContext ctx = CurrentReportContext();
-            rw::BuildResult b = rw::BuildReport(cb, ctx, d);
+            rw::BuildResult b = rw::BuildReport(cb, ctx, d, previewAnswers_);
             if (!b.report) {
                 Message(wide(b.refusal), MB_ICONINFORMATION);
                 return;
@@ -610,6 +762,7 @@ private:
     bool dirty_ = false;
     bool filling_ = false;   // the controls are being filled: their notifications aren't edits
     rw::ReportDefinition def_;
+    rw::Answers previewAnswers_;   // the last answers Preview was given
 };
 
 } // namespace
@@ -632,6 +785,22 @@ int StressReportDesigner(int times)
     for (const rw::StoredDefinition& d : rw::LoadDefinitions(cb)) existing = d.number;
     auto openBoth = [&] {
         if (RunReportDesigner(nullptr, 0, false, true) == -1) return false;
+        if (!rw::Sources().empty()) {
+            CalcDialog calc(rw::Sources().front(), true);
+            if (calc.DoModal(IDD_RW_CALC, nullptr) == -1) return false;
+            // The questions: one of each input the prompt has.
+            rw::ReportDefinition asking;
+            asking.source = "sales_lines";
+            for (const char* f : {"period", "date", "customer", "invoice"}) {
+                rw::Filter q;
+                q.field = f;
+                q.test = rw::Test::Between;
+                q.ask = true;
+                asking.filters.push_back(q);
+            }
+            rw::Answers none;
+            AskReportQuestions(nullptr, asking, none, true);
+        }
         return !existing || RunReportDesigner(nullptr, existing, false, true) != -1;
     };
     if (!openBoth()) return -1;   // first open: class registration

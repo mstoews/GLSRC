@@ -39,6 +39,16 @@ std::string lower(std::string s)
 
 std::string norm(const std::string& s) { return lower(TrimText(s)); }
 
+// a / b rounded half away from zero, in integers.
+std::int64_t divRound(std::int64_t a, std::int64_t b)
+{
+    if (b == 0) return 0;
+    const bool neg = (a < 0) != (b < 0);
+    const std::int64_t ua = a < 0 ? -a : a, ub = b < 0 ? -b : b;
+    const std::int64_t q = (ua + ub / 2) / ub;
+    return neg ? -q : q;
+}
+
 bool hasTable(cb4sqlite::Code4& code, const char* name)
 {
     cb4sqlite::Query q(code, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1");
@@ -303,8 +313,32 @@ ParseResult ParseDefinition(const std::string& textIn)
         } else if (key == "column") {
             if (tok.size() < 2) return fail(ln, "\"column\" needs a field.");
             ColumnDef c;
-            c.field = tok[1].text;
-            for (size_t i = 2; i < tok.size(); ++i) {
+            size_t i = 2;
+            if (lower(tok[1].text) == "calc" && !tok[1].quoted) {
+                const std::string kind = tok.size() > 2 ? lower(tok[2].text) : "";
+                if (kind == "sum" || kind == "diff") {
+                    if (tok.size() < 5) return fail(ln, "\"calc " + kind + "\" takes two fields.");
+                    c.calc = kind == "sum" ? Calc::Sum : Calc::Difference;
+                    c.field = tok[3].text;
+                    c.field2 = tok[4].text;
+                    i = 5;
+                } else if (kind == "count") {
+                    c.calc = Calc::Count;
+                    i = 3;
+                } else if (kind == "pct") {
+                    const std::string of = tok.size() > 4 ? lower(tok[4].text) : "";
+                    if (of != "group" && of != "total") return fail(ln, "\"calc pct\" takes a field, then group or total.");
+                    c.calc = Calc::Percent;
+                    c.field = tok[3].text;
+                    c.ofGroup = of == "group";
+                    i = 5;
+                } else {
+                    return fail(ln, "\"calc\" is sum, diff, count or pct.");
+                }
+            } else {
+                c.field = tok[1].text;
+            }
+            for (; i < tok.size(); ++i) {
                 const std::string o = lower(tok[i].text);
                 if (o == "total") c.total = true;
                 else if (o == "blank") c.blankZero = true;
@@ -392,7 +426,13 @@ std::string WriteDefinition(const ReportDefinition& d)
     if (d.landscape) s += "orientation landscape\n";
     s += "source " + word(d.source) + " " + std::to_string(d.sourceVersion) + "\n";
     for (const ColumnDef& c : d.columns) {
-        s += "column " + word(c.field);
+        switch (c.calc) {
+        case Calc::None: s += "column " + word(c.field); break;
+        case Calc::Sum: s += "column calc sum " + word(c.field) + " " + word(c.field2); break;
+        case Calc::Difference: s += "column calc diff " + word(c.field) + " " + word(c.field2); break;
+        case Calc::Count: s += "column calc count"; break;
+        case Calc::Percent: s += "column calc pct " + word(c.field) + (c.ofGroup ? " group" : " total"); break;
+        }
         if (c.total) s += " total";
         if (c.blankZero) s += " blank";
         if (!c.label.empty()) s += " label " + quote(c.label);
@@ -415,6 +455,46 @@ std::string WriteDefinition(const ReportDefinition& d)
     if (!d.grandTotal) s += "total no\n";
     if (d.count) s += "count yes\n";
     return s;
+}
+
+std::string ColumnLabel(const Source& source, const ColumnDef& c)
+{
+    auto label = [&](const std::string& key) {
+        const int i = source.fieldIndex(key);
+        return i < 0 ? key : source.fields[static_cast<size_t>(i)].label;
+    };
+    switch (c.calc) {
+    case Calc::None: return label(c.field);
+    case Calc::Sum: return label(c.field) + " + " + label(c.field2);
+    case Calc::Difference: return label(c.field) + " - " + label(c.field2);
+    case Calc::Count: return "Count";
+    case Calc::Percent: return label(c.field) + (c.ofGroup ? " % of group" : " % of total");
+    }
+    return c.field;
+}
+
+std::string ColumnProblem(const Source& source, const ColumnDef& c)
+{
+    auto numeric = [&](const std::string& key) {
+        const int i = source.fieldIndex(key);
+        return i >= 0 && (source.fields[static_cast<size_t>(i)].type == FieldType::Amount ||
+                          source.fields[static_cast<size_t>(i)].type == FieldType::Integer);
+    };
+    auto known = [&](const std::string& key) { return source.fieldIndex(key) >= 0; };
+    switch (c.calc) {
+    case Calc::None:
+    case Calc::Count: return {};
+    case Calc::Sum:
+    case Calc::Difference:
+        if (known(c.field) && known(c.field2) && (!numeric(c.field) || !numeric(c.field2)))
+            return "\"" + ColumnLabel(source, c) + "\" adds or subtracts numbers: both fields must be amounts or numbers.";
+        return {};
+    case Calc::Percent:
+        if (known(c.field) && !numeric(c.field))
+            return "\"" + ColumnLabel(source, c) + "\" is a percentage of a number: its field must be an amount or a number.";
+        return {};
+    }
+    return {};
 }
 
 // ---- building ----------------------------------------------------------------------------
@@ -536,16 +616,45 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
         notes.push_back("\"" + field + "\" isn't a field of " + src->name + " any more: the " + what + " is left out.");
     };
 
-    // Columns.
+    // Columns: a field's, or a calculation's (spec #7 5.3).
     struct Col {
-        int index;
         const ColumnDef* def;
+        int a = -1, b = -1;   // the fields' indexes
+        FieldType type = FieldType::Text;
     };
     std::vector<Col> cols;
     for (const ColumnDef& c : def.columns) {
-        const int i = src->fieldIndex(c.field);
-        if (i < 0) missing(c.field, "column");
-        else cols.push_back({i, &c});
+        Col col{&c};
+        const bool needsA = c.calc != Calc::Count, needsB = c.calc == Calc::Sum || c.calc == Calc::Difference;
+        col.a = needsA ? src->fieldIndex(c.field) : -1;
+        col.b = needsB ? src->fieldIndex(c.field2) : -1;
+        if (needsA && col.a < 0) {
+            missing(c.field, "column");
+            continue;
+        }
+        if (needsB && col.b < 0) {
+            missing(c.field2, "column");
+            continue;
+        }
+        if (c.calc != Calc::None) {
+            if (const std::string why = ColumnProblem(*src, c); !why.empty()) {
+                notes.push_back(why + " The column is left out.");
+                continue;
+            }
+        }
+        switch (c.calc) {
+        case Calc::None: col.type = src->fields[static_cast<size_t>(col.a)].type; break;
+        case Calc::Sum:
+        case Calc::Difference:
+            col.type = src->fields[static_cast<size_t>(col.a)].type == FieldType::Amount ||
+                               src->fields[static_cast<size_t>(col.b)].type == FieldType::Amount
+                           ? FieldType::Amount
+                           : FieldType::Integer;
+            break;
+        case Calc::Count: col.type = FieldType::Integer; break;
+        case Calc::Percent: col.type = FieldType::Amount; break;   // hundredths of a percent print as 12.34
+        }
+        cols.push_back(col);
     }
     if (cols.empty()) {
         out.refusal = "The report has no column to print.";
@@ -646,17 +755,52 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
     r.footerNote = def.name;
     r.orientation = def.landscape ? rpt::Orientation::Landscape : rpt::Orientation::Portrait;
     for (const Col& c : cols) {
-        const Field& f = src->fields[static_cast<size_t>(c.index)];
-        r.columns.emplace_back(c.def->label.empty() ? f.label : c.def->label, c.def->width > 0 ? c.def->width : f.width,
-                               cellType(f.type), std::string(), c.def->blankZero);
+        const double fieldWidth = c.a >= 0 ? src->fields[static_cast<size_t>(c.a)].width : 0.8;
+        r.columns.emplace_back(c.def->label.empty() ? ColumnLabel(*src, *c.def) : c.def->label,
+                               c.def->width > 0 ? c.def->width : fieldWidth, cellType(c.type), std::string(),
+                               c.def->blankZero);
     }
     for (const std::string& n : notes) r.rows.push_back(rpt::Row::Note(n));
 
     const size_t ncol = cols.size();
+    const size_t levels = groups.size();
     auto totalled = [&](size_t k) {
-        const FieldType t = src->fields[static_cast<size_t>(cols[k].index)].type;
-        return cols[k].def->total && (t == FieldType::Amount || t == FieldType::Integer);
+        return cols[k].def->total && (cols[k].type == FieldType::Amount || cols[k].type == FieldType::Integer);
     };
+    // A row's number in column k (a percentage column's: its field's).
+    auto raw = [&](size_t k, const SourceRow& row) -> std::int64_t {
+        const Col& c = cols[k];
+        switch (c.def->calc) {
+        case Calc::Sum: return row[static_cast<size_t>(c.a)].number + row[static_cast<size_t>(c.b)].number;
+        case Calc::Difference: return row[static_cast<size_t>(c.a)].number - row[static_cast<size_t>(c.b)].number;
+        case Calc::Count: return 1;
+        default: return row[static_cast<size_t>(c.a)].number;
+        }
+    };
+    auto percent = [](std::int64_t x, std::int64_t base) { return base == 0 ? 0 : divRound(x * 10000, base); };
+    // The percentage columns' bases: the report's totals, and each row's innermost group's.
+    std::vector<std::int64_t> reportBase(ncol, 0);
+    std::vector<std::vector<std::int64_t>> groupBase(ncol);
+    for (size_t k = 0; k < ncol; ++k) {
+        if (cols[k].def->calc != Calc::Percent) continue;
+        for (const SourceRow& row : rows) reportBase[k] += raw(k, row);
+        groupBase[k].assign(rows.size(), reportBase[k]);
+        if (!cols[k].def->ofGroup || levels == 0) continue;
+        size_t start = 0;
+        for (size_t i = 1; i <= rows.size(); ++i) {
+            bool same = i < rows.size();
+            for (size_t l = 0; same && l < levels; ++l) {
+                const int g = groups[l].first;
+                same = compareValues(src->fields[static_cast<size_t>(g)], rows[i - 1][static_cast<size_t>(g)],
+                                     rows[i][static_cast<size_t>(g)]) == 0;
+            }
+            if (same) continue;
+            std::int64_t sum = 0;
+            for (size_t j = start; j < i; ++j) sum += raw(k, rows[j]);
+            for (size_t j = start; j < i; ++j) groupBase[k][j] = sum;
+            start = i;
+        }
+    }
     bool anyTotal = false;
     for (size_t k = 0; k < ncol; ++k) anyTotal = anyTotal || totalled(k);
 
@@ -664,13 +808,19 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
         std::vector<std::int64_t> v;
         std::int64_t n = 0;
     };
-    auto totalCells = [&](const Sums& s, std::string label) {
+    // `level`: the footer's group level; -1 for the grand total.
+    auto totalCells = [&](const Sums& s, std::string label, int level) {
         std::vector<rpt::Cell> cells(ncol);
         if (def.count) label += " (" + std::to_string(s.n) + (s.n == 1 ? " row)" : " rows)");
         for (size_t k = 0; k < ncol; ++k) {
             if (!totalled(k)) continue;
-            const FieldType t = src->fields[static_cast<size_t>(cols[k].index)].type;
-            cells[k] = t == FieldType::Amount ? rpt::Cell::Amount(s.v[k]) : rpt::Cell::Integer(s.v[k]);
+            if (cols[k].def->calc == Calc::Percent) {
+                // Of the report: the group's share; of a group: 100.00 on its own footer, nothing above it.
+                if (!cols[k].def->ofGroup || levels == 0) cells[k] = rpt::Cell::Amount(percent(s.v[k], reportBase[k]));
+                else if (level == static_cast<int>(levels) - 1) cells[k] = rpt::Cell::Amount(percent(s.v[k], s.v[k]));
+                continue;
+            }
+            cells[k] = cols[k].type == FieldType::Amount ? rpt::Cell::Amount(s.v[k]) : rpt::Cell::Integer(s.v[k]);
         }
         // The label goes in the first column not totalled; with none, it is left out.
         for (size_t k = 0; k < ncol; ++k)
@@ -683,11 +833,10 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
     auto addTo = [&](Sums& s, const SourceRow& row) {
         if (s.v.empty()) s.v.assign(ncol, 0);
         for (size_t k = 0; k < ncol; ++k)
-            if (totalled(k)) s.v[k] += row[static_cast<size_t>(cols[k].index)].number;
+            if (totalled(k)) s.v[k] += raw(k, row);
         ++s.n;
     };
 
-    const size_t levels = groups.size();
     std::vector<Sums> groupSums(levels);
     std::vector<const SourceRow*> groupRow(levels, nullptr);   // the open group's first row
     Sums grand;
@@ -707,8 +856,9 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
             if (!groupRow[l]) continue;
             if (anyTotal || def.count) {
                 const int i = groups[l].first;
-                rpt::Row row = rpt::Row::GroupFooter(
-                    totalCells(groupSums[l], "Total " + display(src->fields[static_cast<size_t>(i)], (*groupRow[l])[static_cast<size_t>(i)])));
+                rpt::Row row = rpt::Row::GroupFooter(totalCells(
+                    groupSums[l], "Total " + display(src->fields[static_cast<size_t>(i)], (*groupRow[l])[static_cast<size_t>(i)]),
+                    static_cast<int>(l)));
                 row.indent = static_cast<int>(l);
                 r.rows.push_back(std::move(row));
             }
@@ -717,7 +867,8 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
         }
     };
     bool first = true;
-    for (const SourceRow& row : rows) {
+    for (size_t at = 0; at < rows.size(); ++at) {
+        const SourceRow& row = rows[at];
         size_t from = levels;   // the first level whose value changes
         for (size_t l = 0; l < levels; ++l) {
             const int i = groups[l].first;
@@ -740,7 +891,16 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
             }
         }
         std::vector<rpt::Cell> cells;
-        for (const Col& c : cols) cells.push_back(cellOf(src->fields[static_cast<size_t>(c.index)], row[static_cast<size_t>(c.index)]));
+        for (size_t k = 0; k < ncol; ++k) {
+            const Col& c = cols[k];
+            switch (c.def->calc) {
+            case Calc::None: cells.push_back(cellOf(src->fields[static_cast<size_t>(c.a)], row[static_cast<size_t>(c.a)])); break;
+            case Calc::Percent: cells.push_back(rpt::Cell::Amount(percent(raw(k, row), groupBase[k][at]))); break;
+            default:
+                cells.push_back(c.type == FieldType::Amount ? rpt::Cell::Amount(raw(k, row)) : rpt::Cell::Integer(raw(k, row)));
+                break;
+            }
+        }
         r.rows.push_back(rpt::Row::Detail(std::move(cells), static_cast<int>(levels)));
         for (size_t l = 0; l < levels; ++l) addTo(groupSums[l], row);
         addTo(grand, row);
@@ -748,7 +908,7 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
     }
     closeFrom(0);
     if (rows.empty()) r.rows.push_back(rpt::Row::Note("No rows match the report's filters."));
-    else if (def.grandTotal && (anyTotal || def.count)) r.rows.push_back(rpt::Row::Total(totalCells(grand, "Total"), true));
+    else if (def.grandTotal && (anyTotal || def.count)) r.rows.push_back(rpt::Row::Total(totalCells(grand, "Total", -1), true));
     out.report = std::move(r);
     return out;
 }
@@ -1113,6 +1273,14 @@ std::optional<DefinitionProblem> CheckDefinition(cb4sqlite::Code4& code, const R
     if (def.columns.empty())
         return DefinitionProblem{DefinitionSetting::Columns, "Add at least one column: pick a field and Add."};
     const Source& src = *FindSource(def.source);
+    for (const ColumnDef& c : def.columns)
+        if (const std::string why = ColumnProblem(src, c); !why.empty())
+            return DefinitionProblem{DefinitionSetting::Columns, why};
+    size_t asked = 0;
+    for (const Filter& f : def.filters) asked += f.ask ? 1 : 0;
+    if (asked > kMaxQuestions)
+        return DefinitionProblem{DefinitionSetting::Filters,
+                                 "A report can ask at most " + std::to_string(kMaxQuestions) + " questions when it runs."};
     for (const Filter& f : def.filters)
         if (const std::string why = FilterProblem(src, f); !why.empty())
             return DefinitionProblem{DefinitionSetting::Filters, "A filter doesn't suit its field: " + why};
@@ -1153,7 +1321,10 @@ std::vector<std::string> MissingFields(const ReportDefinition& def)
         if (std::find(out.begin(), out.end(), field) == out.end()) out.push_back(field);
     };
     if (!src) return out;
-    for (const ColumnDef& c : def.columns) check(c.field);
+    for (const ColumnDef& c : def.columns) {
+        if (c.calc != Calc::Count) check(c.field);
+        if (c.calc == Calc::Sum || c.calc == Calc::Difference) check(c.field2);
+    }
     for (const SortKey& k : def.sort) check(k.field);
     for (const GroupDef& g : def.groups) check(g.field);
     for (const Filter& f : def.filters) check(f.field);

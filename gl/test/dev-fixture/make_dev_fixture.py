@@ -758,11 +758,12 @@ def report_writer(d):
          'writer 1\nname "Sales by product"\ndescription "Net sales and VAT by product, posted vouchers"\n'
          'source sales_lines 1\ncolumn invoice\ncolumn customer_name\ncolumn qty total\ncolumn sales total\n'
          'column vat total\ngroup product\nfilter state in Posted Transferred\n'),
-        ("GL lines by account", "General Ledger voucher lines by account, period 7", "gl_lines",
-         'writer 1\nname "GL lines by account"\ndescription "General Ledger voucher lines by account, period 7"\n'
+        ("GL lines by account", "GL voucher lines by account, for the periods asked", "gl_lines",
+         'writer 1\nname "GL lines by account"\n'
+         'description "GL voucher lines by account, for the periods asked"\n'
          'orientation landscape\nsource gl_lines 1\ncolumn voucher\ncolumn date\ncolumn reference\n'
-         'column description\ncolumn debit total\ncolumn credit total\nsort date\nsort voucher\ngroup account\n'
-         'filter period = 7\n'),
+         'column description\ncolumn debit total\ncolumn credit total\ncolumn calc diff debit credit total\n'
+         'sort date\nsort voucher\ngroup account\nfilter period between ? ? "Periods"\n'),
         ("Open items by customer", "What each customer owes, invoice by invoice", "ar_open_items",
          'writer 1\nname "Open items by customer"\ndescription "What each customer owes, invoice by invoice"\n'
          'source ar_open_items 1\ncolumn invoice\ncolumn due_date\ncolumn amount total\ncolumn received total\n'

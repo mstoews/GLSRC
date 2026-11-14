@@ -141,6 +141,8 @@ const DialogCase kDialogs[] = {
     {IDD_STMT_LAYOUT, L"Statement Layout (port.rc, S3-M4)", false},   // its grid is IDC_SL_GRID, not ID_DISTLIST
     {IDD_AP_CONFIRM, L"Confirm Printed Cheques (port.rc, S5-M6)", false},   // its grid is IDC_APC_GRID
     {IDD_RW_DESIGN, L"Report Designer (port.rc, spec #7 S7-M2)", false},
+    {IDD_RW_CALC, L"Calculated Column (port.rc, spec #7 S7-M3)", false},
+    {IDD_RW_PROMPT, L"Report questions (port.rc, spec #7 S7-M3)", false},
 };
 
 void applyPictures(HWND dlg, const DialogCase& d)
