@@ -17,18 +17,27 @@
 //     (IDC_RW_COPY), opens a copy. Built-in reports can't be modified or
 //     copied, and say so. The six buttons are stacked in code in the
 //     template's column: Print, Add, Modify, Copy, Delete, Close.
+//   - S7-M5: Export and Import, two more buttons made in code, write and
+//     read a definition's text as a .gldef file (spec #7 6.1); the dialog
+//     grows to fit the eight. Without the "Report Writer" right (D8), Add,
+//     Modify, Copy, Delete and Import are greyed: running is unaffected.
 //
 #include "ReportList.h"
 
+#include "../Accounts.h"   // TrimText
 #include "../Globals.h"
 #include "../ReportWriter.h"
 #include "ReportDesigner.h"
 
 #include "win32fx.h"
 
+#include <commdlg.h>
+
 #include <algorithm>
+#include <cstdio>
 #include <exception>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -143,6 +152,10 @@ protected:
             case IDC_RW_COPY:
                 if (const long n = Chosen(L"copied")) Design(n, true);
                 return true;
+            case IDC_RW_EXPORT:
+                if (const long n = Chosen(L"exported")) Export(n);
+                return true;
+            case IDC_RW_IMPORT: Import(); return true;
             default: break;
             }
         }
@@ -195,8 +208,9 @@ private:
         grid_.SetActiveCell(1, std::min(std::max(activeRow, 1), static_cast<int>(entries_.size())));
     }
 
-    // The template's five buttons and Copy, stacked in its button column:
-    // Print, Add, Modify, Copy, Delete, Close.
+    // The template's five buttons and Copy, Export and Import, stacked in its
+    // button column: Print, Add, Modify, Copy, Delete, Export, Import, Close.
+    // The dialog and the list grow to fit them.
     void Buttons()
     {
         HWND add = GetDlgItem(hwnd(), kAddModId);
@@ -204,22 +218,47 @@ private:
         GetWindowRect(add, &r);
         MapWindowPoints(nullptr, hwnd(), reinterpret_cast<POINT*>(&r), 2);
         const LONG style = GetWindowLongW(add, GWL_STYLE);
-        HWND copy = CreateWindowExW(0, L"tbSuperBtn", L"C&opy...", static_cast<DWORD>(style) | WS_VISIBLE, r.left, r.top,
-                                    r.right - r.left, r.bottom - r.top, hwnd(),
-                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RW_COPY)), hInst, nullptr);
-        SendMessageW(copy, WM_SETFONT, SendMessageW(hwnd(), WM_GETFONT, 0, 0), TRUE);
+        const HFONT font = reinterpret_cast<HFONT>(SendMessageW(hwnd(), WM_GETFONT, 0, 0));
+        auto make = [&](const wchar_t* text, int id) {
+            HWND b = CreateWindowExW(0, L"tbSuperBtn", text, static_cast<DWORD>(style) | WS_VISIBLE, r.left, r.top,
+                                     r.right - r.left, r.bottom - r.top, hwnd(),
+                                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), hInst, nullptr);
+            SendMessageW(b, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        };
+        make(L"C&opy...", IDC_RW_COPY);
+        make(L"E&xport...", IDC_RW_EXPORT);
+        make(L"&Import...", IDC_RW_IMPORT);
         SetWindowTextW(add, L"&Add...");
         SetWindowTextW(GetDlgItem(hwnd(), kModifyId), L"&Modify...");
         RECT unit{0, 4, 0, 17};   // dialog units: the first button's top, and the step
         MapDialogRect(hwnd(), &unit);
         int y = unit.top;
         HWND after = HWND_TOP;
-        for (int id : {kPrintId, kAddModId, kModifyId, static_cast<int>(IDC_RW_COPY), kDeleteId, static_cast<int>(IDCANCEL)}) {
+        for (int id : {kPrintId, kAddModId, kModifyId, static_cast<int>(IDC_RW_COPY), kDeleteId,
+                       static_cast<int>(IDC_RW_EXPORT), static_cast<int>(IDC_RW_IMPORT), static_cast<int>(IDCANCEL)}) {
             HWND b = GetDlgItem(hwnd(), id);
             SetWindowPos(b, after, r.left, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);   // and the tab order
             after = b;
             y += unit.bottom;
         }
+        // Grow the dialog to the last button's bottom and a margin, and the list with it.
+        RECT client{};
+        GetClientRect(hwnd(), &client);
+        const int need = y - unit.bottom + (r.bottom - r.top) + unit.top;
+        if (need > client.bottom) {
+            const int dy = need - client.bottom;
+            RECT w{};
+            GetWindowRect(hwnd(), &w);
+            SetWindowPos(hwnd(), nullptr, 0, 0, w.right - w.left, w.bottom - w.top + dy, SWP_NOMOVE | SWP_NOZORDER);
+            HWND list = GetDlgItem(hwnd(), kGridId);
+            RECT g{};
+            GetWindowRect(list, &g);
+            SetWindowPos(list, nullptr, 0, 0, g.right - g.left, g.bottom - g.top + dy, SWP_NOMOVE | SWP_NOZORDER);
+        }
+        // Designing is a right (D8): running isn't.
+        if (!rw::MayDesignReports(cb, szMsg))
+            for (int id : {kAddModId, kModifyId, static_cast<int>(IDC_RW_COPY), kDeleteId, static_cast<int>(IDC_RW_IMPORT)})
+                EnableWindow(GetDlgItem(hwnd(), id), FALSE);
     }
 
     // The chosen user report's number; 0, with a message, for none or a built-in one.
@@ -252,6 +291,108 @@ private:
             if (show && entries_[i].definition == show) row = static_cast<int>(i) + 1;
         grid_.SetActiveCell(1, row);
         SetFocus(grid_.hwnd());
+    }
+
+    // ---- Export and Import (spec #7 6.1) ------------------------------------------------
+
+    // The filter's pairs are separated by NULs (and it ends with two).
+    static constexpr wchar_t kFileFilter[] = L"Report definitions (*.gldef)\0*.gldef\0All files (*.*)\0*.*\0";
+
+    void Export(long number)
+    {
+        std::optional<rw::StoredDefinition> d;
+        try {
+            d = rw::FindDefinition(cb, number);
+        } catch (const std::exception&) {
+        }
+        if (!d) {
+            MessageBoxW(hwnd(), L"The report is no longer on file.", szApp, MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        std::wstring name = fx::Utf8ToWide(d->name);
+        for (wchar_t& ch : name)
+            if (wcschr(L"\\/:*?\"<>|", ch)) ch = L'-';
+        wchar_t file[MAX_PATH] = {};
+        wcsncpy_s(file, (name + L".gldef").c_str(), _TRUNCATE);
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof ofn;
+        ofn.hwndOwner = hwnd();
+        ofn.lpstrFilter = kFileFilter;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrDefExt = L"gldef";
+        ofn.lpstrTitle = L"Export the report";
+        ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if (!GetSaveFileNameW(&ofn)) return;
+        FILE* f = nullptr;
+        bool ok = _wfopen_s(&f, file, L"wb") == 0 && f;
+        if (ok) {
+            ok = std::fwrite(d->text.data(), 1, d->text.size(), f) == d->text.size();
+            ok = std::fclose(f) == 0 && ok;
+        }
+        if (!ok)
+            MessageBoxW(hwnd(), (std::wstring(L"The file could not be written:\n\n") + file).c_str(), szApp,
+                        MB_OK | MB_ICONSTOP);
+    }
+
+    void Import()
+    {
+        wchar_t file[MAX_PATH] = {};
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof ofn;
+        ofn.hwndOwner = hwnd();
+        ofn.lpstrFilter = kFileFilter;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrTitle = L"Import a report";
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if (!GetOpenFileNameW(&ofn)) return;
+        std::string text;
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, file, L"rb") != 0 || !f) {
+            MessageBoxW(hwnd(), (std::wstring(L"The file could not be read:\n\n") + file).c_str(), szApp,
+                        MB_OK | MB_ICONSTOP);
+            return;
+        }
+        char buf[4096];
+        size_t got = 0;
+        while ((got = std::fread(buf, 1, sizeof buf, f)) > 0 && text.size() < 1000000) text.append(buf, got);
+        std::fclose(f);
+        if (text.size() >= 1000000) {
+            MessageBoxW(hwnd(), L"The file is too large to be a report definition.", szApp, MB_OK | MB_ICONEXCLAMATION);
+            return;
+        }
+        rw::ImportResult result;
+        try {
+            // Without logins (GL.INI [ACCESS] PSW=F) the user is NOLOGIN: kept blank, as the designer does.
+            const std::string user = TrimText(szUser) == "NOLOGIN" ? std::string() : TrimText(szUser);
+            result = rw::ImportDefinition(cb, text, user, now());
+        } catch (const std::exception& e) {
+            MessageBoxW(hwnd(), (L"The report could not be imported:\n\n" + fx::Utf8ToWide(e.what())).c_str(), szApp,
+                        MB_OK | MB_ICONSTOP);
+            return;
+        }
+        if (!result.number) {
+            MessageBoxW(hwnd(), (L"The report wasn't imported.\n\n" + fx::Utf8ToWide(result.refusal)).c_str(), szApp,
+                        MB_OK | MB_ICONEXCLAMATION);
+            return;
+        }
+        Fill(grid_.ActiveRow());
+        for (size_t i = 0; i < entries_.size(); ++i)
+            if (entries_[i].definition == result.number) grid_.SetActiveCell(1, static_cast<int>(i) + 1);
+        SetFocus(grid_.hwnd());
+        std::wstring said = L"Imported as “" + fx::Utf8ToWide(result.name) + L"”.";
+        if (result.renamed) said += L"\n\nAnother report had the file's name, so this one is numbered.";
+        MessageBoxW(hwnd(), said.c_str(), szApp, MB_OK | MB_ICONINFORMATION);
+    }
+
+    static std::string now()
+    {
+        SYSTEMTIME t{};
+        GetLocalTime(&t);
+        char b[32];
+        std::snprintf(b, sizeof b, "%04u%02u%02u%02u%02u%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        return b;
     }
 
     void Delete()

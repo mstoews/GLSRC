@@ -122,6 +122,8 @@
 #define IDC_RW_FASK             20218   // the designer: Ask when run, and its question (S7-M3)
 #define IDC_RW_FQUESTION        20219
 #define IDC_RW_ADDCALC          20221   // the designer: Calculation...
+#define IDC_RW_EXPORT           20222   // Custom Report: Export... (a .gldef file; spec #7 6.1, S7-M5)
+#define IDC_RW_IMPORT           20223   // Custom Report: Import...
 #define IDC_RWC_KIND            20230   // IDD_RW_CALC: the kind, its fields, and the word between them
 #define IDC_RWC_FIELDA          20231
 #define IDC_RWC_FIELDB          20232
@@ -149,6 +151,7 @@
 #define CM_AP_RECOVER           20504   // Transactions > Recover Purchase Voucher (spec #5 D7, S5-M3; ApPosting.h)
 #define CM_AR_RECOVER           20505   // Transactions > Recover Sales Voucher (spec #6 D7, S6-M3; ArPosting.h)
 #define CM_AR_STATEMENTS        20506   // Reporting > Accounts Receivable > Customer Statements (spec #6 7, S6-M6)
+#define CM_RW_DESIGN            20507   // not a command: the "Report Writer" accessm row (rw::kDesignRightId; spec #7 D8, S7-M5)
 
 // ---- strings ---------------------------------------------------------------
 

@@ -3,6 +3,7 @@
 //
 #include "catch_amalgamated.hpp"
 
+#include "report/Csv.h"
 #include "report/Format.h"
 
 #include <cstdint>
@@ -71,4 +72,33 @@ TEST_CASE("cells format by type and column", "[format]")
     CHECK(amount.alignment() == Align::Right);
     CHECK(text.alignment() == Align::Left);
     CHECK(Column("x", 1).aligned(Align::Center).alignment() == Align::Center);
+}
+
+TEST_CASE("ToCsv: headers, rows, amounts, dates, quoting (spec #7 Q4)", "[csv]")
+{
+    rpt::Report r;
+    r.title = "Sales by rep";
+    r.columns = {{"Invoice", 1.0}, {"Date", 1.0, rpt::CellType::Date}, {"Sales", 1.0, rpt::CellType::Amount, "(net)"},
+                 {"Qty", 0.5, rpt::CellType::Integer}};
+    r.rows = {rpt::Row::GroupHeader("Med rep: MR001  Ana, \"Dra.\""),
+              rpt::Row::Detail({rpt::Cell::Text("S-1001"), rpt::Cell::Date("20261015"), rpt::Cell::Amount(300000),
+                                rpt::Cell::Integer(3)}, 1),
+              rpt::Row::Detail({rpt::Cell::Text(" padded"), rpt::Cell::Date(""), rpt::Cell::Amount(-1250),
+                                rpt::Cell::Empty()}),
+              rpt::Row::Blank(),
+              rpt::Row::GroupFooter({rpt::Cell::Text("Total MR001"), {}, rpt::Cell::Amount(298750), {}}),
+              rpt::Row::PageBreak(),
+              rpt::Row::Total({rpt::Cell::Text("Total"), {}, rpt::Cell::Amount(298750), {}}, true),
+              rpt::Row::Note("Two lines,\nhere.")};
+    const std::string csv = rpt::ToCsv(r);
+    CHECK(csv == "\xEF\xBB\xBF"
+                 "Invoice,Date,Sales (net),Qty\r\n"
+                 "\"Med rep: MR001  Ana, \"\"Dra.\"\"\",,,\r\n"
+                 "S-1001,2026-10-15,3000.00,3\r\n"
+                 "\" padded\",,-12.50,\r\n"
+                 "Total MR001,,2987.50,\r\n"
+                 "Total,,2987.50,\r\n"
+                 "\"Two lines,\nhere.\",,,\r\n");
+    CHECK(rpt::CsvField("plain") == "plain");
+    CHECK(rpt::CsvField("") == "");
 }

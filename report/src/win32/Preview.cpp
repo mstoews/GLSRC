@@ -3,14 +3,17 @@
 //
 #include "report/win32/Preview.h"
 
+#include "report/Csv.h"
 #include "report/Layout.h"
 #include "report/win32/Gdi.h"
 #include "report/win32/Print.h"
 #include "report/win32/PrinterSetup.h"
 
+#include <commdlg.h>
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -24,8 +27,8 @@ namespace {
 constexpr wchar_t kPreviewClass[] = L"rptPreview";
 constexpr wchar_t kViewClass[] = L"rptPageView";
 
-enum : WORD { IDB_PRINT = 101, IDB_FIRST, IDB_PREV, IDB_NEXT, IDB_LAST, IDB_ZOOM, IDB_OPTIONS, IDB_CLOSE };
-constexpr int kButtons = 8;
+enum : WORD { IDB_PRINT = 101, IDB_FIRST, IDB_PREV, IDB_NEXT, IDB_LAST, IDB_ZOOM, IDB_OPTIONS, IDB_CLOSE, IDB_EXPORT };
+constexpr int kButtons = 9;
 
 enum class Zoom { FitWidth, FitPage, Actual };
 
@@ -82,6 +85,7 @@ public:
 
     void Go(int page);
     void Print();
+    void Export();   // the rows as CSV (spec #7 Q4)
     void CycleZoom();
     std::wstring title() const { return Widen(report_.title.empty() ? std::string("Report") : report_.title); }
 
@@ -321,7 +325,7 @@ bool PreviewWindow::OnCreate(LPCREATESTRUCTW cs)
     SetClassLongPtrW(hwnd(), GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(GetSysColorBrush(COLOR_BTNFACE)));
     SetUiFont();
 
-    const wchar_t* text[kButtons] = {L"&Print...", L"|<", L"<", L">", L">|", zoomText(zoom_), L"&Options...", L"&Close"};
+    const wchar_t* text[kButtons] = {L"&Print...", L"|<", L"<", L">", L">|", zoomText(zoom_), L"&Options...", L"&Close", L"E&xport..."};
     for (int i = 0; i < kButtons; ++i) {
         DWORD style = WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON;
         if (i != IDB_OPTIONS - IDB_PRINT || rebuild_) style |= WS_VISIBLE;
@@ -363,7 +367,8 @@ bool PreviewWindow::OnSize(UINT, int cx, int cy)
         MoveWindow(ctl, x, y, w, bh, TRUE);
         x += w + scaled(h, after96);
     };
-    place(buttons_[0], 72, 10);      // Print...
+    place(buttons_[0], 72, 2);       // Print...
+    place(buttons_[8], 72, 10);      // Export...
     place(buttons_[1], 32, 2);       // |<
     place(buttons_[2], 32, 2);       // <
     place(label_, 96, 2);            // n of m
@@ -381,6 +386,7 @@ bool PreviewWindow::OnCommand(WORD id, WORD code, HWND ctl)
     if (!ctl || code != BN_CLICKED) return false;
     switch (id) {
     case IDB_PRINT:   Print(); break;
+    case IDB_EXPORT:  Export(); break;
     case IDB_FIRST:   Go(0); break;
     case IDB_PREV:    Go(page_ - 1); break;
     case IDB_NEXT:    Go(page_ + 1); break;
@@ -466,6 +472,39 @@ void PreviewWindow::Print()
 {
     HWND owner = frame() ? frame()->hwnd() : hwnd();
     PrintReport(owner, report_, pageCount());
+}
+
+void PreviewWindow::Export()
+{
+    HWND owner = frame() ? frame()->hwnd() : hwnd();
+    // A file name from the title, without the characters Windows refuses.
+    std::wstring name = title();
+    for (wchar_t& ch : name)
+        if (wcschr(L"\\/:*?\"<>|", ch)) ch = L'-';
+    wchar_t file[MAX_PATH] = {};
+    wcsncpy_s(file, (name + L".csv").c_str(), _TRUNCATE);
+    // The filter's pairs are separated by NULs; a literal can't hold them as text.
+    static const wchar_t kFilter[] = L"CSV (for Excel) (*.csv)\0*.csv\0All files (*.*)\0*.*\0";
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = kFilter;
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"csv";
+    ofn.lpstrTitle = L"Export the report's rows";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&ofn)) return;
+    const std::string csv = ToCsv(report_);
+    FILE* f = nullptr;
+    bool ok = _wfopen_s(&f, file, L"wb") == 0 && f;
+    if (ok) {
+        ok = std::fwrite(csv.data(), 1, csv.size(), f) == csv.size();
+        ok = std::fclose(f) == 0 && ok;
+    }
+    if (!ok)
+        MessageBoxW(owner, (std::wstring(L"The file could not be written:\n\n") + file).c_str(), L"Export",
+                    MB_OK | MB_ICONSTOP);
 }
 
 void PreviewWindow::Options()

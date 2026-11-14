@@ -17,6 +17,7 @@
 #include "ReportWriter.h"
 
 #include "report/Format.h"   // rpt::ToCents
+#include "report/Csv.h"
 #include "report/TextRender.h"
 
 #include <map>
@@ -832,4 +833,308 @@ TEST_CASE("Purchase lines read the original's cancellation without migrating it 
     cb4sqlite::Query q(db.code, "SELECT trim(mode) FROM ap_btch WHERE batchno = 5 AND _deleted = 0");
     REQUIRE(q.next());
     CHECK(q.text(0) == "2");   // left as it was
+}
+
+TEST_CASE("Export and import: round trip, refusals, a taken name (S7-M5)", "[reportwriter]")
+{
+    // Exported from one copy of the fixture...
+    FixtureDb from;
+    EnsureArTables(from.code);
+    const ReportContext ctxFrom = LoadReportContext(from.code, "20261110");
+    std::string exported;
+    for (const StoredDefinition& s : LoadDefinitions(from.code))
+        if (s.name == "Sales by product") exported = s.text;   // what Export writes
+    REQUIRE_FALSE(exported.empty());
+    const BuildResult before = BuildReport(from.code, ctxFrom, parsed(exported));
+    REQUIRE(before.report);
+
+    // ...imported into another, whose report of that name is gone.
+    FixtureDb to;
+    EnsureArTables(to.code);
+    const ReportContext ctxTo = LoadReportContext(to.code, "20261110");
+    for (const StoredDefinition& s : LoadDefinitions(to.code))
+        if (s.name == "Sales by product") REQUIRE(DeleteDefinition(to.code, s.number));
+    ImportResult r = ImportDefinition(to.code, "\xEF\xBB\xBF" + exported, "CLERK", "20261114120000");
+    INFO(r.refusal);
+    REQUIRE(r.number > 0);
+    CHECK(r.name == "Sales by product");
+    CHECK_FALSE(r.renamed);
+    const auto stored = FindDefinition(to.code, r.number);
+    REQUIRE(stored);
+    CHECK(stored->text == exported);
+    CHECK(stored->madeBy == "CLERK");
+    const BuildResult after = BuildReport(to.code, ctxTo, parsed(stored->text));
+    REQUIRE(after.report);
+    CHECK(lastOf(*after.report, rpt::RowKind::Total)->cells[3].value ==
+          lastOf(*before.report, rpt::RowKind::Total)->cells[3].value);   // the same figures
+    CHECK(rpt::ToCsv(*after.report) == rpt::ToCsv(*before.report));
+
+    // Imported again: the name is taken, so it's numbered, with the title following.
+    r = ImportDefinition(to.code, exported, "", "20261114120001");
+    REQUIRE(r.number > 0);
+    CHECK(r.name == "Sales by product (2)");
+    CHECK(r.renamed);
+    CHECK(parsed(FindDefinition(to.code, r.number)->text).title == "Sales by product (2)");
+
+    // Refusals save nothing.
+    const size_t count = LoadDefinitions(to.code).size();
+    r = ImportDefinition(to.code, "hello", "", "x");
+    CHECK(r.number == 0);
+    CHECK(r.refusal.find("isn't a report") != std::string::npos);
+    r = ImportDefinition(to.code, "writer 2\nname \"Later\"\nsource sales_lines 1\ncolumn invoice\n", "", "x");
+    CHECK(r.refusal.find("newer version of the program") != std::string::npos);
+    r = ImportDefinition(to.code, "writer 1\nname \"Elsewhere\"\nsource payroll 1\ncolumn pay\n", "", "x");
+    CHECK(r.refusal == "The report reads from “payroll”, a source this program doesn't have.");
+    r = ImportDefinition(to.code, "writer 1\nname \"Newer\"\nsource sales_lines 9\ncolumn invoice\n", "", "x");
+    CHECK(r.refusal.find("newer version of the “Sales lines” source") != std::string::npos);
+    r = ImportDefinition(to.code, "writer 1\nname \"Empty\"\nsource sales_lines 1\n", "", "x");
+    CHECK_FALSE(r.refusal.empty());   // CheckDefinition: no column
+    CHECK(LoadDefinitions(to.code).size() == count);
+}
+
+TEST_CASE("The Report Writer right: added once, last; who may design (S7-M5)", "[reportwriter]")
+{
+    FixtureDb db;
+    auto rows = [&] {
+        std::vector<std::pair<long, long>> out;   // COUNT, ID in "menu" order
+        cb4sqlite::Query q(db.code, "SELECT \"COUNT\", id FROM accessm WHERE _deleted = 0 ORDER BY ifnull(\"COUNT\", 0), _rowid");
+        while (q.next()) out.push_back({static_cast<long>(q.integer(0)), static_cast<long>(q.integer(1))});
+        return out;
+    };
+    auto code = [&](const char* level) {
+        cb4sqlite::Query q(db.code, "SELECT trim(menucode) FROM accessl WHERE trim(level) = ?1");
+        q.bindText(1, level);
+        REQUIRE(q.next());
+        return q.text(0);
+    };
+
+    // The fixture has it, last; the clerk (level B) is denied it, the administrator isn't.
+    auto all = rows();
+    REQUIRE_FALSE(all.empty());
+    CHECK(all.back().second == kDesignRightId);
+    CHECK_FALSE(EnsureReportWriterAccess(db.code));   // there already
+    CHECK(rows() == all);
+    CHECK(MayDesignReports(db.code, code("A")));
+    CHECK_FALSE(MayDesignReports(db.code, code("B")));
+    CHECK(MayDesignReports(db.code, ""));   // no login: nothing is greyed
+
+    // A company that predates it: removed, then added back last, once, with
+    // the existing codes' places unchanged (plan P5).
+    {
+        cb4sqlite::Transaction tx(db.code);
+        Data4 m(&db.code, "accessm");
+        Field4 id(m, "id");
+        for (m.top(); !m.eof(); m.skip())
+            if (std::atol(id.str()) == kDesignRightId) m.deleteRec();
+        m.pack();
+        m.close();
+        tx.commit();
+    }
+    const auto without = rows();
+    REQUIRE(without.size() == all.size() - 1);
+    CHECK(MayDesignReports(db.code, code("B")));   // no row: no right to deny
+    EnsureReportWriterTables(db.code);
+    const auto with = rows();
+    REQUIRE(with.size() == without.size() + 1);
+    CHECK(std::equal(without.begin(), without.end(), with.begin()));
+    CHECK(with.back().second == kDesignRightId);
+    CHECK(with.back().first == without.back().first + 1);
+    CHECK_FALSE(EnsureReportWriterAccess(db.code));
+    CHECK(rows().size() == with.size());
+    // A code that doesn't reach the new row grants it; '1' at its place denies it.
+    const std::string shorter(with.size() - 1, '0');
+    CHECK(MayDesignReports(db.code, shorter));
+    CHECK_FALSE(MayDesignReports(db.code, shorter + "1"));
+}
+
+TEST_CASE("The row limit names the questions to narrow; CSV of a grouped report (S7-M5)", "[reportwriter]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    const std::string asking = "writer 1\nname \"GL\"\nsource gl_lines 1\ncolumn voucher\ncolumn debit total\n"
+                               "group account\nfilter period between ? ? \"Periods\"\n";
+    BuildResult b = BuildReport(db.code, ctx, parsed(asking), {{0, {"1", "12"}}}, 2);
+    CHECK_FALSE(b.report);
+    CHECK(b.refusal == "The report has more than 2 rows, too many to lay out. Answer its questions (Periods) more "
+                       "narrowly and run it again.");
+    b = BuildReport(db.code, ctx, parsed("writer 1\nname \"GL\"\nsource gl_lines 1\ncolumn voucher\n"), {}, 20000);
+    CHECK(b.report);
+    b = BuildReport(db.code, ctx, parsed("writer 1\nname \"GL\"\nsource gl_lines 1\ncolumn voucher\n"), {}, 2);
+    CHECK(b.refusal.find("Narrow its filters") != std::string::npos);
+    CHECK(BuildReport(db.code, ctx, parsed("writer 1\nname \"GL\"\nsource gl_lines 1\ncolumn voucher\n"), {}, 1)
+              .refusal.find("more than 1 rows") != std::string::npos);
+
+    // The grouped report as CSV: a line per header, detail, footer and total.
+    const rpt::Report r = built(db.code, ctx, asking, {{0, {"7", "7"}}});
+    const std::string csv = rpt::ToCsv(r);
+    CHECK(csv.rfind("\xEF\xBB\xBFVoucher,Debit\r\n", 0) == 0);
+    size_t lines = 0;
+    for (size_t at = 0; (at = csv.find("\r\n", at)) != std::string::npos; at += 2) ++lines;
+    size_t printed = 1;   // the headers
+    for (const rpt::Row& row : r.rows)
+        printed += row.kind == rpt::RowKind::Blank || row.kind == rpt::RowKind::PageBreak ? 0 : 1;
+    CHECK(lines == printed);
+    CHECK(csv.find("\r\nAccount: 101000") != std::string::npos);
+    CHECK(csv.find("\r\nTotal,1575.00\r\n") != std::string::npos);
+}
+
+// The Spec #7 sign-off sheet (gl/docs/superpowers/specs/2026-11-14-spec7-acceptance.md):
+// each criterion's report, made as the designer saves it, and every figure
+// the sheet quotes. If the screen differs, this says which figure is right.
+TEST_CASE("The Spec #7 acceptance walkthrough's figures", "[reportwriter][acceptance]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    EnsureApTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261114");
+    auto total = [](const rpt::Report& r, size_t cell) {
+        const rpt::Row* t = lastOf(r, rpt::RowKind::Total);
+        REQUIRE(t);
+        return t->cells[cell].value;
+    };
+    auto footers = [](const rpt::Report& r, size_t cell) {
+        std::vector<std::int64_t> out;
+        for (const rpt::Row& row : r.rows)
+            if (row.kind == rpt::RowKind::GroupFooter) out.push_back(row.cells[cell].value);
+        return out;
+    };
+    auto save = [&](const std::string& text) {
+        const ReportDefinition d = parsed(text);
+        REQUIRE_FALSE(CheckDefinition(db.code, d));
+        return SaveDefinition(db.code, 0, d, "ADMIN", "20261114100000");
+    };
+
+    // #1 Make a report: Sales by product, from nothing.
+    const std::string made = "writer 1\nname \"Sales by product (made)\"\nsource sales_lines 1\ncolumn invoice\n"
+                             "column customer_name\ncolumn qty total\ncolumn sales total\ncolumn vat total\n"
+                             "group product\nfilter state in Posted Transferred\n";
+    CHECK(WriteDefinition(parsed(made)) == made);   // what the designer's Save writes
+    const long madeNo = save(made);
+    CHECK(madeNo == 4);   // after the fixture's three
+    const rpt::Report r1 = built(db.code, ctx, made);
+    CHECK(headers(r1) == std::vector<std::string>{"Product: P100  Analgesic tablets 100mg",
+                                                  "Product: P200  Cough syrup 200ml",
+                                                  "Product: P300  Topical ointment 30g"});
+    CHECK(footers(r1, 3) == std::vector<std::int64_t>{200000, 100000, 80000});
+    CHECK(footers(r1, 4) == std::vector<std::int64_t>{20000, 10000, 0});
+    CHECK(footers(r1, 2) == std::vector<std::int64_t>{100, 400, 0});
+    CHECK(total(r1, 2) == 500);
+    CHECK(total(r1, 3) == 380000);
+    CHECK(total(r1, 4) == 30000);
+    {   // sqlite3: select sum(amount), sum(vatamt) from ar_dist where _deleted=0  ->  4100.0|300.0
+        cb4sqlite::Query q(db.code, "SELECT sum(amount), sum(vatamt) FROM ar_dist WHERE _deleted = 0");
+        REQUIRE(q.next());
+        CHECK(rpt::ToCents(q.number(0)) == total(r1, 3) + total(r1, 4));
+        CHECK(rpt::ToCents(q.number(1)) == total(r1, 4));
+    }
+
+    // #2 Ask when run: the same report asking for the periods; two runs.
+    const std::string asking = made + "filter period between ? ? \"Periods\"\n";
+    REQUIRE(FindDefinition(db.code, madeNo));
+    SaveDefinition(db.code, madeNo, parsed(asking), "ADMIN", "20261114100100");
+    CHECK(LoadDefinitions(db.code).size() == 4);   // Modify changed the row
+    CHECK_FALSE(BuildReport(db.code, ctx, parsed(asking)).report);   // it needs its answers
+    const rpt::Report r2a = built(db.code, ctx, asking, {{1, {"7", "7"}}});
+    CHECK(r2a.subtitles == std::vector<std::string>{"State is one of Posted, Transferred", "Period from 7 to 7"});
+    CHECK(total(r2a, 3) == 380000);
+    CHECK(total(r2a, 4) == 30000);
+    const rpt::Report r2b = built(db.code, ctx, asking, {{1, {"8", "8"}}});
+    CHECK(rowsOf(r2b, rpt::RowKind::Detail) == 0);
+    CHECK(lastOf(r2b, rpt::RowKind::Note)->text == "No rows match the report's filters.");
+
+    // #3 Groups and pages: open items by customer, a page each, as Open Receivables Detail.
+    const std::string pages = "writer 1\nname \"Open items, a page each\"\nsource ar_open_items 1\ncolumn invoice\n"
+                              "column due_date\ncolumn amount total\ncolumn received total\ncolumn owed total\n"
+                              "group customer page\nfilter state <> Settled\n";
+    save(pages);
+    const rpt::Report r3 = built(db.code, ctx, pages);
+    CHECK(headers(r3) == std::vector<std::string>{"Customer: C001  City General Hospital", "Customer: C002  Reyes, Ana Dra."});
+    CHECK(rowsOf(r3, rpt::RowKind::PageBreak) == 1);
+    CHECK(footers(r3, 4) == std::vector<std::int64_t>{220000, 60000});
+    CHECK(total(r3, 4) == 280000);
+    CHECK(total(r3, 3) == 50000);
+    CHECK(total(r3, 4) == total(ArOpenReceivables(db.code, ctx), 5));
+
+    // #4 Filters: GL voucher lines on 410001 for periods 7-8; then sales lines on 410001, cancelled out, then in.
+    const std::string onAccount = "writer 1\nname \"Sales account lines\"\nsource gl_lines 1\ncolumn voucher\n"
+                                  "column dept\ncolumn description\ncolumn credit total\nfilter account = 410001\n"
+                                  "filter period between 7 8\n";
+    const rpt::Report r4a = built(db.code, ctx, onAccount);
+    CHECK(column(r4a, 0) == std::vector<std::string>{"101", "101"});
+    CHECK(column(r4a, 1) == std::vector<std::string>{"10", "20"});
+    CHECK(total(r4a, 3) == 115000);
+    const std::string salesOn = "writer 1\nname \"Sales on 410001\"\nsource sales_lines 1\ncolumn voucher\n"
+                                "column state\ncolumn sales total\nfilter account contains 410001\n";
+    const rpt::Report r4b = built(db.code, ctx, salesOn);
+    CHECK(column(r4b, 0) == std::vector<std::string>{"1", "2", "2", "3", "4", "5"});
+    CHECK(total(r4b, 2) == 800000);
+    const rpt::Report r4c = built(db.code, ctx, salesOn + "filter state = Cancelled\n");
+    CHECK(column(r4c, 0) == std::vector<std::string>{"6"});
+    CHECK(total(r4c, 2) == 50000);
+
+    // #5 Calculated columns: debit - credit; a percentage of the total.
+    const std::string calc = "writer 1\nname \"GL lines, net\"\nsource gl_lines 1\ncolumn voucher\ncolumn debit total\n"
+                             "column credit total\ncolumn calc diff debit credit total\nfilter period between 7 7\n";
+    const rpt::Report r5a = built(db.code, ctx, calc);
+    CHECK(total(r5a, 1) == 157500);
+    CHECK(total(r5a, 2) == 156500);
+    CHECK(total(r5a, 3) == 1000);   // voucher 102 is out of balance by 10.00
+    const std::string share = made + "column calc pct sales total total\n";
+    const rpt::Report r5b = built(db.code, ctx, share);
+    CHECK(footers(r5b, 5) == std::vector<std::int64_t>{5263, 2632, 2105});
+    CHECK(total(r5b, 5) == 10000);
+
+    // #6 Manage: Copy names a second report; Delete removes it.
+    CHECK(CopyName(db.code, "Sales by product (made)") == "Copy of Sales by product (made)");
+    const long copyNo = SaveDefinition(db.code, 0, [&] {
+        ReportDefinition d = parsed(asking);
+        d.name = d.title = d.description = "Copy of Sales by product (made)";
+        return d;
+    }(), "ADMIN", "20261114100200");
+    CHECK(LoadDefinitions(db.code).size() == 6);
+    CHECK(DeleteDefinition(db.code, copyNo));
+    CHECK(LoadDefinitions(db.code).size() == 5);
+
+    // #7 Export and import between two copies of the company: the same figures.
+    FixtureDb other;
+    EnsureArTables(other.code);
+    const ImportResult imported = ImportDefinition(other.code, FindDefinition(db.code, madeNo)->text, "", "20261114100300");
+    REQUIRE(imported.number > 0);
+    CHECK(imported.name == "Sales by product (made)");
+    const rpt::Report r7 = built(other.code, LoadReportContext(other.code, "20261114"),
+                                 FindDefinition(other.code, imported.number)->text, {{1, {"7", "7"}}});
+    CHECK(rpt::ToCsv(r7) == rpt::ToCsv(r2a));
+
+    // #8 Access: the clerk (B) may not design; the administrator may.
+    {
+        cb4sqlite::Query q(db.code, "SELECT trim(level), trim(menucode) FROM accessl WHERE _deleted = 0 ORDER BY 1");
+        REQUIRE(q.next());
+        CHECK(MayDesignReports(db.code, q.text(1)));   // A
+        REQUIRE(q.next());
+        CHECK_FALSE(MayDesignReports(db.code, q.text(1)));   // B
+    }
+
+    // #9 Safety and limits: an unknown field opens marked and is left out; the
+    // row limit; only gl_rptdef (and the one accessm row) is written.
+    const std::string unknown = "writer 1\nname \"Old report\"\nsource sales_lines 1\ncolumn invoice\ncolumn colour\n";
+    const ImportResult old = ImportDefinition(db.code, unknown, "", "20261114100400");
+    REQUIRE(old.number > 0);
+    CHECK(MissingFields(parsed(FindDefinition(db.code, old.number)->text)) == std::vector<std::string>{"colour"});
+    const rpt::Report r9 = built(db.code, ctx, unknown);
+    CHECK(r9.columns.size() == 1);
+    CHECK(lastOf(r9, rpt::RowKind::Note)->text.find("colour") != std::string::npos);
+    CHECK(BuildReport(db.code, ctx, parsed(unknown), {}, 5).refusal.find("more than 5 rows") != std::string::npos);
+    // The books' tables, as the sheet counts them before #1 and after #9: 9|27|6|6|3.
+    cb4sqlite::Query books(db.code, "SELECT (SELECT count(*) FROM gl_btchd WHERE _deleted = 0), "
+                                    "(SELECT count(*) FROM gl_dist WHERE _deleted = 0), "
+                                    "(SELECT count(*) FROM ar_btch WHERE _deleted = 0), "
+                                    "(SELECT count(*) FROM ap_btch WHERE _deleted = 0), "
+                                    "(SELECT count(*) FROM ar_dist WHERE _deleted = 0)");
+    REQUIRE(books.next());
+    CHECK(books.integer(0) == 9);
+    CHECK(books.integer(1) == 27);
+    CHECK(books.integer(2) == 6);
+    CHECK(books.integer(3) == 6);
+    CHECK(books.integer(4) == 3);
 }
