@@ -198,7 +198,8 @@ struct StoredDefinition {
     std::string madeBy, madeOn, changedBy, changedOn;   // user, yyyymmddhhmmss
 };
 
-// Creates gl_rptdef when the company lacks it.
+// Creates gl_rptdef when the company lacks it, and adds the "Report Writer"
+// access row (below) when accessm lacks it.
 void EnsureReportWriterTables(cb4sqlite::Code4& code);
 
 std::vector<StoredDefinition> LoadDefinitions(cb4sqlite::Code4& code);   // in name order
@@ -227,6 +228,41 @@ std::optional<DefinitionProblem> CheckDefinition(cb4sqlite::Code4& code, const R
 
 // A free name for a copy of `name`: "Copy of <name>", then "Copy of <name> (2)", ...
 std::string CopyName(cb4sqlite::Code4& code, const std::string& name);
+
+// ---- export, import, access (spec #7 6.1, D8; plan S7-M5) --------------------------------
+
+// A free name for `name`: itself, then "<name> (2)", "<name> (3)", ... (40 at most).
+std::string FreeName(cb4sqlite::Code4& code, const std::string& name);
+
+// Import (Custom Report's Import...): a .gldef file's text, WriteDefinition's
+// format, saved as a new report. Refused, saving nothing, when it doesn't
+// parse (a newer format among them), names a source this program doesn't
+// have or a newer version of one, or fails CheckDefinition. A name another
+// report has gets FreeName's.
+struct ImportResult {
+    long number = 0;           // the new report; 0 when refused
+    std::string name;          // as saved
+    bool renamed = false;      // the file's name was taken
+    std::string refusal;
+};
+ImportResult ImportDefinition(cb4sqlite::Code4& code, const std::string& text, const std::string& user,
+                              const std::string& stamp);
+
+// The "Report Writer" right (D8, Q2): an accessm row, not a menu command, so
+// User Access lists it with the menus. A level whose menu code has '1' at
+// its place may run reports but not design them: Custom Report greys Add,
+// Modify, Copy, Delete and Import. The row is added last (the highest COUNT
+// + 1), so every existing code keeps its places (plan P5).
+inline constexpr int kDesignRightId = 20507;   // accessm ID; PortIds.h CM_RW_DESIGN
+inline constexpr char kDesignRightText[] = "Report Writer (design reports)";
+
+// Adds the row when accessm exists and lacks it; true when it was added.
+bool EnsureReportWriterAccess(cb4sqlite::Code4& code);
+
+// May a user with this menu code (szMsg) design reports? Yes without
+// accessm, without the row, or with a code too short to reach it, as
+// ApplyMenuAccess enables a menu the code doesn't reach.
+bool MayDesignReports(cb4sqlite::Code4& code, const std::string& menuCode);
 
 // The fields `def` names (columns, sort, groups, filters) that its source
 // doesn't have, in that order, once each (D9: the designer marks them).

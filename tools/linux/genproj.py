@@ -85,11 +85,11 @@ PROJECTS = [
     dict(name="gl_tests", dir="gl_tests", n=7, hand=True),
     # The report library (spec #3 4): the portable core, and the Windows half in src\win32 (S3-M1).
     dict(name="report", dir="report", n=8, type="StaticLibrary", sub=None,
-         headers=["include\\report\\Report.h", "include\\report\\Format.h", "include\\report\\Layout.h",
-                  "include\\report\\TextRender.h", "include\\report\\win32\\Gdi.h",
+         headers=["include\\report\\Report.h", "include\\report\\Csv.h", "include\\report\\Format.h",
+                  "include\\report\\Layout.h", "include\\report\\TextRender.h", "include\\report\\win32\\Gdi.h",
                   "include\\report\\win32\\PrinterSetup.h", "include\\report\\win32\\Print.h",
                   "include\\report\\win32\\Preview.h"],
-         sources=["src\\Format.cpp", "src\\Layout.cpp", "src\\TextRender.cpp", "src\\win32\\GdiMeasure.cpp",
+         sources=["src\\Csv.cpp", "src\\Format.cpp", "src\\Layout.cpp", "src\\TextRender.cpp", "src\\win32\\GdiMeasure.cpp",
                   "src\\win32\\PrinterSetup.cpp", "src\\win32\\Print.cpp", "src\\win32\\Preview.cpp"],
          refs=[], extra=None),
     # Hand-written, as gl_tests (Catch2 from cb4sqlite_tests\vendor).

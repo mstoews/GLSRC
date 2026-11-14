@@ -18,7 +18,7 @@ rows are made up.
 
 Users (name / password / level):
     ADMIN / ADMIN / A   nothing grayed
-    CLERK / clerk / B   the Maintenance menu grayed
+    CLERK / clerk / B   the Maintenance menu grayed, and Report Writer (runs reports, designs none)
 """
 
 import importlib.util
@@ -793,14 +793,17 @@ def main():
          ("CLERK", "Data entry", "20261107", "clerk", "B")], mdx=True)
     mdx(os.path.join(d, "ACCESS.MDX"), "ACCESS", [("U", "USERNAME", "C", False, False, "")])
 
-    items = manila_items()
+    # The menu's items, then the port's "Report Writer" right (spec #7 D8): not a
+    # menu command, the row EnsureReportWriterTables adds last when missing.
+    items = manila_items() + [("Reporting", "Report Writer (design reports)", 20507)]
     dbf(os.path.join(d, "ACCESSM.DBF"),
         [("COUNT", "N", 5, 0), ("POPUP", "C", 40, 0), ("TEXT", "C", 60, 0), ("ID", "N", 6, 0)],
         [(i + 1, popup, text, cmd) for i, (popup, text, cmd) in enumerate(items)], mdx=True)
     mdx(os.path.join(d, "ACCESSM.MDX"), "ACCESSM", [("MENU", "STR(COUNT,5)", "C", False, False, "")])
 
     admin = "0" * len(items)
-    clerk = "".join("1" if popup == "Maintenance" else "0" for popup, _, _ in items)
+    # The clerk: no Maintenance menu, and runs reports without designing them.
+    clerk = "".join("1" if popup == "Maintenance" or cmd == 20507 else "0" for popup, _, cmd in items)
     dbf(os.path.join(d, "ACCESSL.DBF"), [("LEVEL", "C", 1, 0), ("MENUCODE", "C", len(items), 0)],
         [("A", admin), ("B", clerk)], mdx=True)
     mdx(os.path.join(d, "ACCESSL.MDX"), "ACCESSL", [("L", "LEVEL", "C", False, False, "")])
