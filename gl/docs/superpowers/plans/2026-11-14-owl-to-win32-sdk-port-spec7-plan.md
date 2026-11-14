@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 to M3 built)
+**Plan status:** In progress (S7-M0 to M4 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -237,6 +237,42 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 4 — The other sources
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): each source reads through its owner's loader where there is one:
+>   - `LoadBalances` (Spec #3's `reports/Balances.h`), `LoadAssets` / `LoadAssetTypes` and `BookValue`;
+>   - `LoadVendors`, `LoadOpenItems`, `AmountOwed`, `LoadApVouchers` / `LoadApLines` (with `ap_linex`'s roles and gross);
+>   - `LoadCustomers`, `LoadReceipts`.
+>
+>   `gl_dist` and the three master tables have no loader for this, so those sources run their own read-only queries.
+> - **Sources** (task 2): 14 in all. M0's three stay first, so a new report still starts on Sales lines. Then:
+>   - **Posted ledger lines** (`gl_dist`, with "From": GL, AP, AR...);
+>   - **Accounts**: opening; the balance at the current period and for the year; each period's movement. Last year and the budget are year totals, not by period.
+>   - **Purchase lines**: the expense lines of invoice and cash vouchers, with "Amount" (typed) and "Expense (net)". There is no VAT share: AP's W/H mode makes the split per voucher, not per line.
+>   - **AP open items**: owed as Create Cheques counts it, 0 once a cheque is made.
+>   - **AR receipts**, **Customers** (AR_ACCT labelled "Sales account"), **Vendors**, **Fixed assets** (disposed ones too, with a state), **Med reps**, **Products** (FONHAND is the cost, FAVPRICE the unit price, as the masters screen uses them), **Doctors**.
+>
+>   Cancelled vouchers are left out by default on Purchase lines, as on Sales lines.
+> - **A read-only catch:** the drive showed voucher 5 on Purchase lines. It is the original's cancellation, MODE "2" with the reference "Cancelled", which `EnsureApTables` migrates to "X". The writer mustn't write AP's tables (spec §10 #9), so it reads that form as Cancelled.
+> - **The prompt:** a question on a vendor gets a vendor combo, as a customer gets a customer combo.
+> - **Tests** (task 3): two cases.
+>   - **Every source** builds with every field as a column and has rows on the fixture.
+>   - **Against the built-in reports:**
+>     - Accounts: the Trial Balance's debit and credit totals, and opening + periods = the year's balance.
+>     - Fixed assets: the Fixed Asset Summary's cost and book value for the assets in use.
+>     - AP open items: what Detailed Vendor Open Payables says is owed.
+>     - AR receipts: the Receipts Register's received and discount.
+>   - **Against the tables or loaders:** posted lines against `gl_dist`; purchase lines against `LoadApLines`; vendors, customers and the masters by count.
+>   - **The old cancellation:** read without being migrated.
+>
+>   `gl_tests`: 175 cases.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0. Driven in the app on a scratch copy, by messages to its own windows, all in the designer's Preview:
+>   - **Accounts:** account, description and balance for each account of the chart.
+>   - **AP open items:** asking for the vendor showed the three vendors in a combo; V001 has nothing owed, so the note.
+>   - **Fixed assets** by type: 28,400.00 + 2,000.00, the disposed printer at 0.00.
+>   - **Purchase lines** by vendor: 8,440.00 typed, 8,200.00 expense, without the cancelled vouchers.
+>
+>   Screenshots checked each preview.
 
 **Goal:** every source of spec §4.
 
