@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 to M5 built)
+**Plan status:** Built (S7-M0 to M6); the walkthrough with a witness and sign-off are the user's
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -217,7 +217,7 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 >
 >   Screenshots checked the designer, the calculation dialog, the prompt and the previews.
 >   - **Known:** a long calculated header is cut at the column's width; typing a label or a width fixes it.
->   - **Known (from M0):** a group footer's label ("Total 101000") is cut to the first column's width when that column is narrow ("Total 10100").
+>   - **Known (from M0):** a group footer's label ("Total 101000") is cut to the first column's width when that column is narrow ("Total 10100"). Fixed in M6.
 
 **Goal:** one report serves every period; the few calculations spec §5.3 allows.
 
@@ -343,6 +343,27 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 
 1. **`gl/docs/superpowers/specs/2026-11-14-spec7-acceptance.md`**, in the Spec #6 sheet's shape, with spec §10's checks, the fixture's figures and the `sqlite3` queries that produce them; a `gl_tests` case that makes the same reports and checks every figure.
 2. Release build check, the walkthrough with a witness, triage, sign-off.
+
+> **As built (2026-11-14; task 1).**
+> - **The sheet** (`specs/2026-11-14-spec7-acceptance.md`) has spec §10's checks as 10 criteria. #1–#6 run in order on one fresh copy of the fixture; #7 sets it aside and makes company B, where #8 and #9 run.
+>   1. "Sales by product (made)" from nothing: 3,800.00 sales and 300.00 VAT, as `ar_dist` says;
+>   2. the same report asking for the periods: 7 to 7, then 8 to 8 (the note), from the preview's Options...;
+>   3. open items by customer, a page each: 2,800.00, as Open Receivables Detail;
+>   4. filters: GL lines on 410001 for periods 7–8 (1,150.00); sales lines with cancelled voucher 6 left out, then alone;
+>   5. debit − credit (10.00, voucher 102) and a percentage of the total (52.63, 26.32, 21.05);
+>   6. Copy, Delete and the built-in refusals;
+>   7. export from company A, import into B twice (numbered), the same CSV from both;
+>   8. the clerk's greyed buttons, and User Access showing the right;
+>   9. an old definition's unknown field marked and left out, and the books' tables unchanged.
+>
+>   Criterion 10 is the regression. It ends with the known gaps G1–G9 and the triage and sign-off tables.
+> - **Spec drift (G1):** spec §10 #4 asks for GL lines with cancelled vouchers. The General Ledger's Cancel deletes an open voucher (Spec #2), so the sheet shows cancelled rows on Sales lines.
+> - **Its figures are tested:** `gl_tests` "The Spec #7 acceptance walkthrough's figures" makes each report from the definition the designer saves. It checks every figure, the report numbers, Modify not duplicating, the import between two copies (identical CSV), the two levels' rights, the unknown field, and the books' counts. `gl_tests`: 179 cases (`[reportwriter]` 16).
+> - **Fixed while preparing the sheet (T1):** a group footer's or total's label under a narrow first column was cut, "Total 10100" for account 101000 (the M3 note). The layout now lets such a label run on, left-aligned, over the empty columns to its right; a filled neighbour still stops it (`report/src/Layout.cpp`).
+>
+>   Built-in reports' golden layouts are unchanged: none had a cut label. `report_tests`: 19 cases. Driven: *GL lines by account* now shows "Total 101000", "Total 102101", ...
+> - **Checked on the dev machine:** Debug and Release `/W4 /WX` clean; `gl_tests` (179), `report_tests` (19) and `cb4sqlite_tests` (77) pass in both; `/checkres` 0; `/stress` 0.
+> - **Task 2**, the walkthrough with a witness on a fresh machine, triage and sign-off, is the user's.
 
 ---
 

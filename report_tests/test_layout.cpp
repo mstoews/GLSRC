@@ -236,3 +236,24 @@ TEST_CASE("paper sizes", "[layout]")
     CHECK(land.width == 15840);
     CHECK(land.height == 12240);
 }
+
+TEST_CASE("A footer's label runs on over empty columns instead of being cut (S7-M6)", "[layout]")
+{
+    Report r;
+    r.title = "Spill";
+    r.columns = {{"No.", 0.4, CellType::Integer}, {"Description", 2.0}, {"Debit", 1.0, CellType::Amount}};
+    r.rows = {Row::Detail({Cell::Integer(100), Cell::Text("Transfer"), Cell::Amount(25000)}),
+              Row::GroupFooter({Cell::Text("Total 101000 PETTY CASH"), {}, Cell::Amount(25000)}),
+              Row::GroupFooter({Cell::Text("Total with a neighbour"), Cell::Text("x"), Cell::Amount(25000)}),
+              Row::Total({Cell::Text("Total"), {}, Cell::Amount(25000)}, true)};
+    const FixedMeasure m;
+    const auto pages = Layout(r, PageSetup::A4(), m);
+    REQUIRE(pages.size() == 1);
+    bool whole = false, cut = false;
+    for (const TextOp& t : pages[0].texts) {
+        whole = whole || t.text == "Total 101000 PETTY CASH";
+        cut = cut || (t.text.rfind("Total with", 0) == 0 && t.text != "Total with a neighbour");
+    }
+    CHECK(whole);   // the empty Description column took it
+    CHECK(cut);     // a filled neighbour stops it: cut as before
+}

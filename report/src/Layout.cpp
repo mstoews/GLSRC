@@ -61,7 +61,7 @@ private:
     void text(int x, int y, int w, Align a, Role role, std::string_view s);
     void rule(int x1, int x2, int y) { cur_->rules.push_back({x1, x2, y}); }
     void drawColumnHeaders(int& y);
-    void drawCells(const Row& row, int y, Role role);
+    void drawCells(const Row& row, int y, Role role, bool spill = false);   // spill: a footer's label may run on
     void drawRow(const Row& row, int& y);
     void drawPageHeaders();
 
@@ -208,7 +208,7 @@ void Engine::drawColumnHeaders(int& y)
     y += rulePad_;
 }
 
-void Engine::drawCells(const Row& row, int y, Role role)
+void Engine::drawCells(const Row& row, int y, Role role, bool spill)
 {
     for (size_t i = 0; i < r_.columns.size() && i < row.cells.size(); ++i) {
         const Cell& cell = row.cells[i];
@@ -222,13 +222,24 @@ void Engine::drawCells(const Row& row, int y, Role role)
             w -= in;
         }
         const Role cellRole = cell.bold ? Role::Bold : role;
+        // A footer's or total's label ("Total 101000") that doesn't fit its
+        // column runs on over the empty columns to its right, rather than be
+        // cut ("Total 10100") under a narrow first column (spec #7 S7-M6).
+        // It reads from the left, whatever its column's alignment (a voucher
+        // number column is right-aligned).
+        Align align = col.alignment();
+        if (spill && cell.type == CellType::Text && m_.TextWidth(cellRole, s) > w) {
+            for (size_t j = i + 1; j < r_.columns.size() && (j >= row.cells.size() || row.cells[j].type == CellType::Empty); ++j)
+                w = colX_[j] + colW_[j] - x;
+            align = Align::Left;
+        }
         // Numbers and dates that don't fit print "###": cut short, they would
         // read as another value ("10/15/20" for 10/15/2026).
         const bool whole = cell.type == CellType::Amount || cell.type == CellType::Integer || cell.type == CellType::Date;
         if (whole && m_.TextWidth(cellRole, s) > w)
-            text(x, y, w, col.alignment(), cellRole, "###");
+            text(x, y, w, align, cellRole, "###");
         else
-            text(x, y, w, col.alignment(), cellRole, s);
+            text(x, y, w, align, cellRole, s);
     }
 }
 
@@ -257,7 +268,7 @@ void Engine::drawRow(const Row& row, int& y)
                 rule(colX_[i], colX_[i] + colW_[i], y + rulePad_ / 2);
         const int ty = y + rulePad_;
         const Role role = row.kind == RowKind::Total ? Role::Bold : Role::Body;
-        drawCells(row, ty, role);
+        drawCells(row, ty, role, true);
         if (row.kind == RowKind::Total && row.final) {
             const int lh = role == Role::Bold ? bold_ : body_;
             for (size_t i = 0; i < r_.columns.size() && i < row.cells.size(); ++i)
