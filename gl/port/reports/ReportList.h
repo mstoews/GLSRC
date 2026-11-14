@@ -7,8 +7,10 @@
 // and Print (or a double-click, or Enter) runs the chosen one as its menu
 // item does: its options dialog, if it has one, then its preview.
 //
-//   - Add/Mod, Delete and Modify are hidden: the list isn't editable, and
-//     gl_rept is neither read nor changed.
+//   - Spec #7 (S7-M1): the user reports of gl_rptdef (ReportWriter.h) follow
+//     the built-in ones, with who made them; Delete removes one, after asking
+//     (a built-in report can't be). Add/Mod and Modify stay hidden until the
+//     designer (S7-M2). gl_rept is neither read nor changed.
 //   - The original's SetupWindow called cb.closeAll(), closing every open
 //     table under the other windows; the port doesn't.
 //
@@ -29,6 +31,12 @@ struct ListedReport {
 // original reports in menu order.
 const ListedReport* ReportListEntries(int& count) noexcept;
 
-// Shows dialog 1022 over `owner`. Returns the chosen report's command, or 0
-// when closed without choosing.
-WORD ShowReportList(HWND owner);
+// What the list chose: a built-in report's command, or a user report's
+// gl_rptdef number; both 0 when closed without choosing.
+struct ReportChoice {
+    WORD command = 0;
+    long definition = 0;
+};
+
+// Shows dialog 1022 over `owner`.
+ReportChoice ShowReportList(HWND owner);

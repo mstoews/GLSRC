@@ -387,25 +387,27 @@ TEST_CASE("gl_rptdef: save, replace, load, delete (S7-M0)", "[reportwriter]")
     CHECK_FALSE(FindDefinition(empty.code, 1));
 
     FixtureDb db;
-    CHECK(LoadDefinitions(db.code).empty());   // no table yet
-    const ReportDefinition sales = parsed(kSalesByProduct);
+    CHECK(LoadDefinitions(db.code).size() == 3);   // the fixture's examples (S7-M1)
+    ReportDefinition sales = parsed(kSalesByProduct);
+    sales.name = "Sales by product, mine";
     const long one = SaveDefinition(db.code, 0, sales, "ADMIN", "20261114093000");
-    CHECK(one == 1);
+    CHECK(one == 4);
     ReportDefinition other = parsed("writer 1\nname \"AR by customer\"\nsource ar_open_items 1\ncolumn owed total\n");
     const long two = SaveDefinition(db.code, 0, other, "CLERK", "20261114100000");
-    CHECK(two == 2);
+    CHECK(two == 5);
 
     auto all = LoadDefinitions(db.code);
-    REQUIRE(all.size() == 2);
+    REQUIRE(all.size() == 5);
     CHECK(all[0].name == "AR by customer");   // name order
-    CHECK(all[1].name == "Sales by product");
-    CHECK(all[1].description == "Net sales and VAT by product, posted vouchers");
-    CHECK(all[1].source == "sales_lines");
-    CHECK(all[1].sourceVersion == 1);
-    CHECK(all[1].madeBy == "ADMIN");
-    CHECK(all[1].madeOn == "20261114093000");
-    CHECK(parsed(all[1].text).columns.size() == 4);
-    CHECK(WriteDefinition(parsed(all[1].text)) == WriteDefinition(sales));
+    const StoredDefinition& mine = all[4];
+    CHECK(mine.name == "Sales by product, mine");
+    CHECK(mine.description == "Net sales and VAT by product, posted vouchers");
+    CHECK(mine.source == "sales_lines");
+    CHECK(mine.sourceVersion == 1);
+    CHECK(mine.madeBy == "ADMIN");
+    CHECK(mine.madeOn == "20261114093000");
+    CHECK(parsed(mine.text).columns.size() == 4);
+    CHECK(WriteDefinition(parsed(mine.text)) == WriteDefinition(sales));
 
     // Replace 2: the same row, changed by another, made by the first.
     other.columns.push_back({"customer", "", 0, false, false});
@@ -416,10 +418,11 @@ TEST_CASE("gl_rptdef: save, replace, load, delete (S7-M0)", "[reportwriter]")
     CHECK(again->changedBy == "ADMIN");
     CHECK(again->changedOn == "20261114110000");
     CHECK(parsed(again->text).columns.size() == 2);
-    CHECK(LoadDefinitions(db.code).size() == 2);
+    CHECK(LoadDefinitions(db.code).size() == 5);
 
-    CHECK(DefinitionNameTaken(db.code, "  sales BY product "));
-    CHECK_FALSE(DefinitionNameTaken(db.code, "Sales by product", one));
+    CHECK(DefinitionNameTaken(db.code, "  sales BY product, MINE "));
+    CHECK_FALSE(DefinitionNameTaken(db.code, "Sales by product, mine", one));
+    CHECK(DefinitionNameTaken(db.code, "Sales by product"));   // the fixture's
     CHECK_FALSE(DefinitionNameTaken(db.code, "Something else"));
 
     // A stored definition builds.
@@ -430,6 +433,54 @@ TEST_CASE("gl_rptdef: save, replace, load, delete (S7-M0)", "[reportwriter]")
     CHECK(DeleteDefinition(db.code, one));
     CHECK_FALSE(DeleteDefinition(db.code, one));
     CHECK_FALSE(FindDefinition(db.code, one));
-    CHECK(LoadDefinitions(db.code).size() == 1);
-    CHECK(SaveDefinition(db.code, 0, sales, "ADMIN", "20261114120000") == 3);   // the highest + 1
+    CHECK(LoadDefinitions(db.code).size() == 4);
+    CHECK(SaveDefinition(db.code, 0, sales, "ADMIN", "20261114120000") == 6);   // the highest + 1
+}
+
+TEST_CASE("The fixture's example reports (S7-M1)", "[reportwriter]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    const auto stored = LoadDefinitions(db.code);
+    REQUIRE(stored.size() == 3);
+    for (const StoredDefinition& s : stored) {
+        INFO(s.name);
+        const ReportDefinition d = parsed(s.text);
+        CHECK(WriteDefinition(d) == s.text);   // as WriteDefinition writes it
+        CHECK(d.name == s.name);
+        CHECK(d.source == s.source);
+        CHECK(s.madeBy == "ADMIN");
+        CHECK(BuildReport(db.code, ctx, d).report);
+    }
+    auto byName = [&](const char* name) {
+        for (const StoredDefinition& s : stored)
+            if (s.name == name) return built(db.code, ctx, s.text);
+        FAIL(name);
+        return rpt::Report{};
+    };
+
+    // Sales by product: the fixture's codes, the posted vouchers' 3,800.00 and 300.00.
+    const rpt::Report sales = byName("Sales by product");
+    CHECK(headers(sales) == std::vector<std::string>{"Product: P100  Analgesic tablets 100mg",
+                                                     "Product: P200  Cough syrup 200ml",
+                                                     "Product: P300  Topical ointment 30g"});
+    CHECK(lastOf(sales, rpt::RowKind::Total)->cells[3].value == 380000);
+    CHECK(lastOf(sales, rpt::RowKind::Total)->cells[4].value == 30000);
+
+    // GL lines by account, period 7: every period-7 line, balanced as gl_btchd is.
+    const rpt::Report gl = byName("GL lines by account");
+    CHECK(gl.orientation == rpt::Orientation::Landscape);
+    CHECK(gl.subtitles == std::vector<std::string>{"Period is 7"});
+    cb4sqlite::Query q(db.code, "SELECT count(*), sum(debit), sum(credit) FROM gl_btchd WHERE _deleted = 0 AND "
+                                "CAST(trim(period) AS INTEGER) = 7");
+    REQUIRE(q.next());
+    CHECK(rowsOf(gl, rpt::RowKind::Detail) == q.integer(0));
+    CHECK(lastOf(gl, rpt::RowKind::Total)->cells[4].value == rpt::ToCents(q.number(1)));
+    CHECK(lastOf(gl, rpt::RowKind::Total)->cells[5].value == rpt::ToCents(q.number(2)));
+
+    // Open items by customer: what's owed, 2,800.00, as the AR reports say.
+    const rpt::Report open = byName("Open items by customer");
+    CHECK(headers(open) == std::vector<std::string>{"Customer: C001  City General Hospital", "Customer: C002  Reyes, Ana Dra."});
+    CHECK(lastOf(open, rpt::RowKind::Total)->cells[4].value == 280000);
 }

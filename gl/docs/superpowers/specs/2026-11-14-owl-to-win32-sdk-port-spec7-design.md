@@ -107,7 +107,7 @@ A **source** is a named, versioned list of fields over one or more tables, with 
 
 ### 5.1 What it holds (D2)
 
-- **Name and description** (the description is what Custom Report lists); a title and an optional subtitle; portrait or landscape.
+- **Name and description** (the name is what Custom Report lists, short and unique; the description says more, as `GL_RPTDEF.DESCRIPT`); a title and an optional subtitle; portrait or landscape.
 - **The source** and its version.
 - **Columns:** fields in order, each with a label (default: the field's), a width, and for amounts and integers "blank when zero" and "total".
 - **Sort:** up to three fields, each ascending or descending.
@@ -154,7 +154,7 @@ A column a line, with its options after the field (`total`, `blank`, `label`, `w
 
 ### 6.1 Custom Report (3068, dialog 1022) (D7)
 
-- **The list** shows the built-in reports, as now, then the user reports, marked as such, by description.
+- **The list** shows the built-in reports, as now, then the user reports by name, with who made them (S7-M1: the names, not the descriptions, which are longer than the list is wide).
 - **Print** (and double-click) runs the chosen one; a user report with asked values asks first (D6).
 - **Add** opens the designer on a new definition; **Modify** on the chosen user report; **Copy** on a copy of it; **Delete** asks, then removes it. Modify, Copy and Delete do nothing on a built-in report, and say so.
 - **Export** writes the chosen definition to a `.gldef` text file; **Import** reads one, refusing an unknown source or a newer format, and renaming on a clash.

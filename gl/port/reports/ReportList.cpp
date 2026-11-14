@@ -8,18 +8,25 @@
 //   - HandlePrint ran the active row's .RPT through Crystal; Print here
 //     returns the row's command, which the frame runs as if it had been
 //     chosen from the menu, after the dialog has closed.
-//   - Add/Mod (4095), Delete (1118) and Modify (2026) are hidden, and Print
-//     and Close move up into their places. (Modify appended a duplicate
-//     record instead of changing one.)
+//   - Add/Mod (4095) and Modify (2026) are hidden, and Print and Close move
+//     up into their places. (Modify appended a duplicate record instead of
+//     changing one.)
+//   - Spec #7 (S7-M1): the user reports (gl_rptdef) follow the built-in ones,
+//     a "Made by" column telling them apart. Delete (1118) shows again: it
+//     removes a user report after asking, and refuses a built-in one.
 //
 #include "ReportList.h"
 
 #include "../Globals.h"
+#include "../ReportWriter.h"
 
 #include "win32fx.h"
 
+#include <algorithm>
+#include <exception>
 #include <iterator>
 #include <string>
+#include <vector>
 
 #include "../PortIds.h"     // CM_AR_STATEMENTS
 
@@ -93,32 +100,22 @@ const ListedReport kReports[] = {
 
 class ReportListDialog : public fx::Dialog {
 public:
-    WORD chosen = 0;
+    ReportChoice chosen;
 
 protected:
     bool OnInitDialog() override
     {
-        // Print and Close take the places of Add/Mod and Delete.
+        // Print and Close take the places of Add/Mod and Modify; Delete keeps its own.
         moveInto(kPrintId, kAddModId);
-        moveInto(IDCANCEL, kDeleteId);
-        for (int id : {kAddModId, kDeleteId, kModifyId}) ShowWindow(GetDlgItem(hwnd(), id), SW_HIDE);
+        moveInto(IDCANCEL, kModifyId);
+        for (int id : {kAddModId, kModifyId}) ShowWindow(GetDlgItem(hwnd(), id), SW_HIDE);
 
         grid_ = fx::Grid(GetDlgItem(hwnd(), kGridId));
         if (!grid_.IsGrid()) return true;
         const int digit = grid_.CharWidth();
-        grid_.SetColumns({{L"No.", digit * 5}, {L"Description", digit * 20}});   // the first column is always left-aligned
-        int row = 1;
-        for (const ListedReport& r : kReports) {
-            grid_.SetData(1, row, std::to_wstring(row));
-            grid_.SetData(2, row, r.name);
-            ++row;
-        }
-        // Description takes the rest of the list's width, once the rows (and
-        // so the vertical scroll bar) are in: no horizontal scroll bar.
-        RECT rc{};
-        GetClientRect(grid_.list(), &rc);
-        grid_.SetColumnWidth(2, rc.right - grid_.ColumnWidth(1));
-        grid_.SetActiveCell(1, 1);
+        // The first column is always left-aligned.
+        grid_.SetColumns({{L"No.", digit * 5}, {L"Description", digit * 20}, {L"Made by", digit * 11}});
+        Fill(1);
         SetFocus(grid_.hwnd());
         return false;   // the focus is set
     }
@@ -126,20 +123,93 @@ protected:
     bool OnCommand(WORD id, WORD code, HWND) override
     {
         if (id == kPrintId || (id == kGridId && code == GRN_PICK)) {
-            const int row = grid_.ActiveRow();
-            if (row < 1 || row > static_cast<int>(std::size(kReports))) {
+            const Entry* e = At(grid_.ActiveRow());
+            if (!e) {
                 MessageBeep(MB_OK);
                 return true;
             }
-            chosen = kReports[row - 1].command;
+            chosen = {e->command, e->definition};
             End(IDOK);
+            return true;
+        }
+        if (id == kDeleteId && code == BN_CLICKED) {
+            Delete();
             return true;
         }
         return false;   // IDCANCEL: closes (fx::Dialog)
     }
 
 private:
+    struct Entry {
+        WORD command = 0;
+        long definition = 0;
+        std::wstring name, madeBy;
+    };
+
     fx::Grid grid_;
+    std::vector<Entry> entries_;
+
+    const Entry* At(int row) const
+    {
+        return row >= 1 && row <= static_cast<int>(entries_.size()) ? &entries_[static_cast<size_t>(row - 1)] : nullptr;
+    }
+
+    // The built-in reports, then the user reports in name order.
+    void Fill(int activeRow)
+    {
+        entries_.clear();
+        for (const ListedReport& r : kReports) entries_.push_back({r.command, 0, r.name, {}});
+        try {
+            for (const rw::StoredDefinition& d : rw::LoadDefinitions(cb))
+                entries_.push_back({0, d.number, fx::Utf8ToWide(d.name),
+                                    fx::Utf8ToWide(d.madeBy.empty() ? std::string("(you)") : d.madeBy)});
+        } catch (const std::exception& e) {
+            MessageBoxW(hwnd(), (L"The user reports could not be read:\n\n" + fx::Utf8ToWide(e.what())).c_str(), szApp,
+                        MB_OK | MB_ICONEXCLAMATION);
+        }
+        grid_.SetRedraw(false);
+        grid_.Clear();
+        int row = 1;
+        for (const Entry& e : entries_) {
+            grid_.SetData(1, row, std::to_wstring(row));
+            grid_.SetData(2, row, e.name);
+            grid_.SetData(3, row, e.madeBy);
+            ++row;
+        }
+        grid_.SetRedraw(true);
+        // Description takes the rest of the list's width, once the rows (and
+        // so the vertical scroll bar) are in: no horizontal scroll bar.
+        RECT rc{};
+        GetClientRect(grid_.list(), &rc);
+        grid_.SetColumnWidth(2, rc.right - grid_.ColumnWidth(1) - grid_.ColumnWidth(3));
+        grid_.SetActiveCell(1, std::min(std::max(activeRow, 1), static_cast<int>(entries_.size())));
+    }
+
+    void Delete()
+    {
+        const int row = grid_.ActiveRow();
+        const Entry* e = At(row);
+        if (!e) {
+            MessageBeep(MB_OK);
+            return;
+        }
+        if (!e->definition) {
+            MessageBoxW(hwnd(), (L"\u201C" + e->name + L"\u201D is built into the program: it can't be deleted.").c_str(),
+                        szApp, MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        const std::wstring ask = L"Delete the report \u201C" + e->name +
+                                 L"\u201D?\n\nOnly the report is deleted: the books aren't touched. It can't be undone.";
+        if (MessageBoxW(hwnd(), ask.c_str(), szApp, MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) return;
+        try {
+            rw::DeleteDefinition(cb, e->definition);
+        } catch (const std::exception& ex) {
+            MessageBoxW(hwnd(), (L"The report could not be deleted:\n\n" + fx::Utf8ToWide(ex.what())).c_str(), szApp,
+                        MB_OK | MB_ICONSTOP);
+        }
+        Fill(row);
+        SetFocus(grid_.hwnd());
+    }
 
     void moveInto(int id, int placeOf)
     {
@@ -160,8 +230,8 @@ const ListedReport* ReportListEntries(int& count) noexcept
     return kReports;
 }
 
-WORD ShowReportList(HWND owner)
+ReportChoice ShowReportList(HWND owner)
 {
     ReportListDialog dlg;
-    return dlg.DoModal(hInst, 1022, owner) == IDOK ? dlg.chosen : 0;
+    return dlg.DoModal(hInst, 1022, owner) == IDOK ? dlg.chosen : ReportChoice{};
 }
