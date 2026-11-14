@@ -484,3 +484,82 @@ TEST_CASE("The fixture's example reports (S7-M1)", "[reportwriter]")
     CHECK(headers(open) == std::vector<std::string>{"Customer: C001  City General Hospital", "Customer: C002  Reyes, Ana Dra."});
     CHECK(lastOf(open, rpt::RowKind::Total)->cells[4].value == 280000);
 }
+
+TEST_CASE("The designer's checks: CheckDefinition, CopyName, MissingFields, DescribeFilter (S7-M2)", "[reportwriter]")
+{
+    FixtureDb db;
+    ReportDefinition d = parsed("writer 1\nname Mine\nsource ar_open_items 1\ncolumn owed total\n");
+
+    // CheckDefinition: a name (40 at most, not another's), a source, a column.
+    CHECK_FALSE(CheckDefinition(db.code, d));
+    d.name = "  ";
+    auto p = CheckDefinition(db.code, d);
+    REQUIRE(p);
+    CHECK(p->setting == DefinitionSetting::Name);
+    d.name = std::string(41, 'x');
+    CHECK(CheckDefinition(db.code, d)->text.find("40") != std::string::npos);
+    d.name = " sales BY product";   // the fixture's report 1
+    p = CheckDefinition(db.code, d);
+    REQUIRE(p);
+    CHECK(p->text == "Another report is already called \"sales BY product\".");
+    CHECK_FALSE(CheckDefinition(db.code, d, 1));   // report 1 itself, renamed in place
+    d.name = "Mine";
+    d.source = "nope";
+    CHECK(CheckDefinition(db.code, d)->setting == DefinitionSetting::Source);
+    d.source = "ar_open_items";
+    d.columns.clear();
+    CHECK(CheckDefinition(db.code, d)->setting == DefinitionSetting::Columns);
+
+    // CopyName: "Copy of", then numbered; 40 characters at most.
+    CHECK(CopyName(db.code, "Sales by product") == "Copy of Sales by product");
+    ReportDefinition copy = parsed(kSalesByProduct);
+    copy.name = "Copy of Sales by product";
+    SaveDefinition(db.code, 0, copy, "ADMIN", "20261114130000");
+    CHECK(CopyName(db.code, "Sales by product") == "Copy of Sales by product (2)");
+    copy.name = "Copy of Sales by product (2)";
+    SaveDefinition(db.code, 0, copy, "ADMIN", "20261114130100");
+    CHECK(CopyName(db.code, "Sales by product") == "Copy of Sales by product (3)");
+    const std::string longName = CopyName(db.code, std::string(40, 'a'));
+    CHECK(longName.size() == 40);
+    CHECK(longName.rfind("Copy of aaa", 0) == 0);
+
+    // MissingFields: each field the source lacks, once, columns first.
+    ReportDefinition gone = parsed("writer 1\nname G\nsource ar_open_items 1\ncolumn owed\ncolumn colour\nsort size\n"
+                                   "group colour\nfilter weight = 1\nfilter owed = 0\n");
+    CHECK(MissingFields(gone) == std::vector<std::string>{"colour", "size", "weight"});
+    gone.source = "nope";
+    CHECK(MissingFields(gone).empty());   // an unknown source is CheckDefinition's
+
+    // DescribeFilter: as the subtitles say it; asked ones; unknown fields; incomplete values.
+    const Source& open = *FindSource("ar_open_items");
+    CHECK(DescribeFilter(open, Filter{"due_date", Test::Between, {"20261101", "11/30/2026"}, false, {}}) ==
+          "Due date from 11/01/2026 to 11/30/2026");
+    CHECK(DescribeFilter(open, Filter{"state", Test::In, {"Owed", "Part received"}, false, {}}) ==
+          "State is one of Owed, Part received");
+    CHECK(DescribeFilter(open, Filter{"date_paid", Test::Blank, {}, false, {}}) == "Last received is blank");
+    CHECK(DescribeFilter(open, Filter{"period", Test::Between, {}, true, "Periods"}) == "Period: asked when run (Periods)");
+    CHECK(DescribeFilter(open, Filter{"period", Test::Between, {}, true, ""}) == "Period: asked when run");
+    CHECK(DescribeFilter(open, Filter{"colour", Test::Equal, {"red"}, false, {}}) == "colour (not a field of AR open items)");
+    CHECK(DescribeFilter(open, Filter{"owed", Test::Between, {"1"}, false, {}}) == "Owed between ?");
+}
+
+TEST_CASE("FilterProblem: a filter's values suit its field (S7-M2)", "[reportwriter]")
+{
+    FixtureDb db;
+    const Source& sales = *FindSource("sales_lines");
+    CHECK(FilterProblem(sales, Filter{"state", Test::In, {"Posted", "Transferred"}, false, {}}).empty());
+    CHECK(FilterProblem(sales, Filter{"date", Test::In, {"Posted"}, false, {}}) == "Date: \"Posted\" isn't a date (mm/dd/yyyy).");
+    CHECK(FilterProblem(sales, Filter{"sales", Test::Between, {"0", "lots"}, false, {}}) == "Sales (net): \"lots\" isn't a number.");
+    CHECK(FilterProblem(sales, Filter{"period", Test::Equal, {"7.5"}, false, {}}) == "Period: \"7.5\" isn't a number.");
+    CHECK(FilterProblem(sales, Filter{"period", Test::Between, {"7"}, false, {}}) == "\"between\" takes 2 value(s).");
+    CHECK(FilterProblem(sales, Filter{"period", Test::In, {}, false, {}}) == "\"in\" takes one value or more.");
+    CHECK(FilterProblem(sales, Filter{"date", Test::Between, {"10/01/2026", "20261031"}, false, {}}).empty());
+    CHECK(FilterProblem(sales, Filter{"date", Test::Between, {}, true, "Dates"}).empty());   // asked: checked when run
+    CHECK(FilterProblem(sales, Filter{"colour", Test::Equal, {"x"}, false, {}}).empty());     // missing: noted when run
+
+    ReportDefinition d = parsed("writer 1\nname Bad\nsource sales_lines 1\ncolumn sales\nfilter date in Posted\n");
+    const auto p = CheckDefinition(db.code, d);
+    REQUIRE(p);
+    CHECK(p->setting == DefinitionSetting::Filters);
+    CHECK(p->text == "A filter doesn't suit its field: Date: \"Posted\" isn't a date (mm/dd/yyyy).");
+}

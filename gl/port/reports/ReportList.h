@@ -9,8 +9,9 @@
 //
 //   - Spec #7 (S7-M1): the user reports of gl_rptdef (ReportWriter.h) follow
 //     the built-in ones, with who made them; Delete removes one, after asking
-//     (a built-in report can't be). Add/Mod and Modify stay hidden until the
-//     designer (S7-M2). gl_rept is neither read nor changed.
+//     (a built-in report can't be). S7-M2: Add/Mod is Add, Modify changes the
+//     chosen user report, and a Copy button (added in code) copies one, each
+//     in the designer (ReportDesigner.h). gl_rept is neither read nor changed.
 //   - The original's SetupWindow called cb.closeAll(), closing every open
 //     table under the other windows; the port doesn't.
 //

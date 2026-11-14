@@ -1100,4 +1100,76 @@ bool DefinitionNameTaken(cb4sqlite::Code4& code, const std::string& name, long e
     return false;
 }
 
+// ---- the designer's checks --------------------------------------------------------------
+
+std::optional<DefinitionProblem> CheckDefinition(cb4sqlite::Code4& code, const ReportDefinition& def, long except)
+{
+    const std::string name = TrimText(def.name);
+    if (name.empty()) return DefinitionProblem{DefinitionSetting::Name, "Give the report a name."};
+    if (name.size() > 40) return DefinitionProblem{DefinitionSetting::Name, "A report's name can be 40 characters at most."};
+    if (DefinitionNameTaken(code, name, except))
+        return DefinitionProblem{DefinitionSetting::Name, "Another report is already called \"" + name + "\"."};
+    if (!FindSource(def.source)) return DefinitionProblem{DefinitionSetting::Source, "Choose the report's source."};
+    if (def.columns.empty())
+        return DefinitionProblem{DefinitionSetting::Columns, "Add at least one column: pick a field and Add."};
+    const Source& src = *FindSource(def.source);
+    for (const Filter& f : def.filters)
+        if (const std::string why = FilterProblem(src, f); !why.empty())
+            return DefinitionProblem{DefinitionSetting::Filters, "A filter doesn't suit its field: " + why};
+    return std::nullopt;
+}
+
+std::string FilterProblem(const Source& source, const Filter& filter)
+{
+    const int i = source.fieldIndex(filter.field);
+    if (i < 0 || filter.ask) return {};   // a missing field is noted when run (D9); asked values are checked then
+    const int want = valueCount(filter.test);
+    if (want >= 0 && static_cast<int>(filter.values.size()) != want)
+        return std::string("\"") + testWord(filter.test) + "\" takes " + std::to_string(want) + " value(s).";
+    if (want < 0 && filter.values.empty()) return "\"in\" takes one value or more.";
+    ResolvedFilter rf{i, &filter, filter.values, {}, {}};
+    return prepare(source.fields[static_cast<size_t>(i)], rf);
+}
+
+std::string CopyName(cb4sqlite::Code4& code, const std::string& name)
+{
+    std::string base = "Copy of " + TrimText(name);
+    if (base.size() > 40) base = base.substr(0, 40);
+    if (!DefinitionNameTaken(code, base)) return base;
+    for (int n = 2;; ++n) {
+        const std::string tail = " (" + std::to_string(n) + ")";
+        std::string candidate = base.size() + tail.size() > 40 ? base.substr(0, 40 - tail.size()) : base;
+        candidate += tail;
+        if (!DefinitionNameTaken(code, candidate)) return candidate;
+    }
+}
+
+std::vector<std::string> MissingFields(const ReportDefinition& def)
+{
+    std::vector<std::string> out;
+    const Source* src = FindSource(def.source);
+    auto check = [&](const std::string& field) {
+        if (src && src->fieldIndex(field) >= 0) return;
+        if (std::find(out.begin(), out.end(), field) == out.end()) out.push_back(field);
+    };
+    if (!src) return out;
+    for (const ColumnDef& c : def.columns) check(c.field);
+    for (const SortKey& k : def.sort) check(k.field);
+    for (const GroupDef& g : def.groups) check(g.field);
+    for (const Filter& f : def.filters) check(f.field);
+    return out;
+}
+
+std::string DescribeFilter(const Source& source, const Filter& filter)
+{
+    const int i = source.fieldIndex(filter.field);
+    if (i < 0) return filter.field + " (not a field of " + source.name + ")";
+    const Field& f = source.fields[static_cast<size_t>(i)];
+    if (filter.ask) return f.label + ": asked when run" + (filter.question.empty() ? std::string() : " (" + filter.question + ")");
+    const int want = valueCount(filter.test);
+    if ((want > 0 && static_cast<int>(filter.values.size()) != want) || (want < 0 && filter.values.empty()))
+        return f.label + " " + testWord(filter.test) + " ?";
+    return describe(f, filter, filter.values);
+}
+
 } // namespace rw
