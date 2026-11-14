@@ -38,6 +38,7 @@
   </ImportGroup>
   <ItemGroup>
     <ClInclude Include="include\report\Report.h" />
+    <ClInclude Include="include\report\Csv.h" />
     <ClInclude Include="include\report\Format.h" />
     <ClInclude Include="include\report\Layout.h" />
     <ClInclude Include="include\report\TextRender.h" />
@@ -47,6 +48,7 @@
     <ClInclude Include="include\report\win32\Preview.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\Csv.cpp" />
     <ClCompile Include="src\Format.cpp" />
     <ClCompile Include="src\Layout.cpp" />
     <ClCompile Include="src\TextRender.cpp" />

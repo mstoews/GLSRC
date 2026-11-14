@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 to M4 built)
+**Plan status:** In progress (S7-M0 to M5 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -289,6 +289,39 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 5 — Export, import, access, limits, CSV
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Export and Import** (task 1): two more buttons made in code in Custom Report. The eight are stacked Print, Add, Modify, Copy, Delete, Export, Import, Close, and the dialog and its list grow to fit.
+>   - **Export** writes the chosen user report's text (`WriteDefinition`'s, as stored) to a `.gldef` file from a Save As dialog.
+>   - **Import** (`rw::ImportDefinition`) reads one. It drops a BOM an editor added, and refuses:
+>     - a file that doesn't parse (a newer format among them: "writer 2");
+>     - a source this program doesn't have, or a newer version of one;
+>     - anything `CheckDefinition` refuses.
+>
+>     A taken name becomes "<name> (2)" (`FreeName`), the title and description following when they were the name. It says what it was imported as, and why it was numbered.
+> - **The access item** (task 2): read first.
+>   - **How rights work:** `ApplyMenuAccess` walks `accessm` in its "menu" order (COUNT) alongside the user's menu code `szMsg`, a character a row: '1' greys that row's command, and a code too short to reach a row leaves it enabled.
+>   - **The right:** `rw::EnsureReportWriterAccess` (from `EnsureReportWriterTables`) adds a row, "Reporting / Report Writer (design reports)", ID 20507 (`CM_RW_DESIGN`). It's not a menu command, so `ApplyMenuAccess`'s `EnableMenuItem` on it does nothing. The row's COUNT is the highest + 1, so every existing code keeps its places (P5).
+>   - **The check:** `rw::MayDesignReports(code, szMsg)` is false only for a '1' at that row's place. Custom Report then greys Add, Modify, Copy, Delete and Import; Print and Export stay.
+> - **The fixture:** `ACCESSM` is rebuilt from the menu, as the M1 note left for here: 116 menu rows, then the Report Writer row, 117 in all. The clerk (level B) is denied it.
+> - **The row limit** (task 3): the refusal now reads "more than 20,000 rows, too many to lay out". For a report that asks questions it names them ("Answer its questions (Periods) more narrowly"); otherwise it says to narrow the filters in the designer. It is shown where the report runs: Custom Report's message, the designer's Preview, or for an asking report the run's "could not be prepared" message.
+> - **CSV** (task 4): `rpt::ToCsv` (`report/Csv.{h,cpp}`, portable) and an Export... button beside Print on every preview window, built-in and user reports alike.
+>   - **Format:** UTF-8 with a BOM, CRLF line ends. A header line, then detail, group footer, subtotal and total rows in their columns. Headings, group headers and notes go in the first column; a slip's fields become label, value lines. Blank lines and page breaks are left out.
+>   - **Values:** amounts are plain ("-12.50"), integers plain, dates yyyy-mm-dd. A field is quoted when it holds a comma, a quote, a line break or edge spaces.
+> - **Tests** (task 5):
+>   - **`gl_tests`**, three cases (178 in all):
+>     - export from one copy of the fixture and import into another: the same text, figures and CSV; the taken name; each refusal, saving nothing;
+>     - the access row: on the fixture last, denied to B; removed, then added back last once, with the rows before it unchanged; codes too short to reach it;
+>     - the limit's text, with and without questions, and CSV of a grouped report: a line per row.
+>   - **`report_tests`:** one CSV case with quoting, negatives, blank dates, notes and dropped rows.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests`, `report_tests` and `cb4sqlite_tests` pass in both; `/checkres` 0; `/stress` 0. Driven in the app on a scratch copy, by messages to its own windows (the file dialogs' name boxes filled by WM_SETTEXT):
+>   - **Export:** *GL lines by account* exported to a `.gldef` file holding its definition text.
+>   - **Import:** the file imported back as "GL lines by account (2)", with the note on the numbering. A file holding "hello" was refused with the parser's reason.
+>   - **CSV:** *Sales by product* gave the product groups, lines, footers and total (3800.00 / 300.00), with the BOM. *Trial Balance by Department* (built-in) gave its 25 accounts and total.
+>   - **The clerk:** logged in on the scratch copy (`[ACCESS] PSW=T` for that run, then put back). The Maintenance menu was greyed, and in Custom Report Add, Modify, Copy, Delete and Import were greyed while Print and Export weren't. The administrator, and no login, had all eight.
+>   - **Not driven:** the 20,000-row stop. The fixture is far smaller, so its text is checked by the tests with a small limit.
+>
+>   Screenshots checked the list both ways and a preview.
 
 **Goal:** definitions move between companies; designing is a right; large reports are stopped; rows go to Excel.
 

@@ -736,8 +736,21 @@ BuildResult BuildReport(cb4sqlite::Code4& code, const ReportContext& ctx, const 
         if (!keep) continue;
         rows.push_back(std::move(row));
         if (rows.size() > rowLimit) {
-            out.refusal = "The report has more than " + std::to_string(rowLimit) +
-                          " rows. Narrow its filters (a period, a date or an account range) and run it again.";
+            // Name the questions it asks, the quickest way to narrow it (spec #7 7).
+            std::string asked;
+            for (const Filter& f : def.filters) {
+                if (!f.ask) continue;
+                const int i = src->fieldIndex(f.field);
+                const std::string q = !f.question.empty() ? f.question
+                                      : i >= 0        ? src->fields[static_cast<size_t>(i)].label
+                                                      : f.field;
+                asked += (asked.empty() ? "" : ", ") + q;
+            }
+            out.refusal = "The report has more than " + rpt::FormatInteger(static_cast<std::int64_t>(rowLimit)) +
+                          " rows, too many to lay out. " +
+                          (asked.empty() ? std::string("Narrow its filters (a period, a date or an account range) in "
+                                                       "the designer and run it again.")
+                                         : "Answer its questions (" + asked + ") more narrowly and run it again.");
             return out;
         }
     }
@@ -1633,6 +1646,7 @@ std::string clip(const std::string& s, size_t n) { return s.size() > n ? s.subst
 
 void EnsureReportWriterTables(cb4sqlite::Code4& code)
 {
+    EnsureReportWriterAccess(code);
     if (hasTable(code, "gl_rptdef")) return;
     cb4sqlite::Transaction tx(code);
     cb4sqlite::createTable(code, "gl_rptdef",
@@ -1779,6 +1793,100 @@ std::string CopyName(cb4sqlite::Code4& code, const std::string& name)
         candidate += tail;
         if (!DefinitionNameTaken(code, candidate)) return candidate;
     }
+}
+
+std::string FreeName(cb4sqlite::Code4& code, const std::string& name)
+{
+    std::string base = TrimText(name);
+    if (base.size() > 40) base = base.substr(0, 40);
+    if (!DefinitionNameTaken(code, base)) return base;
+    for (int n = 2;; ++n) {
+        const std::string tail = " (" + std::to_string(n) + ")";
+        std::string candidate = base.size() + tail.size() > 40 ? base.substr(0, 40 - tail.size()) : base;
+        candidate += tail;
+        if (!DefinitionNameTaken(code, candidate)) return candidate;
+    }
+}
+
+ImportResult ImportDefinition(cb4sqlite::Code4& code, const std::string& textIn, const std::string& user,
+                              const std::string& stamp)
+{
+    ImportResult out;
+    std::string text = textIn;
+    if (text.rfind("\xEF\xBB\xBF", 0) == 0) text.erase(0, 3);   // a BOM an editor added
+    const ParseResult p = ParseDefinition(text);
+    if (!p.definition) {
+        out.refusal = "The file isn't a report the program can read (line " + std::to_string(p.line) + "): " + p.error;
+        return out;
+    }
+    ReportDefinition def = *p.definition;
+    const Source* src = FindSource(def.source);
+    if (!src) {
+        out.refusal = "The report reads from \u201C" + def.source + "\u201D, a source this program doesn't have.";
+        return out;
+    }
+    if (def.sourceVersion > src->version) {
+        out.refusal = "The report was made with a newer version of the \u201C" + src->name + "\u201D source (" +
+                      std::to_string(def.sourceVersion) + "; this program has " + std::to_string(src->version) +
+                      "). Import it with that version of the program.";
+        return out;
+    }
+    EnsureReportWriterTables(code);
+    const std::string name = FreeName(code, def.name);
+    out.renamed = name != TrimText(def.name);
+    if (def.title == def.name) def.title = name;
+    if (def.description == def.name) def.description = name;
+    def.name = name;
+    if (const auto problem = CheckDefinition(code, def)) {
+        out.refusal = problem->text;
+        return out;
+    }
+    out.number = SaveDefinition(code, 0, def, user, stamp);
+    out.name = name;
+    return out;
+}
+
+namespace {
+
+// The design right's place in the menu code: its row's index in accessm's
+// "menu" order (COUNT), as ApplyMenuAccess walks it; -1 without one.
+int designRightIndex(cb4sqlite::Code4& code)
+{
+    if (!hasTable(code, "accessm")) return -1;
+    cb4sqlite::Query q(code, "SELECT id FROM accessm WHERE _deleted = 0 ORDER BY ifnull(\"COUNT\", 0), _rowid");
+    for (int i = 0; q.next(); ++i)
+        if (q.integer(0) == kDesignRightId) return i;
+    return -1;
+}
+
+} // namespace
+
+bool EnsureReportWriterAccess(cb4sqlite::Code4& code)
+{
+    if (!hasTable(code, "accessm") || designRightIndex(code) >= 0) return false;
+    long next = 1;
+    {
+        cb4sqlite::Query q(code, "SELECT coalesce(max(\"COUNT\"), 0) + 1 FROM accessm WHERE _deleted = 0");
+        if (q.next()) next = static_cast<long>(q.integer(0));
+    }
+    cb4sqlite::Transaction tx(code);
+    Data4 m(&code, "accessm");
+    m.appendStart();
+    m.blank();
+    Field4(m, "count").assignLong(next);
+    Field4(m, "popup").assign("Reporting");
+    Field4(m, "text").assign(kDesignRightText);
+    Field4(m, "id").assignLong(kDesignRightId);
+    m.append();
+    m.close();
+    tx.commit();
+    return true;
+}
+
+bool MayDesignReports(cb4sqlite::Code4& code, const std::string& menuCode)
+{
+    const int i = designRightIndex(code);
+    return i < 0 || static_cast<size_t>(i) >= menuCode.size() || menuCode[static_cast<size_t>(i)] != '1';
 }
 
 std::vector<std::string> MissingFields(const ReportDefinition& def)
