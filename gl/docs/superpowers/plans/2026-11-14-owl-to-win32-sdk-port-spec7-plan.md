@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** Draft (no milestone built)
+**Plan status:** In progress (S7-M0 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -44,6 +44,26 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 0 — The portable core
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): the engine draws what the builder needs (group headers and footers with an indent, page breaks, notes, totals). `gl_btchd` keeps its codes as `PROD`, `MEDREP`, `DRCODE` and its `PERIOD` as text; `gl_btch` modes are 1 open, 0 posted, 3 adjustment, 2 posted adjustment, 9 closed year. The master tables are `gl_itemm` (`FPCODE`, `FFULLN`), `gl_medrp` (`REPCODE`, `RPNAME`) and `gl_drcod` (`DRCODE`, `RPNAME`). A memo is a `'M'` field, as `ar_btch.MEMOFIELD`.
+> - **`gl/port/ReportWriter.{h,cpp}`** (task 2), in namespace `rw`:
+>   - **The model and format:** `ReportDefinition`, `ParseDefinition` (refusals name their line), `WriteDefinition` (round-trips exactly). The format's grammar is in the header.
+>   - **Spec change (§5.4):** one `column` line per column with its options (`total`, `blank`, `label`, `width`), instead of one `columns` line; an asked filter has a `?` per value, then its question. The spec's example now follows it.
+>   - **Sources:** `Sales lines` (through `LoadArVouchers` / `LoadArLines`, so each line's net and VAT are the ledger's; cancelled left out by default), `GL voucher lines` (`gl_btchd` with its header's state and the account's name), and `AR open items` (`LoadArOpenItems` with the customer's name). A code field names its name field, which a group header shows beside the code.
+>   - **`BuildReport`:** the definition's filters (asked values from `Answers`), then the source's defaults for fields it doesn't filter. Then it sorts (groups first), groups with indented headers and totalled footers (a page break for "page" groups), adds a grand total and counts. A field the source lacks becomes a note (D9). Refusals: an unknown source, no column, an unanswered or unreadable value, and more than 20,000 rows.
+>   - **Values:** filter values parse by the field's type: amounts like "2,200.00", dates as yyyymmdd or mm/dd/yyyy (checked: S7-M0's tests caught 31/12/2026 passing as a date), and text without regard to case or surrounding spaces.
+>   - **`gl_rptdef`:** `EnsureReportWriterTables`, `LoadDefinitions` (name order), `FindDefinition`, `SaveDefinition` (new as the highest + 1, or replaced in place, keeping who made it), `DeleteDefinition`, `DefinitionNameTaken`.
+> - **Tests** (task 3), `gl_tests/test_reportwriter.cpp`, five cases:
+>   - the format: a round trip of every setting, defaults, and 16 refusals with their lines;
+>   - each source against its module's figures (sales lines' posted net 3,800.00 and VAT 300.00 equal the vouchers' sales and VAT lines; GL lines equal `gl_btchd`; open items equal `LoadArOpenItems`);
+>   - the builder: sales by product (headers with the product's name, footers, the grand total 3,800.00 / 300.00); two groups with pages; counts; the cancelled default and asking for it; sort descending; no total;
+>   - every filter test, asked values and their refusals, a missing field's notes, the refusals, an empty result;
+>   - `gl_rptdef`: save, replace, load, name taken, delete, in an empty company and the fixture.
+>
+>   `gl_tests`: 168 cases (`[reportwriter]` 5).
+> - **Build lists** (task 4): `gl_tests.vcxproj`, `build_tests.sh`; `gl.vcxproj` by `genproj.py` (`gl.exe` links the core; nothing calls it until M1).
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests`, `cb4sqlite_tests` and `report_tests` pass; `/checkres` 0; `/stress` 0 (164 s).
 
 **Goal:** a definition, as text or in memory, turns into an `rpt::Report` from real data, under test.
 

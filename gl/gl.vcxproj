@@ -74,6 +74,7 @@
     <ClInclude Include="port\MasterData.h" />
     <ClInclude Include="port\MasterTables.h" />
     <ClInclude Include="port\PortIds.h" />
+    <ClInclude Include="port\ReportWriter.h" />
     <ClInclude Include="port\ResourceCheck.h" />
     <ClInclude Include="port\TableList.h" />
     <ClInclude Include="port\Tables.h" />
@@ -136,6 +137,7 @@
     <ClCompile Include="port\ManilaGL.cpp" />
     <ClCompile Include="port\MasterData.cpp" />
     <ClCompile Include="port\MasterTables.cpp" />
+    <ClCompile Include="port\ReportWriter.cpp" />
     <ClCompile Include="port\ResourceCheck.cpp" />
     <ClCompile Include="port\TableList.cpp" />
     <ClCompile Include="port\TransactionInquiry.cpp" />

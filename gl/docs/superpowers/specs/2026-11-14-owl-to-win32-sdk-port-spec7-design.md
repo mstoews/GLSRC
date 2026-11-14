@@ -134,16 +134,19 @@ The definition is kept as plain UTF-8 text, a line per setting, so it diffs, exp
 
 ```
 writer 1
+name "Sales by product"
 source sales_lines 1
-title Sales by product
-columns product_name, med_rep, qty:total, sales:total, vat:total
-sort product_name
-group product_name
-filter period between ? "Periods"
-filter state <> cancelled
+column invoice
+column qty total
+column sales total label "Net sales"
+column vat total blank
+sort date desc
+group product page
+filter period between ? ? "Periods"
+filter state <> Cancelled
 ```
 
-The parser refuses what it doesn't know with the line number. A newer program reads an older definition; an older program refuses a newer one, saying so.
+A column a line, with its options after the field (`total`, `blank`, `label`, `width`); an asked filter has a `?` for each value, then its question. The full grammar is in `ReportWriter.h` (S7-M0). The parser refuses what it doesn't know with the line number. A newer program reads an older definition; an older program refuses a newer one, saying so.
 
 ---
 

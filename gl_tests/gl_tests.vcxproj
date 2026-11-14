@@ -90,12 +90,14 @@
     <ClCompile Include="test_reports_assets.cpp" />
     <ClCompile Include="test_ap.cpp" />
     <ClCompile Include="test_ar.cpp" />
+    <ClCompile Include="test_reportwriter.cpp" />
     <ClCompile Include="test_assets.cpp" />
     <!-- The portable gl/port sources under test (keep in step with tools/linux/build_tests.sh). -->
     <ClCompile Include="..\gl\port\Accounts.cpp" />
     <ClCompile Include="..\gl\port\MasterTables.cpp" />
     <ClCompile Include="..\gl\port\Ap.cpp" />
     <ClCompile Include="..\gl\port\Ar.cpp" />
+    <ClCompile Include="..\gl\port\ReportWriter.cpp" />
     <ClCompile Include="..\gl\port\Assets.cpp" />
     <ClCompile Include="..\gl\port\Vouchers.cpp" />
     <ClCompile Include="..\gl\port\CompanyFiles.cpp" />
