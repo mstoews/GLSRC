@@ -88,6 +88,11 @@ bool RunApReport(fx::MdiFrame& frame, WORD id);
 // isn't an AR report.
 bool RunArReport(fx::MdiFrame& frame, WORD id);
 
+// A user report (spec #7, ReportWriter.h): gl_rptdef's definition `number`,
+// built by the report writer, then the preview. A definition that can't be
+// read or built says why, and opens nothing.
+void RunUserReport(fx::MdiFrame& frame, long number);
+
 // /stress: opens each report in a preview `times` times (the sample report
 // with three copies, F1, F2 with voucher lines, F3 with every column, F4,
 // F5, then every original report), pages through it at every zoom, and closes it. Returns the GDI + USER

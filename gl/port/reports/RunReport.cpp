@@ -9,6 +9,7 @@
 #include "AssetReports.h"
 #include "../Ap.h"       // EnsureApTables
 #include "../Ar.h"       // EnsureArTables
+#include "../ReportWriter.h"   // user reports (spec #7)
 #include "../PortIds.h"  // CM_AR_STATEMENTS
 #include "../Assets.h"   // EnsureAssetTables
 #include "MasterReports.h"
@@ -316,6 +317,44 @@ bool RunArReport(fx::MdiFrame& frame, WORD id)
     return false;
 }
 
+void RunUserReport(fx::MdiFrame& frame, long number)
+{
+    std::optional<rw::StoredDefinition> stored;
+    rw::BuildResult b;
+    std::string name;
+    try {
+        stored = rw::FindDefinition(cb, number);
+        if (!stored) {
+            MessageBoxW(frame.hwnd(), L"The report is no longer on file.", szApp, MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        name = stored->name;
+        const rw::ParseResult p = rw::ParseDefinition(stored->text);
+        if (!p.definition) {
+            MessageBoxW(frame.hwnd(),
+                        fx::Format(L"The report \u201C%s\u201D can't be read (line %d):\n\n%s",
+                                   fx::Utf8ToWide(name).c_str(), p.line, fx::Utf8ToWide(p.error).c_str())
+                            .c_str(),
+                        szApp, MB_OK | MB_ICONEXCLAMATION);
+            return;
+        }
+        b = rw::BuildReport(cb, CurrentReportContext(), *p.definition);
+    } catch (const std::exception& e) {
+        MessageBoxW(frame.hwnd(), (L"The report could not be prepared:\n\n" + fx::Utf8ToWide(e.what())).c_str(), szApp,
+                    MB_OK | MB_ICONSTOP);
+        return;
+    }
+    if (!b.report) {
+        MessageBoxW(frame.hwnd(),
+                    fx::Format(L"\u201C%s\u201D:\n\n%s", fx::Utf8ToWide(name).c_str(), fx::Utf8ToWide(b.refusal).c_str())
+                        .c_str(),
+                    szApp, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    // Built once; the preview takes it as it is (it has no options to rebuild with).
+    RunReport(frame, {}, [report = std::move(*b.report)](const ReportContext&) { return report; });
+}
+
 int StressReports(int times)
 {
     StressFrame frame;
@@ -365,6 +404,15 @@ int StressReports(int times)
         for (const ApReportEntry& r : kArReportTable) {
             const ApBuilder build = r.build;
             if (!stressOnce(frame, [build](const ReportContext& ctx) { return build(cb, ctx); })) return false;
+        }
+        // The user reports (spec #7) that build.
+        for (const rw::StoredDefinition& d : rw::LoadDefinitions(cb)) {
+            const rw::ParseResult p = rw::ParseDefinition(d.text);
+            if (!p.definition) continue;
+            const rw::ReportDefinition def = *p.definition;
+            if (!rw::BuildReport(cb, CurrentReportContext(), def).report) continue;
+            if (!stressOnce(frame, [def](const ReportContext& ctx) { return *rw::BuildReport(cb, ctx, def).report; }))
+                return false;
         }
         return true;
     };

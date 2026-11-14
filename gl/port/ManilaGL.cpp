@@ -451,8 +451,11 @@ bool ManilaGL::OnCommand(WORD id, WORD code, HWND ctl)
 
 void ManilaGL::RunReportList()
 {
-    // The chosen report runs as its menu item does, once the list has closed.
-    if (const WORD id = ShowReportList(hwnd())) OnCommand(id, 0, nullptr);
+    // The chosen report runs as its menu item does, once the list has closed;
+    // a user report (spec #7) through the report writer.
+    const ReportChoice c = ShowReportList(hwnd());
+    if (c.definition) RunUserReport(*this, c.definition);
+    else if (c.command) OnCommand(c.command, 0, nullptr);
 }
 
 std::wstring ManilaGL::MenuText(WORD id) const

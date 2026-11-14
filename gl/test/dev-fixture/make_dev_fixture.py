@@ -631,8 +631,14 @@ def accounts_receivable(d):
 
     rd, gen, vatp, ar = "SALES REVENUE - R&D", "SALES REVENUE - GENERAL", "VAT PAYABLE", "ACCOUNTS RECEIVABLE - TRADE"
 
+    # The sales lines' analysis codes (Spec #7 S7-M0/M1: the report writer's "Sales by product"):
+    # voucher -> (med rep, product, doctor), from the master lists.
+    codes = {1: ("MR001", "P100", "DR001"), 2: ("MR002", "P200", "DR002"), 3: ("MR001", "P100", "DR001"),
+             4: ("MR002", "P200", "DR002"), 5: ("MR001", "P300", "DR003"), 6: ("MR001", "P100", "DR001")}
+
     def line(no, entry, desc, acct, dept, qty, price, dr, cr):
-        return (no, entry, desc, None, None, None, qty, price, acct, dept, dr, cr)
+        rep, product, doctor = codes[no] if acct == "410001" else (None, None, None)
+        return (no, entry, desc, rep, product, doctor, qty, price, acct, dept, dr, cr)
     dbf(os.path.join(d, "AR_BTCHD.DBF"),
         [("BATCHNO", "N", 6, 0), ("ENTRYNO", "N", 3, 0), ("DESCRIPT", "C", 40, 0), ("MEDREP", "C", 5, 0),
          ("PRODUCT", "C", 7, 0), ("DRCODE", "C", 5, 0), ("QTY", "N", 14, 2), ("PRICE", "N", 14, 2),
@@ -739,6 +745,38 @@ def accounts_receivable(d):
         ("BATCHNO", "BATCHNO", "N", False, False, ""),
         ("ACCOUNT", "ACCOUNT+DEPT", "C", False, False, ""),
     ])
+
+
+def report_writer(d):
+    """Spec #7 9 (S7-M1): GL_RPTDEF, the report writer's definitions, with three examples.
+
+    The port's own table (gl/port/ReportWriter.h): one row per report, its text in the memo.
+    The texts are as WriteDefinition writes them.
+    """
+    defs = [
+        ("Sales by product", "Net sales and VAT by product, posted vouchers", "sales_lines",
+         'writer 1\nname "Sales by product"\ndescription "Net sales and VAT by product, posted vouchers"\n'
+         'source sales_lines 1\ncolumn invoice\ncolumn customer_name\ncolumn qty total\ncolumn sales total\n'
+         'column vat total\ngroup product\nfilter state in Posted Transferred\n'),
+        ("GL lines by account", "General Ledger voucher lines by account, period 7", "gl_lines",
+         'writer 1\nname "GL lines by account"\ndescription "General Ledger voucher lines by account, period 7"\n'
+         'orientation landscape\nsource gl_lines 1\ncolumn voucher\ncolumn date\ncolumn reference\n'
+         'column description\ncolumn debit total\ncolumn credit total\nsort date\nsort voucher\ngroup account\n'
+         'filter period = 7\n'),
+        ("Open items by customer", "What each customer owes, invoice by invoice", "ar_open_items",
+         'writer 1\nname "Open items by customer"\ndescription "What each customer owes, invoice by invoice"\n'
+         'source ar_open_items 1\ncolumn invoice\ncolumn due_date\ncolumn amount total\ncolumn received total\n'
+         'column owed total\ngroup customer\nfilter state <> Settled\n'),
+    ]
+    memo = dbt(os.path.join(d, "GL_RPTDEF.DBT"), "GL_RPTDEF", [t.encode("utf-8") for _, _, _, t in defs])
+    dbf(os.path.join(d, "GL_RPTDEF.DBF"),
+        [("NUMBER", "N", 6, 0), ("NAME", "C", 40, 0), ("DESCRIPT", "C", 60, 0), ("SOURCE", "C", 20, 0),
+         ("SRCVER", "N", 3, 0), ("DEFTEXT", "M", 10, 0), ("MADEBY", "C", 10, 0), ("MADEON", "C", 14, 0),
+         ("CHANGEDBY", "C", 10, 0), ("CHANGEDON", "C", 14, 0)],
+        [(n + 1, name, desc, src, 1, memo[n], "ADMIN", "20261114090000", "ADMIN", "20261114090000")
+         for n, (name, desc, src, _) in enumerate(defs)],
+        version=0x8B, mdx=True)
+    mdx(os.path.join(d, "GL_RPTDEF.MDX"), "GL_RPTDEF", [("NUMBER", "NUMBER", "N", False, False, "")])
 
 
 def main():
@@ -867,6 +905,7 @@ def main():
     fixed_assets(d)
     accounts_payable(d)
     accounts_receivable(d)
+    report_writer(d)
 
     print(f"dev fixture written to {OUT}: {len(items)} accessm rows")
 

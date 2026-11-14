@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 built)
+**Plan status:** In progress (S7-M0 and M1 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -94,6 +94,28 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 1 — Custom Report: list, run, delete
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **Read** (task 1): `TGLCustomReport` as spec §2.1. The port's dialog 1022 returned a built-in report's command; `ManilaGL::RunReportList` ran it.
+> - **`ReportList.{h,cpp}`** (task 2):
+>   - The list shows the 55 built-in reports, then the user reports by **name** (not description, which is longer than the list is wide: spec §5.1 and §6.1 now say so), with a "Made by" column.
+>   - It returns a `ReportChoice`: a built-in command or a `gl_rptdef` number.
+>   - **Delete** shows again, in its own place (Print and Close take Add/Mod's and Modify's, which stay hidden until M2). It asks, then `DeleteDefinition`. On a built-in report it says it can't.
+> - **`RunReport.cpp`** (task 3): `RunUserReport` finds the definition, parses it (a definition that can't be read says which line) and builds it. A refusal is a message and opens nothing; until M3, that covers a report that asks a value. Otherwise it goes to the usual preview, its footer the report's name. `ManilaGL` runs a chosen definition through it.
+> - **The fixture** (task 4): `report_writer()` writes `GL_RPTDEF` (`.DBF`, `.DBT`, `.MDX`) with three examples, as `WriteDefinition` writes them: *Sales by product*, *GL lines by account* (period 7, landscape), *Open items by customer*.
+>   - The fixture's AR sales lines get med rep, product and doctor codes from the master lists (they had none), so Sales by product groups by product.
+>   - Regenerating also rewrote `ACCESSL` / `ACCESSM`, which `make_dev_fixture.py` builds from the menu; they lag Spec #6's menu items. That's left for M5, the access item, and those two files are kept as they were.
+>   - Every other table is byte-identical.
+> - **`/stress`** (task 5) previews and pages each user report that builds; `/checkres` is unchanged.
+> - **Tests** (task 6): the examples parse, are canonical, build, and agree with their modules: sales 3,800.00 / VAT 300.00 by product; the period-7 GL lines equal `gl_btchd`'s; 2,800.00 owed by C001 and C002. M0's `gl_rptdef` test now starts from the fixture's three. `gl_tests`: 169 cases (`[reportwriter]` 6), the AR tests unchanged by the new codes.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0 (173 s, the three examples among the previews). Driven in the app, on a scratch copy migrated from the new fixture, by messages to its own windows:
+>   - Custom Report lists 55 + 4 reports (a fourth, "Asks a period", added by `sqlite3`);
+>   - GL lines by account and Sales by product open their previews;
+>   - "Asks a period" says "The report asks: Periods. Answer it to run the report." and opens nothing;
+>   - Delete on Trial Balance: "built into the program"; on "Asks a period": asks, then it's gone;
+>   - Trial Balance still runs from the list (its options dialog).
+>
+>   Screenshots checked the list and both previews.
 
 **Goal:** user reports show in Custom Report and run like the built-in ones.
 
