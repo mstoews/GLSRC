@@ -26,6 +26,8 @@
 //   source sales_lines 1                       a source's key and the version used
 //   column product_name                        in order; options after the field:
 //   column sales total blank label "Net" width 1.4   total, blank (zero), label, width
+//   column calc diff amount received total     calculated (spec #7 5.3, S7-M3): sum a b,
+//   column calc pct sales total                diff a b, count, pct a group|total
 //   sort date desc                             up to three; asc (default) or desc
 //   group product page                         up to two; page: a new page per group
 //   filter state <> Cancelled                  =, <>, between a b, in a b..., contains a,
@@ -101,13 +103,26 @@ const Source* FindSource(const std::string& key);
 
 // ---- the definition (spec #7 5) -------------------------------------------------------
 
+// A calculated column (spec #7 5.3, S7-M3).
+enum class Calc {
+    None,         // the field `field`
+    Sum,          // field + field2 (numbers)
+    Difference,   // field - field2
+    Count,        // 1 a row: totalled, how many rows
+    Percent,      // field as a percentage of its group's total (ofGroup) or the report's, to two places
+};
+
 struct ColumnDef {
     std::string field;
-    std::string label;        // "" the field's
+    std::string label;        // "" the field's (or the calculation's)
     double width = 0;         // 0 the field's
     bool total = false;       // amounts and integers: subtotals and the grand total
     bool blankZero = false;   // print 0 as blank
+    Calc calc = Calc::None;
+    std::string field2;       // Sum, Difference: the second field
+    bool ofGroup = false;     // Percent: of the innermost group's total, not the report's
 };
+
 
 struct SortKey {
     std::string field;
@@ -134,6 +149,7 @@ struct ReportDefinition {
 
 inline constexpr int kFormatVersion = 1;
 inline constexpr size_t kMaxSort = 3, kMaxGroups = 2;
+inline constexpr size_t kMaxQuestions = 4;   // asked filters a report may have (the prompt's rows)
 
 struct ParseResult {
     std::optional<ReportDefinition> definition;
@@ -143,6 +159,13 @@ struct ParseResult {
 
 ParseResult ParseDefinition(const std::string& text);
 std::string WriteDefinition(const ReportDefinition& def);
+
+// A column's header when it has no label: the field's, or the calculation's
+// ("Amount - Received", "Count", "Sales (net) % of total").
+std::string ColumnLabel(const Source& source, const ColumnDef& column);
+
+// A calculated column's problem, "" if none: its fields must be numbers.
+std::string ColumnProblem(const Source& source, const ColumnDef& column);
 
 // ---- building (spec #7 7) ----------------------------------------------------------------
 
@@ -195,7 +218,7 @@ bool DefinitionNameTaken(cb4sqlite::Code4& code, const std::string& name, long e
 
 // Why the designer's Save refuses `def` (definition `except` being changed),
 // with the setting to put the focus on; nothing when it can be saved.
-enum class DefinitionSetting { Name, Source, Columns, Filters };
+enum class DefinitionSetting { Name, Source, Columns, Filters };   // a refused column or question is Columns / Filters
 struct DefinitionProblem {
     DefinitionSetting setting = DefinitionSetting::Name;
     std::string text;

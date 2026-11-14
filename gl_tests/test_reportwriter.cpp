@@ -11,6 +11,7 @@
 #include "ReportWriter.h"
 
 #include "report/Format.h"   // rpt::ToCents
+#include "report/TextRender.h"
 
 #include <map>
 
@@ -451,11 +452,13 @@ TEST_CASE("The fixture's example reports (S7-M1)", "[reportwriter]")
         CHECK(d.name == s.name);
         CHECK(d.source == s.source);
         CHECK(s.madeBy == "ADMIN");
-        CHECK(BuildReport(db.code, ctx, d).report);
+        bool asks = false;
+        for (const Filter& f : d.filters) asks = asks || f.ask;
+        CHECK(BuildReport(db.code, ctx, d).report.has_value() == !asks);   // an asked report needs its answers
     }
-    auto byName = [&](const char* name) {
+    auto byName = [&](const char* name, const Answers& a = {}) {
         for (const StoredDefinition& s : stored)
-            if (s.name == name) return built(db.code, ctx, s.text);
+            if (s.name == name) return built(db.code, ctx, s.text, a);
         FAIL(name);
         return rpt::Report{};
     };
@@ -468,16 +471,23 @@ TEST_CASE("The fixture's example reports (S7-M1)", "[reportwriter]")
     CHECK(lastOf(sales, rpt::RowKind::Total)->cells[3].value == 380000);
     CHECK(lastOf(sales, rpt::RowKind::Total)->cells[4].value == 30000);
 
-    // GL lines by account, period 7: every period-7 line, balanced as gl_btchd is.
-    const rpt::Report gl = byName("GL lines by account");
+    // GL lines by account asks for the periods (S7-M3). Periods 7 to 7: every
+    // period-7 line, balanced as gl_btchd is, and debit - credit beside them.
+    const rpt::Report gl = byName("GL lines by account", {{0, {"7", "7"}}});
     CHECK(gl.orientation == rpt::Orientation::Landscape);
-    CHECK(gl.subtitles == std::vector<std::string>{"Period is 7"});
+    CHECK(gl.subtitles == std::vector<std::string>{"Period from 7 to 7"});
     cb4sqlite::Query q(db.code, "SELECT count(*), sum(debit), sum(credit) FROM gl_btchd WHERE _deleted = 0 AND "
                                 "CAST(trim(period) AS INTEGER) = 7");
     REQUIRE(q.next());
     CHECK(rowsOf(gl, rpt::RowKind::Detail) == q.integer(0));
     CHECK(lastOf(gl, rpt::RowKind::Total)->cells[4].value == rpt::ToCents(q.number(1)));
     CHECK(lastOf(gl, rpt::RowKind::Total)->cells[5].value == rpt::ToCents(q.number(2)));
+    CHECK(lastOf(gl, rpt::RowKind::Total)->cells[6].value == rpt::ToCents(q.number(1)) - rpt::ToCents(q.number(2)));
+    // A second run, periods 8 to 8: the fixture has no lines there.
+    const rpt::Report gl8 = byName("GL lines by account", {{0, {"8", "8"}}});
+    CHECK(gl8.subtitles == std::vector<std::string>{"Period from 8 to 8"});
+    CHECK(rowsOf(gl8, rpt::RowKind::Detail) == 0);
+    CHECK(lastOf(gl8, rpt::RowKind::Note)->text == "No rows match the report's filters.");
 
     // Open items by customer: what's owed, 2,800.00, as the AR reports say.
     const rpt::Report open = byName("Open items by customer");
@@ -562,4 +572,127 @@ TEST_CASE("FilterProblem: a filter's values suit its field (S7-M2)", "[reportwri
     REQUIRE(p);
     CHECK(p->setting == DefinitionSetting::Filters);
     CHECK(p->text == "A filter doesn't suit its field: Date: \"Posted\" isn't a date (mm/dd/yyyy).");
+}
+
+TEST_CASE("Calculated columns: sum, difference, count, percentages (S7-M3)", "[reportwriter]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+
+    // The format: each kind round-trips; refusals.
+    const std::string text = "writer 1\nname C\nsource ar_open_items 1\ncolumn calc sum amount vat\n"
+                             "column calc diff amount received total label Owing\ncolumn calc count total\n"
+                             "column calc pct owed total total\ncolumn calc pct owed group\n";
+    const ReportDefinition d = parsed(text);
+    REQUIRE(d.columns.size() == 5);
+    CHECK(d.columns[0].calc == Calc::Sum);
+    CHECK(d.columns[0].field2 == "vat");
+    CHECK(d.columns[1].calc == Calc::Difference);
+    CHECK(d.columns[1].label == "Owing");
+    CHECK(d.columns[2].calc == Calc::Count);
+    CHECK(d.columns[3].calc == Calc::Percent);
+    CHECK_FALSE(d.columns[3].ofGroup);
+    CHECK(d.columns[3].total);
+    CHECK(d.columns[4].ofGroup);
+    CHECK(WriteDefinition(parsed(WriteDefinition(d))) == WriteDefinition(d));
+    for (const char* bad : {"column calc sum amount\n", "column calc pct owed\n", "column calc avg owed\n"}) {
+        const ParseResult p = ParseDefinition(std::string("writer 1\nname X\nsource s 1\n") + bad);
+        INFO(bad);
+        CHECK_FALSE(p.definition);
+        CHECK(p.line == 4);
+    }
+
+    // Labels.
+    const Source& open = *FindSource("ar_open_items");
+    CHECK(ColumnLabel(open, d.columns[0]) == "Amount + VAT");
+    CHECK(ColumnLabel(open, d.columns[1]) == "Amount - Received");
+    CHECK(ColumnLabel(open, d.columns[2]) == "Count");
+    CHECK(ColumnLabel(open, d.columns[3]) == "Owed % of total");
+    CHECK(ColumnLabel(open, d.columns[4]) == "Owed % of group");
+
+    // Amount - Received is what's owed; the count totals the rows; percentages of the 2,800.00 owed.
+    const rpt::Report r = built(db.code, ctx,
+                                "writer 1\nname C\nsource ar_open_items 1\ncolumn voucher\n"
+                                "column calc diff amount received total\ncolumn owed total\ncolumn calc count total\n"
+                                "column calc pct owed total total\n");
+    CHECK(r.columns[1].header == "Amount - Received");
+    CHECK(r.columns[3].header == "Count");
+    CHECK(r.columns[3].type == rpt::CellType::Integer);
+    std::vector<std::int64_t> diff, owed, pct;
+    for (const rpt::Row& row : r.rows)
+        if (row.kind == rpt::RowKind::Detail) {
+            diff.push_back(row.cells[1].value);
+            owed.push_back(row.cells[2].value);
+            CHECK(row.cells[3].value == 1);
+            pct.push_back(row.cells[4].value);
+        }
+    CHECK(diff == owed);
+    CHECK(pct == std::vector<std::int64_t>{7857, 2143, 0});   // 2,200 and 600 of 2,800.00
+    const rpt::Row* total = lastOf(r, rpt::RowKind::Total);
+    CHECK(total->cells[1].value == 280000);
+    CHECK(total->cells[3].value == 3);
+    CHECK(total->cells[4].value == 10000);   // 100.00
+
+    // Of the group: sales by med rep, each line's share of its med rep's sales.
+    const rpt::Report g = built(db.code, ctx,
+                                "writer 1\nname G\nsource sales_lines 1\ncolumn invoice\ncolumn sales total\n"
+                                "column calc pct sales group total\ncolumn calc pct sales total total\ngroup med_rep\n"
+                                "filter state in Posted Transferred\n");
+    std::vector<std::int64_t> ofGroup, ofTotal, footers, footerShare;
+    for (const rpt::Row& row : g.rows) {
+        if (row.kind == rpt::RowKind::Detail) {
+            ofGroup.push_back(row.cells[2].value);
+            ofTotal.push_back(row.cells[3].value);
+        }
+        if (row.kind == rpt::RowKind::GroupFooter) {
+            footers.push_back(row.cells[2].value);
+            footerShare.push_back(row.cells[3].value);
+        }
+    }
+    // MR001: S-1003 2,000.00 and S-1005 800.00 (2,800.00); MR002: S-1004 1,000.00. Of 3,800.00 in all.
+    CHECK(ofGroup == std::vector<std::int64_t>{7143, 2857, 10000});
+    CHECK(ofTotal == std::vector<std::int64_t>{5263, 2105, 2632});
+    CHECK(footers == std::vector<std::int64_t>{10000, 10000});
+    CHECK(footerShare == std::vector<std::int64_t>{7368, 2632});
+    const rpt::Row* gt = lastOf(g, rpt::RowKind::Total);
+    CHECK(gt->cells[2].type == rpt::CellType::Empty);   // a share of each group: nothing in the grand total
+    CHECK(gt->cells[3].value == 10000);
+
+    // Problems: a calculation on text; a missing second field; too many questions.
+    ReportDefinition bad = parsed("writer 1\nname \"Bad calc\"\nsource ar_open_items 1\ncolumn calc diff customer owed\n");
+    CHECK(ColumnProblem(open, bad.columns[0]).find("both fields must be amounts") != std::string::npos);
+    auto p = CheckDefinition(db.code, bad);
+    REQUIRE(p);
+    CHECK(p->setting == DefinitionSetting::Columns);
+    const rpt::Report noted = built(db.code, ctx, "writer 1\nname N\nsource ar_open_items 1\ncolumn voucher\n"
+                                                  "column calc diff customer owed\ncolumn calc sum owed colour\n");
+    CHECK(noted.columns.size() == 1);
+    CHECK(rowsOf(noted, rpt::RowKind::Note) == 2);
+    CHECK(MissingFields(parsed("writer 1\nname M\nsource ar_open_items 1\ncolumn calc sum owed colour\n")) ==
+          std::vector<std::string>{"colour"});
+    std::string many = "writer 1\nname Many\nsource ar_open_items 1\ncolumn owed\n";
+    for (int i = 0; i < 5; ++i) many += "filter owed between ? ?\n";
+    p = CheckDefinition(db.code, parsed(many));
+    REQUIRE(p);
+    CHECK(p->text == "A report can ask at most 4 questions when it runs.");
+}
+
+TEST_CASE("An asked range no row matches still lays out a page with its note (S7-M3)", "[reportwriter]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    const rpt::Report r = built(db.code, ctx,
+                                "writer 1\nname \"Sales for periods\"\nsource sales_lines 1\ncolumn invoice\n"
+                                "column sales total\ncolumn calc pct sales total total\nfilter period between ? ? \"Periods\"\n",
+                                {{0, {"1", "1"}}});
+    CHECK(rowsOf(r, rpt::RowKind::Detail) == 0);
+    REQUIRE(lastOf(r, rpt::RowKind::Note));
+    const rpt::FixedMeasure m;
+    const std::vector<rpt::Page> pages = rpt::Layout(r, rpt::PageSetup::A4(), m);
+    REQUIRE(pages.size() == 1);
+    const std::string text = rpt::RenderText(pages, rpt::PageSetup::A4(), m);
+    CHECK(text.find("No rows match") != std::string::npos);
+    CHECK(text.find("Sales for periods") != std::string::npos);
 }

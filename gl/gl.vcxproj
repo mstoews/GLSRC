@@ -97,6 +97,7 @@
     <ClInclude Include="port\reports\ReportDesigner.h" />
     <ClInclude Include="port\reports\ReportList.h" />
     <ClInclude Include="port\reports\ReportOptions.h" />
+    <ClInclude Include="port\reports\ReportPrompt.h" />
     <ClInclude Include="port\reports\RunReport.h" />
     <ClInclude Include="port\reports\SampleReport.h" />
     <ClInclude Include="port\reports\StatementLayout.h" />
@@ -158,6 +159,7 @@
     <ClCompile Include="port\reports\ReportDesigner.cpp" />
     <ClCompile Include="port\reports\ReportList.cpp" />
     <ClCompile Include="port\reports\ReportOptions.cpp" />
+    <ClCompile Include="port\reports\ReportPrompt.cpp" />
     <ClCompile Include="port\reports\RunReport.cpp" />
     <ClCompile Include="port\reports\SampleReport.cpp" />
     <ClCompile Include="port\reports\StatementLayout.cpp" />

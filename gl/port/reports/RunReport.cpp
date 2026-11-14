@@ -14,6 +14,7 @@
 #include "../Assets.h"   // EnsureAssetTables
 #include "MasterReports.h"
 #include "ReportOptions.h"
+#include "ReportPrompt.h"
 #include "SampleReport.h"
 #include "Statements.h"
 #include "TrialBalances.h"
@@ -24,6 +25,7 @@
 #include "report/win32/Preview.h"
 
 #include <cstdio>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -336,6 +338,22 @@ void RunUserReport(fx::MdiFrame& frame, long number)
                                    fx::Utf8ToWide(name).c_str(), p.line, fx::Utf8ToWide(p.error).c_str())
                             .c_str(),
                         szApp, MB_OK | MB_ICONEXCLAMATION);
+            return;
+        }
+        bool asks = false;
+        for (const rw::Filter& f : p.definition->filters) asks = asks || f.ask;
+        if (asks) {
+            // Asked when run (D6): the prompt is the report's options, so the
+            // preview's Options... asks again. The answers last until exit.
+            static std::map<long, rw::Answers> lastAnswers;
+            auto def = std::make_shared<rw::ReportDefinition>(*p.definition);
+            RunReport(
+                frame, [def, number](HWND owner) { return AskReportQuestions(owner, *def, lastAnswers[number]); },
+                [def, number](const ReportContext& ctx) {
+                    rw::BuildResult r = rw::BuildReport(cb, ctx, *def, lastAnswers[number]);
+                    if (!r.report) throw std::runtime_error(r.refusal);
+                    return std::move(*r.report);
+                });
             return;
         }
         b = rw::BuildReport(cb, CurrentReportContext(), *p.definition);

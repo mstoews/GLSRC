@@ -2,7 +2,7 @@
 
 **Spec reference:** `gl/docs/superpowers/specs/2026-11-14-owl-to-win32-sdk-port-spec7-design.md`
 **Date:** 2026-11-14
-**Plan status:** In progress (S7-M0 to M2 built)
+**Plan status:** In progress (S7-M0 to M3 built)
 
 **Paths:** relative to the repository root. The legacy sources are `gl/src/gl_rept.cpp` and `gl/src/ar_rept.cpp` (`TGLCustomReport`, `TGLAddReport`, `TGLModifyReport`, `TGLDeleteReport`), dialog 1022 and `GL_ADDREPORT` in `gl/gl_new.rc`, and `dbf/GL_REPT.DBF`. New code goes in `gl/port/` (the portable `ReportWriter.{h,cpp}`) and `gl/port/reports/` (the designer, the prompt dialog, the report list and the runner). New dialog templates go in `gl/res/port.rc` with their IDs in `gl/port/PortIds.h`, as `IDD_AP_CONFIRM` did.
 
@@ -188,6 +188,36 @@ S is less than a day, M is 1–3 days. **Parallel work:** M4 needs only M0, and 
 ---
 
 ## Milestone 3 — Asked when run; calculated columns
+
+> **As built (2026-11-14; built and run on Windows 11, VS 18, v145).**
+> - **The model and format** (task 1, `ReportWriter`):
+>   - `ColumnDef` gains `calc` (sum, difference, count, percent), a second field and `ofGroup`, written `column calc sum a b`, `calc diff a b`, `calc count`, `calc pct a total|group`.
+>   - `ColumnLabel` gives a calculated column's header ("Debit - Credit", "Count", "Sales (net) % of total"), and `ColumnProblem` refuses fields that aren't numbers.
+>   - `CheckDefinition` checks both, and refuses more than four asked filters (`kMaxQuestions`, the prompt's rows).
+>   - Asked filters (`?`, with the question) were already in M0's format and builder.
+> - **The builder** (task 4): calculated cells in cents.
+>   - Sum and difference add or subtract the two fields, and count is 1 a line; their totals add up like any other column.
+>   - A percentage is to two places, rounded half away from zero. Of the report's total: a line's share, and in a group footer the group's share. Of the group's total: a line's share of its innermost group, 100.00 in that group's footer, and empty in outer footers and the grand total.
+> - **`IDD_RW_PROMPT` and `gl/port/reports/ReportPrompt.{h,cpp}`** (task 2): four rows of every input in the template, each row showing the one its field takes, and the dialog shrinking to the rows used.
+>   - **Inputs:** a period combo (number and description), date boxes, a customer combo, otherwise a text box ("one of" takes commas). "From ... to" shows two inputs.
+>   - **Deviation:** account and dept are text boxes, not the account list; OK checks each answer with `FilterProblem`.
+>   - **First values:** at first a period starts at the current one, and a date range at the current period's month. After that, the last answers.
+>   - **Where it runs:** it is `RunReport`'s options hook for a report that asks, so Cancel runs nothing and the preview's Options... asks again. Answers are kept per definition until the program exits.
+> - **The designer** (task 3; `IDD_RW_DESIGN` now 470 × 348):
+>   - "Ask when run" and a question beside the filter's values: asking turns the value boxes off, and the blank tests can't ask.
+>   - A "Calculation..." button opens `IDD_RW_CALC` (kind; field; the second field for sum and difference; numeric fields only). Percent of the group total starts untotalled.
+>   - Preview asks the questions first, keeping its own answers.
+> - **The fixture:** *GL lines by account* now asks for the periods ("Periods") and has a debit − credit column. The fixture has GL lines in period 7 only, so the second period gives the "No rows match" note.
+> - **Wire** (task 5): `/checkres` loads `IDD_RW_CALC` and `IDD_RW_PROMPT`; the designer's stress step also opens the calculation dialog and a prompt with each input.
+> - **Tests:** calculated columns (sum, difference, count, both percentages, with groups: 71.43 + 28.57 = 100.00); an asked range that matches nothing lays out a page with its note; the GL example's two runs (7: its nine lines and debit − credit; 8: the note). `gl_tests`: 173 cases.
+> - **Checked:** Debug and Release `/W4 /WX` clean; `gl_tests` passes in both; `/checkres` 0; `/stress` 0. Driven in the app on a scratch copy, by messages to its own windows:
+>   - **Designer:** "Sales for periods", made with an asked period range ("Periods"), a "% of total" column and an "Amount - Sales (net)" column from the Calculation dialog. Preview asked; the shares added to 100.00, and the differences to 720.00, the VAT.
+>   - **Runs:** run from the list twice. Periods 1 to 1 gave the note; 2 to 12 gave the six lines. The third run started at the last answer, and Cancel ran nothing.
+>   - **The fixture's example:** *GL lines by account* from the list asked for "Periods". Period 7 gave its lines by account with debit − credit; period 8 gave the note.
+>
+>   Screenshots checked the designer, the calculation dialog, the prompt and the previews.
+>   - **Known:** a long calculated header is cut at the column's width; typing a label or a width fixes it.
+>   - **Known (from M0):** a group footer's label ("Total 101000") is cut to the first column's width when that column is narrow ("Total 10100").
 
 **Goal:** one report serves every period; the few calculations spec §5.3 allows.
 

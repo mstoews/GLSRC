@@ -25,6 +25,8 @@
 #define IDD_STMT_LAYOUT         20003   // Accounts > Statement Layout (S3-M4)
 #define IDD_AP_CONFIRM          20004   // Receipts/Payments > Confirm Printed Cheques (spec #5 6.2, D9, S5-M6)
 #define IDD_RW_DESIGN           20005   // the report writer's designer (spec #7 6.2, S7-M2)
+#define IDD_RW_CALC             20006   // the designer's Calculation... (spec #7 5.3, S7-M3)
+#define IDD_RW_PROMPT           20007   // a user report's questions, asked when it runs (spec #7 6.3, S7-M3)
 
 // ---- controls --------------------------------------------------------------
 
@@ -117,6 +119,23 @@
 #define IDC_RW_PREVIEW         20216
 #define IDC_RW_SAVE            20217
 #define IDC_RW_COPY             20220
+#define IDC_RW_FASK             20218   // the designer: Ask when run, and its question (S7-M3)
+#define IDC_RW_FQUESTION        20219
+#define IDC_RW_ADDCALC          20221   // the designer: Calculation...
+#define IDC_RWC_KIND            20230   // IDD_RW_CALC: the kind, its fields, and the word between them
+#define IDC_RWC_FIELDA          20231
+#define IDC_RWC_FIELDB          20232
+#define IDC_RWC_BETWEEN         20233
+// IDD_RW_PROMPT: four rows, each a label and a from / to pair of each kind of input (the row's
+// field picks which show): IDC_RWP_<kind> + row (0-3).
+#define IDC_RWP_LABEL           20240
+#define IDC_RWP_COMBO1          20244
+#define IDC_RWP_COMBO2          20248
+#define IDC_RWP_EDIT1           20252
+#define IDC_RWP_EDIT2           20256
+#define IDC_RWP_DATE1           20260
+#define IDC_RWP_DATE2           20264
+#define IDC_RWP_TO              20268
 
 #define IDC_FRAME_TOOLBAR       20160   // the frame's toolbar (UI refresh spec 4.3; ManilaGL.cpp)
 #define IDC_FRAME_STATUS        20161   // the frame's status bar (UI refresh spec 4.4)
