@@ -15,7 +15,10 @@
 #include "ReportWriter.h"
 
 #include "Accounts.h"   // TrimText
+#include "Ap.h"
 #include "Ar.h"
+#include "Assets.h"
+#include "reports/Balances.h"
 
 #include "report/Format.h"
 
@@ -1120,11 +1123,477 @@ Source arOpenItems()
     return s;
 }
 
+const char* apStateName(const std::string& mode)
+{
+    if (mode == ap_mode::kOpen) return "Open";
+    if (mode == ap_mode::kPosted) return "Posted";
+    if (mode == ap_mode::kTransferred) return "Transferred";
+    if (mode == ap_mode::kCancelled) return "Cancelled";
+    return "?";
+}
+
+const char* apPaymentName(const std::string& c)
+{
+    if (c == ap_payment::kHeld) return "Held";
+    if (c == ap_payment::kOpen) return "Open";
+    if (c == ap_payment::kForced) return "Forced";
+    if (c == ap_payment::kPaid) return "Cheque made";
+    if (c == ap_payment::kPrinted) return "Printed";
+    if (c == ap_payment::kCleared) return "Cleared";
+    return "";
+}
+
+// A voucher's state. A company AP hasn't opened since S5 may still have the
+// original's cancellation, MODE "2" with the reference "Cancelled" (string
+// 1042), which EnsureApTables migrates to "X"; the writer reads it as that,
+// writing nothing (spec #7 10 #9).
+const char* apVoucherState(const ApVoucher& v)
+{
+    if (v.mode == ap_mode::kTransferred && TrimText(v.reference) == "Cancelled") return "Cancelled";
+    return apStateName(v.mode);
+}
+
+bool apUnpaid(const std::string& c)
+{
+    return c == ap_payment::kHeld || c == ap_payment::kOpen || c == ap_payment::kForced;
+}
+
+std::map<std::string, std::string> vendorNames(cb4sqlite::Code4& code)
+{
+    std::map<std::string, std::string> m;
+    if (!hasTable(code, "ap_vend")) return m;
+    for (const Vendor& v : LoadVendors(code)) m[TrimText(v.number)] = TrimText(v.name);
+    return m;
+}
+
+std::string periodKey(int p) { return "period_" + std::to_string(p); }
+
+Source accounts()
+{
+    Source s;
+    s.key = "accounts";
+    s.name = "Accounts";
+    s.version = 1;
+    s.description = "Each account of the chart, with its opening balance, its balance at the current period, each "
+                    "period's movement, last year's and the budget.";
+    s.fields = {
+        {"account", "Account", FieldType::Text, 0.8},
+        {"dept", "Dept", FieldType::Text, 0.5},
+        {"description", "Description", FieldType::Text, 2.6},
+        {"type", "Type", FieldType::Text, 0.5},
+        {"opening", "Opening balance", FieldType::Amount, 1.2},
+        {"balance", "Balance (current period)", FieldType::Amount, 1.2},
+        {"year_balance", "Balance (year to date)", FieldType::Amount, 1.2},
+    };
+    for (int p = 1; p <= 12; ++p) s.fields.push_back({periodKey(p), "Period " + std::to_string(p), FieldType::Amount, 1.1});
+    s.fields.push_back({"prior_year", "Last year", FieldType::Amount, 1.2});
+    s.fields.push_back({"budget", "Budget (year)", FieldType::Amount, 1.2});
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext& ctx) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "glaccts")) return out;
+        for (const AccountBalances& a : LoadBalances(code)) {
+            SourceRow r = {text(a.account), text(a.dept), text(a.descript), text(a.type), number(a.openbal),
+                           number(a.balanceAt(std::clamp(ctx.currentPeriod, 1, 12))), number(a.currBal)};
+            for (int p = 1; p <= 12; ++p) r.push_back(number(a.movement(p, p)));
+            r.push_back(number(a.previousMovement(1, 12)));
+            r.push_back(number(a.budgetMovement(1, 12)));
+            out.push_back(std::move(r));
+        }
+        return out;
+    };
+    return s;
+}
+
+Source postedLines()
+{
+    Source s;
+    s.key = "posted_lines";
+    s.name = "Posted ledger lines";
+    s.version = 1;
+    s.description = "Each line posted to the ledger (gl_dist), from every module, with the account's name.";
+    s.fields = {
+        {"account", "Account", FieldType::Text, 0.8, "account_name"},
+        {"dept", "Dept", FieldType::Text, 0.5},
+        {"account_name", "Account name", FieldType::Text, 2.2},
+        {"period", "Period", FieldType::Integer, 0.5},
+        {"date", "Date", FieldType::Date, 1.0},
+        {"voucher", "Voucher", FieldType::Integer, 0.7},
+        {"module", "From", FieldType::Text, 0.5},
+        {"reference", "Reference", FieldType::Text, 1.8},
+        {"description", "Description", FieldType::Text, 2.2},
+        {"cheque", "Cheque", FieldType::Text, 0.8},
+        {"med_rep", "Med rep", FieldType::Text, 0.8},
+        {"product", "Product", FieldType::Text, 0.8},
+        {"doctor", "Doctor", FieldType::Text, 0.8},
+        {"debit", "Debit", FieldType::Amount, 1.2},
+        {"credit", "Credit", FieldType::Amount, 1.2},
+        {"net", "Net (Dr - Cr)", FieldType::Amount, 1.2},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "gl_dist")) return out;
+        cb4sqlite::Query q(
+            code,
+            "SELECT trim(d.account), coalesce(trim(d.dept), ''), coalesce(a.descript, ''), trim(d.period), d.date, "
+            "d.batchno, trim(d.type), d.reference, d.descript, d.cheque, d.medrep, d.prod, d.drcode, d.debit, d.credit "
+            "FROM gl_dist d "
+            "LEFT JOIN (SELECT trim(account) AS acct, coalesce(trim(dept), '') AS dp, max(descript) AS descript "
+            "FROM glaccts WHERE _deleted = 0 GROUP BY 1, 2) a "
+            "ON a.acct = trim(d.account) AND a.dp = coalesce(trim(d.dept), '') "
+            "WHERE d._deleted = 0 ORDER BY d._rowid");
+        while (q.next()) {
+            const std::int64_t dr = rpt::ToCents(q.number(13)), cr = rpt::ToCents(q.number(14));
+            std::int64_t period = 0;
+            parseInteger(q.text(3), period);
+            const std::string module = TrimText(q.text(6));
+            out.push_back({text(q.text(0)), text(q.text(1)), text(q.text(2)), number(period), text(q.text(4)),
+                           number(q.integer(5)), text(module.empty() ? "GL" : module), text(q.text(7)), text(q.text(8)),
+                           text(q.text(9)), text(q.text(10)), text(q.text(11)), text(q.text(12)), number(dr), number(cr),
+                           number(dr - cr)});
+        }
+        return out;
+    };
+    return s;
+}
+
+Source fixedAssets()
+{
+    Source s;
+    s.key = "fixed_assets";
+    s.name = "Fixed assets";
+    s.version = 1;
+    s.description = "Each fixed asset, with its type, cost, depreciation and book value; disposed ones too.";
+    s.fields = {
+        {"asset", "Asset", FieldType::Text, 0.8},
+        {"description", "Description", FieldType::Text, 2.2},
+        {"reference", "Reference", FieldType::Text, 1.2},
+        {"type", "Type", FieldType::Text, 0.6, "type_name"},
+        {"type_name", "Type name", FieldType::Text, 1.8},
+        {"acquired", "Acquired", FieldType::Date, 1.0},
+        {"disposed_on", "Disposed", FieldType::Date, 1.0},
+        {"state", "State", FieldType::Text, 0.8},
+        {"method", "Method", FieldType::Text, 0.9},
+        {"life", "Life (months)", FieldType::Integer, 0.6},
+        {"months_used", "Months used", FieldType::Integer, 0.6},
+        {"cost", "Cost", FieldType::Amount, 1.2},
+        {"salvage", "Salvage", FieldType::Amount, 1.1},
+        {"monthly", "Monthly depreciation", FieldType::Amount, 1.1},
+        {"accumulated", "Accumulated depreciation", FieldType::Amount, 1.2},
+        {"book_value", "Book value", FieldType::Amount, 1.2},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "gl_fa")) return out;
+        std::map<std::string, std::string> types;
+        if (hasTable(code, "gl_fatyp"))
+            for (const AssetType& t : LoadAssetTypes(code)) types[TrimText(t.code)] = TrimText(t.description);
+        for (const Asset& a : LoadAssets(code))
+            out.push_back({text(a.code), text(a.description), text(a.reference), text(a.type), text(lookup(types, a.type)),
+                           text(a.datePurchased), text(a.dateSold), text(a.disposed() ? "Disposed" : "In use"),
+                           text(a.method == DepMethod::Declining ? "Declining" : "Straight line"), number(a.life),
+                           number(a.monthsUsed), number(a.cost), number(a.salvage), number(a.monthly),
+                           number(a.accumulated), number(BookValue(a))});
+        return out;
+    };
+    return s;
+}
+
+Source vendors()
+{
+    Source s;
+    s.key = "vendors";
+    s.name = "Vendors";
+    s.version = 1;
+    s.description = "Each vendor, with its address, accounts, terms and rates.";
+    s.fields = {
+        {"vendor", "Vendor", FieldType::Text, 0.8},
+        {"short_name", "Short name", FieldType::Text, 1.0},
+        {"name", "Name", FieldType::Text, 2.2},
+        {"address1", "Address", FieldType::Text, 2.0},
+        {"address2", "Address 2", FieldType::Text, 2.0},
+        {"address3", "Address 3", FieldType::Text, 2.0},
+        {"postal", "Postal code", FieldType::Text, 0.7},
+        {"phone", "Phone", FieldType::Text, 1.1},
+        {"fax", "Fax", FieldType::Text, 1.1},
+        {"contact", "Contact", FieldType::Text, 1.4},
+        {"tin", "TIN", FieldType::Text, 1.1},
+        {"kind", "Company or individual", FieldType::Text, 0.9},
+        {"ap_account", "AP account", FieldType::Text, 0.9},
+        {"vat_account", "Input VAT account", FieldType::Text, 0.9},
+        {"terms", "Terms (days)", FieldType::Integer, 0.6},
+        {"vat_rate", "VAT %", FieldType::Integer, 0.5},
+        {"wh_rate", "W/H %", FieldType::Integer, 0.5},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "ap_vend")) return out;
+        for (const Vendor& v : LoadVendors(code))
+            out.push_back({text(v.number), text(v.shortName), text(v.name), text(v.address1), text(v.address2),
+                           text(v.address3), text(v.postal), text(v.phone), text(v.fax), text(v.contact), text(v.vin),
+                           text(v.individual() ? "Individual" : v.type == "C" ? "Company" : ""), text(accountText(v.ap)),
+                           text(accountText(v.vat)), number(v.terms), number(v.vatRate), number(v.whRate)});
+        return out;
+    };
+    return s;
+}
+
+Source customers()
+{
+    Source s;
+    s.key = "customers";
+    s.name = "Customers";
+    s.version = 1;
+    s.description = "Each customer, with its billing and shipping addresses, accounts, terms and VAT rate.";
+    s.fields = {
+        {"customer", "Customer", FieldType::Text, 0.8},
+        {"short_name", "Short name", FieldType::Text, 1.0},
+        {"name", "Name", FieldType::Text, 2.2},
+        {"address1", "Address", FieldType::Text, 2.0},
+        {"address2", "Address 2", FieldType::Text, 2.0},
+        {"address3", "Address 3", FieldType::Text, 2.0},
+        {"postal", "Postal code", FieldType::Text, 0.7},
+        {"phone", "Phone", FieldType::Text, 1.1},
+        {"fax", "Fax", FieldType::Text, 1.1},
+        {"ship_address1", "Ship to", FieldType::Text, 2.0},
+        {"ship_address2", "Ship to 2", FieldType::Text, 2.0},
+        {"ship_address3", "Ship to 3", FieldType::Text, 2.0},
+        {"contact", "Contact", FieldType::Text, 1.4},
+        {"tin", "TIN", FieldType::Text, 1.1},
+        {"ar_account", "AR account", FieldType::Text, 0.9},
+        {"sales_account", "Sales account", FieldType::Text, 0.9},
+        {"vat_account", "Output VAT account", FieldType::Text, 0.9},
+        {"terms", "Terms (days)", FieldType::Integer, 0.6},
+        {"vat_rate", "VAT %", FieldType::Integer, 0.5},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "ar_cust")) return out;
+        for (const Customer& c : LoadCustomers(code))
+            out.push_back({text(c.number), text(c.shortName), text(c.name), text(c.address1), text(c.address2),
+                           text(c.address3), text(c.postal), text(c.phone), text(c.fax), text(c.shipAddress1),
+                           text(c.shipAddress2), text(c.shipAddress3), text(c.contact), text(c.vin),
+                           text(accountText(c.ar)), text(accountText(c.sales)), text(accountText(c.vat)),
+                           number(c.terms), number(c.vatRate)});
+        return out;
+    };
+    return s;
+}
+
+Source apOpenItems()
+{
+    Source s;
+    s.key = "ap_open_items";
+    s.name = "AP open items";
+    s.version = 1;
+    s.description = "Each posted purchase invoice: its amount, VAT and W/H, what has been paid, and what is owed.";
+    s.fields = {
+        {"voucher", "Voucher", FieldType::Integer, 0.7},
+        {"vendor", "Vendor", FieldType::Text, 0.8, "vendor_name"},
+        {"vendor_name", "Vendor name", FieldType::Text, 2.2},
+        {"invoice", "Invoice", FieldType::Text, 0.9},
+        {"reference", "Reference", FieldType::Text, 1.8},
+        {"date", "Date", FieldType::Date, 1.0},
+        {"due_date", "Due date", FieldType::Date, 1.0},
+        {"date_paid", "Date paid", FieldType::Date, 1.0},
+        {"period", "Period", FieldType::Integer, 0.5},
+        {"state", "State", FieldType::Text, 1.0},
+        {"ap_account", "AP account", FieldType::Text, 0.9},
+        {"cheque", "Cheque", FieldType::Integer, 0.7},
+        {"amount", "Amount", FieldType::Amount, 1.2},
+        {"vat", "VAT", FieldType::Amount, 1.0},
+        {"wh", "W/H", FieldType::Amount, 1.0},
+        {"paid", "Paid", FieldType::Amount, 1.2},
+        {"owed", "Owed", FieldType::Amount, 1.2},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "ap_dist")) return out;
+        const auto names = vendorNames(code);
+        for (const OpenItem& i : LoadOpenItems(code))
+            out.push_back({number(i.batchno), text(i.vendor), text(lookup(names, i.vendor)), text(i.invoiceNo),
+                           text(i.reference), text(i.date), text(i.dueDate), text(i.datePaid), number(i.period),
+                           text(apPaymentName(i.paymentCtl)), text(accountText(i.ap)), number(i.cheque),
+                           number(i.amount), number(i.vat), number(i.wh), number(i.paid),
+                           number(apUnpaid(i.paymentCtl) ? AmountOwed(i) : 0)});
+        return out;
+    };
+    return s;
+}
+
+Source arReceipts()
+{
+    Source s;
+    s.key = "ar_receipts";
+    s.name = "AR receipts";
+    s.version = 1;
+    s.description = "Each receipt against a sales invoice: when, into which bank, how much, and any discount.";
+    s.fields = {
+        {"receipt", "Receipt", FieldType::Integer, 0.7},
+        {"voucher", "Invoice voucher", FieldType::Integer, 0.7},
+        {"customer", "Customer", FieldType::Text, 0.8, "customer_name"},
+        {"customer_name", "Customer name", FieldType::Text, 2.2},
+        {"invoice", "Invoice", FieldType::Text, 0.9},
+        {"date", "Date", FieldType::Date, 1.0},
+        {"period", "Period", FieldType::Integer, 0.5},
+        {"bank", "Bank account", FieldType::Text, 0.9},
+        {"reference", "Reference", FieldType::Text, 1.6},
+        {"amount", "Received", FieldType::Amount, 1.2},
+        {"discount", "Discount", FieldType::Amount, 1.0},
+        {"discount_vat", "Discount VAT", FieldType::Amount, 1.0},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "ar_rcpt")) return out;
+        const auto names = customerNames(code);
+        for (const Receipt& r : LoadReceipts(code))
+            out.push_back({number(r.number), number(r.batchno), text(r.customer), text(lookup(names, r.customer)),
+                           text(r.invoiceNo), text(r.date), number(r.period), text(accountText(r.bank)),
+                           text(r.reference), number(r.amount), number(r.discount), number(r.discountVat)});
+        return out;
+    };
+    return s;
+}
+
+Source purchaseLines()
+{
+    Source s;
+    s.key = "purchase_lines";
+    s.name = "Purchase lines";
+    s.version = 1;
+    s.description = "Each expense line of the AP invoice and cash vouchers, with its vendor, product, med rep and "
+                    "doctor: the amount typed and the expense the ledger has.";
+    s.fields = {
+        {"kind", "Voucher kind", FieldType::Text, 0.7},
+        {"voucher", "Voucher", FieldType::Integer, 0.7},
+        {"state", "State", FieldType::Text, 0.9},
+        {"date", "Date", FieldType::Date, 1.0},
+        {"period", "Period", FieldType::Integer, 0.5},
+        {"vendor", "Vendor", FieldType::Text, 0.8, "vendor_name"},
+        {"vendor_name", "Vendor name", FieldType::Text, 2.2},
+        {"invoice", "Invoice", FieldType::Text, 0.9},
+        {"product", "Product", FieldType::Text, 0.8, "product_name"},
+        {"product_name", "Product name", FieldType::Text, 2.2},
+        {"med_rep", "Med rep", FieldType::Text, 0.8, "med_rep_name"},
+        {"med_rep_name", "Med rep name", FieldType::Text, 1.8},
+        {"doctor", "Doctor", FieldType::Text, 0.8, "doctor_name"},
+        {"doctor_name", "Doctor name", FieldType::Text, 1.8},
+        {"description", "Description", FieldType::Text, 2.2},
+        {"account", "Expense account", FieldType::Text, 1.0},
+        {"amount", "Amount", FieldType::Amount, 1.2},
+        {"expense", "Expense (net)", FieldType::Amount, 1.2},
+    };
+    s.defaults = {Filter{"state", Test::NotEqual, {"Cancelled"}, false, {}}};
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "ap_btch")) return out;
+        const auto names = vendorNames(code);
+        const auto products = namesOf(code, "gl_itemm", "fpcode", "ffulln");
+        const auto reps = namesOf(code, "gl_medrp", "repcode", "rpname");
+        const auto doctors = namesOf(code, "gl_drcod", "drcode", "rpname");
+        for (ApKind kind : {ApKind::Invoice, ApKind::Cash}) {
+            if (kind == ApKind::Cash && !hasTable(code, "ap_cash")) continue;
+            for (const ApVoucher& v : LoadApVouchers(code, kind))
+                for (const ApLine& l : LoadApLines(code, kind, v.number)) {
+                    if (l.role != ApLineRole::Expense) continue;
+                    out.push_back({text(kind == ApKind::Cash ? "Cash" : "Invoice"), number(v.number),
+                                   text(apVoucherState(v)), text(v.invoiceDate.empty() ? v.date : v.invoiceDate),
+                                   number(v.period), text(v.vendor),
+                                   text(lookup(names, v.vendor).empty() ? TrimText(v.vendorName) : lookup(names, v.vendor)),
+                                   text(v.invoiceNo), text(l.product), text(lookup(products, l.product)), text(l.medrep),
+                                   text(lookup(reps, l.medrep)), text(l.drcode), text(lookup(doctors, l.drcode)),
+                                   text(l.descript), text(accountText(l.account)), number(l.gross),
+                                   number(l.debit - l.credit)});
+                }
+        }
+        return out;
+    };
+    return s;
+}
+
+// The med reps and doctors share a layout (RepTable).
+Source repList(const char* key, const char* name, const char* table, const char* codeField, const char* codeLabel)
+{
+    Source s;
+    s.key = key;
+    s.name = name;
+    s.version = 1;
+    s.description = std::string("Each ") + (std::string(key) == "doctors" ? "doctor" : "medical representative") +
+                    " of the master list, with the address and terms.";
+    s.fields = {
+        {"code", codeLabel, FieldType::Text, 0.8},
+        {"short_name", "Short name", FieldType::Text, 1.0},
+        {"name", "Name", FieldType::Text, 2.2},
+        {"address1", "Address", FieldType::Text, 2.0},
+        {"address2", "Address 2", FieldType::Text, 2.0},
+        {"address3", "Address 3", FieldType::Text, 2.0},
+        {"postal", "Postal code", FieldType::Text, 0.7},
+        {"phone", "Phone", FieldType::Text, 1.1},
+        {"fax", "Fax", FieldType::Text, 1.1},
+        {"contact", "Contact", FieldType::Text, 1.4},
+        {"territory", "Territory", FieldType::Text, 1.0},
+        {"terms", "Terms", FieldType::Text, 0.6},
+        {"credit_limit", "Credit limit", FieldType::Amount, 1.1},
+    };
+    const std::string sql = std::string("SELECT trim(") + codeField +
+                            "), trim(rpshort), trim(rpname), trim(address1), trim(address2), trim(address3), "
+                            "trim(postal), trim(phone), trim(fax), trim(contact), trim(territory), trim(terms), "
+                            "creditlmt FROM " + table + " WHERE _deleted = 0 ORDER BY 1";
+    const std::string tableName = table;
+    s.rows = [sql, tableName](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, tableName.c_str())) return out;
+        cb4sqlite::Query q(code, sql);
+        while (q.next()) {
+            SourceRow r;
+            for (int i = 0; i < 12; ++i) r.push_back(text(q.text(i)));
+            r.push_back(number(rpt::ToCents(q.number(12))));
+            out.push_back(std::move(r));
+        }
+        return out;
+    };
+    return s;
+}
+
+Source products()
+{
+    Source s;
+    s.key = "products";
+    s.name = "Products";
+    s.version = 1;
+    s.description = "Each product of the master list, with its unit, cost and unit price.";
+    s.fields = {
+        {"product", "Product", FieldType::Text, 0.8},
+        {"name", "Name", FieldType::Text, 1.4},
+        {"full_name", "Full name", FieldType::Text, 2.4},
+        {"type", "Type", FieldType::Text, 0.6},
+        {"unit", "Unit", FieldType::Text, 0.6},
+        {"cost", "Cost", FieldType::Amount, 1.1},
+        {"price", "Unit price", FieldType::Amount, 1.1},
+    };
+    s.rows = [](cb4sqlite::Code4& code, const ReportContext&) {
+        std::vector<SourceRow> out;
+        if (!hasTable(code, "gl_itemm")) return out;
+        // FONHAND holds the cost and FAVPRICE the unit price (MasterTables.h: the original's controls 6006, 6012).
+        cb4sqlite::Query q(code, "SELECT trim(fpcode), trim(fpname), trim(ffulln), trim(fptype), trim(funit), fonhand, "
+                                 "favprice FROM gl_itemm WHERE _deleted = 0 ORDER BY 1");
+        while (q.next())
+            out.push_back({text(q.text(0)), text(q.text(1)), text(q.text(2)), text(q.text(3)), text(q.text(4)),
+                           number(rpt::ToCents(q.number(5))), number(rpt::ToCents(q.number(6)))});
+        return out;
+    };
+    return s;
+}
+
 } // namespace
 
 const std::vector<Source>& Sources()
 {
-    static const std::vector<Source> all = {salesLines(), glLines(), arOpenItems()};
+    // In the source combo's order: M0's three first (a new report starts on Sales lines), then the rest.
+    static const std::vector<Source> all = {
+        salesLines(), glLines(), arOpenItems(), postedLines(), accounts(), purchaseLines(), apOpenItems(),
+        arReceipts(), customers(), vendors(), fixedAssets(),
+        repList("med_reps", "Med reps", "gl_medrp", "repcode", "Med rep"), products(),
+        repList("doctors", "Doctors", "gl_drcod", "drcode", "Doctor")};
     return all;
 }
 

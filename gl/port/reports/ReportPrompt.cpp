@@ -12,6 +12,7 @@
 #include "ReportPrompt.h"
 
 #include "../Accounts.h"   // TrimText
+#include "../Ap.h"         // LoadVendors
 #include "../Ar.h"         // LoadCustomers
 #include "../Globals.h"
 #include "../MainDialog.h"
@@ -31,7 +32,7 @@ namespace {
 
 std::wstring wide(const std::string& s) { return fx::Utf8ToWide(s); }
 
-enum class Input { Period, Date, Customer, Text };
+enum class Input { Period, Date, Customer, Vendor, Text };
 
 struct Question {
     size_t filter = 0;          // its index in the definition's filters
@@ -68,6 +69,7 @@ protected:
             q.input = q.field->key == "period"                ? Input::Period
                       : q.field->type == rw::FieldType::Date ? Input::Date
                       : q.field->key == "customer"           ? Input::Customer
+                      : q.field->key == "vendor"             ? Input::Vendor
                                                              : Input::Text;
             q.label = (f.question.empty() ? q.field->label : f.question) + ":";
             questions_.push_back(q);
@@ -76,6 +78,11 @@ protected:
             for (const Customer& c : LoadCustomers(cb)) customers_.push_back({TrimText(c.number), TrimText(c.name)});
         } catch (const std::exception&) {
             // No AR tables: the customer combo is empty.
+        }
+        try {
+            for (const Vendor& v : LoadVendors(cb)) vendors_.push_back({TrimText(v.number), TrimText(v.name)});
+        } catch (const std::exception&) {
+            // No AP tables: the vendor combo is empty.
         }
         for (int row = 0; row < static_cast<int>(rw::kMaxQuestions); ++row) ShowRow(row, ctx);
         Shrink();
@@ -107,7 +114,7 @@ private:
         if (used) SetDlgItemTextW(hwnd(), IDC_RWP_LABEL + row, wide(q->label).c_str());
         for (int side = 0; side < 2; ++side) {
             const bool on = used && (side == 0 || q->pair);
-            Show((side ? IDC_RWP_COMBO2 : IDC_RWP_COMBO1) + row, on && (q->input == Input::Period || q->input == Input::Customer));
+            Show((side ? IDC_RWP_COMBO2 : IDC_RWP_COMBO1) + row, on && (q->input == Input::Period || q->input == Input::Customer || q->input == Input::Vendor));
             Show((side ? IDC_RWP_EDIT2 : IDC_RWP_EDIT1) + row, on && q->input == Input::Text);
             Show((side ? IDC_RWP_DATE2 : IDC_RWP_DATE1) + row, on && q->input == Input::Date);
         }
@@ -134,14 +141,16 @@ private:
                 SendDlgItemMessageW(hwnd(), combo, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
                 break;
             }
-            case Input::Customer: {
+            case Input::Customer:
+            case Input::Vendor: {
+                const auto& codes = Codes(q->input);
                 SendDlgItemMessageW(hwnd(), combo, CB_RESETCONTENT, 0, 0);
                 int pick = -1;
-                for (size_t i = 0; i < customers_.size(); ++i) {
-                    const std::wstring t = wide(customers_[i].first + "  " + customers_[i].second);
+                for (size_t i = 0; i < codes.size(); ++i) {
+                    const std::wstring t = wide(codes[i].first + "  " + codes[i].second);
                     const LRESULT at = SendDlgItemMessageW(hwnd(), combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.c_str()));
                     SendDlgItemMessageW(hwnd(), combo, CB_SETITEMDATA, static_cast<WPARAM>(at), static_cast<LPARAM>(i));
-                    if (customers_[i].first == TrimText(value)) pick = static_cast<int>(at);
+                    if (codes[i].first == TrimText(value)) pick = static_cast<int>(at);
                 }
                 SendDlgItemMessageW(hwnd(), combo, CB_SETCURSEL, static_cast<WPARAM>(pick < 0 ? 0 : pick), 0);
                 break;
@@ -200,7 +209,8 @@ private:
         if (sel == CB_ERR) return {};
         const LRESULT data = SendDlgItemMessageW(hwnd(), id, CB_GETITEMDATA, static_cast<WPARAM>(sel), 0);
         if (input == Input::Period) return std::to_string(data);
-        return data >= 0 && static_cast<size_t>(data) < customers_.size() ? customers_[static_cast<size_t>(data)].first
+        const auto& codes = Codes(input);
+        return data >= 0 && static_cast<size_t>(data) < codes.size() ? codes[static_cast<size_t>(data)].first
                                                                           : std::string();
     }
 
@@ -215,7 +225,8 @@ private:
             for (int side = 0; side < (q.pair ? 2 : 1); ++side) {
                 switch (q.input) {
                 case Input::Period:
-                case Input::Customer: values.push_back(ComboValue((side ? IDC_RWP_COMBO2 : IDC_RWP_COMBO1) + r, q.input)); break;
+                case Input::Customer:
+                case Input::Vendor: values.push_back(ComboValue((side ? IDC_RWP_COMBO2 : IDC_RWP_COMBO1) + r, q.input)); break;
                 case Input::Date: values.push_back(GetDate((side ? IDC_RWP_DATE2 : IDC_RWP_DATE1) + r)); break;
                 case Input::Text: values.push_back(Text((side ? IDC_RWP_EDIT2 : IDC_RWP_EDIT1) + r)); break;
                 }
@@ -255,7 +266,9 @@ private:
     rw::Answers& answers_;
     bool closeAtOnce_;
     std::vector<Question> questions_;
-    std::vector<std::pair<std::string, std::string>> customers_;   // number, name
+    using Codes_ = std::vector<std::pair<std::string, std::string>>;   // number, name
+    const Codes_& Codes(Input input) const { return input == Input::Vendor ? vendors_ : customers_; }
+    Codes_ customers_, vendors_;
 };
 
 } // namespace

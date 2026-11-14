@@ -7,7 +7,13 @@
 #include "GlTestDb.h"
 
 #include "Accounts.h"   // TrimText
+#include "Ap.h"
 #include "Ar.h"
+#include "Assets.h"
+#include "reports/ApReports.h"
+#include "reports/ArReports.h"
+#include "reports/AssetReports.h"
+#include "reports/TrialBalances.h"
 #include "ReportWriter.h"
 
 #include "report/Format.h"   // rpt::ToCents
@@ -188,7 +194,7 @@ TEST_CASE("The sources agree with their modules (S7-M0, P2)", "[reportwriter]")
     FixtureDb db;
     EnsureArTables(db.code);
     const ReportContext ctx = LoadReportContext(db.code, "20261110");
-    REQUIRE(Sources().size() == 3);
+    REQUIRE(Sources().size() == 14);
     for (const Source& s : Sources()) {
         INFO(s.key);
         CHECK(FindSource(s.key) == &s);
@@ -695,4 +701,135 @@ TEST_CASE("An asked range no row matches still lays out a page with its note (S7
     const std::string text = rpt::RenderText(pages, rpt::PageSetup::A4(), m);
     CHECK(text.find("No rows match") != std::string::npos);
     CHECK(text.find("Sales for periods") != std::string::npos);
+}
+
+TEST_CASE("The other sources agree with their modules' reports (S7-M4, P2)", "[reportwriter]")
+{
+    FixtureDb db;
+    EnsureArTables(db.code);
+    EnsureApTables(db.code);
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    auto rowsOfSource = [&](const char* key) {
+        const Source* s = FindSource(key);
+        REQUIRE(s);
+        return s->rows(db.code, ctx);
+    };
+    auto col = [](const char* source, const char* field) {
+        const int i = FindSource(source)->fieldIndex(field);
+        REQUIRE(i >= 0);
+        return static_cast<size_t>(i);
+    };
+    auto sum = [&](const char* source, const char* field) {
+        std::int64_t total = 0;
+        for (const SourceRow& r : rowsOfSource(source)) total += r[col(source, field)].number;
+        return total;
+    };
+    auto grand = [](const rpt::Report& r, size_t cell) {
+        const rpt::Row* t = lastOf(r, rpt::RowKind::Total);
+        REQUIRE(t);
+        return t->cells[cell].value;
+    };
+
+    // Every source builds with every field as a column.
+    for (const Source& s : Sources()) {
+        INFO(s.key);
+        ReportDefinition d;
+        d.name = d.title = s.name;
+        d.source = s.key;
+        d.sourceVersion = s.version;
+        for (const Field& f : s.fields) d.columns.push_back({f.key});
+        CHECK(BuildReport(db.code, ctx, d).report);
+        CHECK_FALSE(s.rows(db.code, ctx).empty());
+    }
+
+    // Accounts: the Trial Balance at the current period.
+    const rpt::Report tb = TrialBalance(db.code, ctx, {});
+    std::int64_t debit = 0, credit = 0;
+    for (const SourceRow& r : rowsOfSource("accounts")) {
+        const std::int64_t b = r[col("accounts", "balance")].number;
+        (b > 0 ? debit : credit) += b > 0 ? b : -b;
+        std::int64_t periods = 0;
+        for (int p = 1; p <= 12; ++p) periods += r[col("accounts", ("period_" + std::to_string(p)).c_str())].number;
+        CHECK(r[col("accounts", "year_balance")].number == r[col("accounts", "opening")].number + periods);
+    }
+    CHECK(debit == grand(tb, 3));
+    CHECK(credit == grand(tb, 4));
+
+    // Posted ledger lines: gl_dist, all of it.
+    cb4sqlite::Query q(db.code, "SELECT count(*), sum(debit), sum(credit) FROM gl_dist WHERE _deleted = 0");
+    REQUIRE(q.next());
+    CHECK(static_cast<std::int64_t>(rowsOfSource("posted_lines").size()) == q.integer(0));
+    CHECK(sum("posted_lines", "debit") == rpt::ToCents(q.number(1)));
+    CHECK(sum("posted_lines", "credit") == rpt::ToCents(q.number(2)));
+
+    // Fixed assets: the Fixed Asset Summary totals the assets in use.
+    const rpt::Report fa = FixedAssetListing(db.code, ctx);
+    std::int64_t cost = 0, book = 0;
+    for (const SourceRow& r : rowsOfSource("fixed_assets")) {
+        CHECK(r[col("fixed_assets", "book_value")].number ==
+              r[col("fixed_assets", "cost")].number - r[col("fixed_assets", "accumulated")].number);
+        if (r[col("fixed_assets", "state")].text != "In use") continue;
+        cost += r[col("fixed_assets", "cost")].number;
+        book += r[col("fixed_assets", "book_value")].number;
+    }
+    CHECK(cost == grand(fa, 6));
+    CHECK(book == grand(fa, 10));
+    CHECK(rowsOfSource("fixed_assets").size() == LoadAssets(db.code).size());
+
+    // Vendors and customers: the lists.
+    CHECK(rowsOfSource("vendors").size() == LoadVendors(db.code).size());
+    CHECK(rowsOfSource("customers").size() == LoadCustomers(db.code).size());
+    CHECK(rowsOfSource("customers")[0][col("customers", "sales_account")].text ==
+          TrimText(LoadCustomers(db.code)[0].sales.account) +
+              (TrimText(LoadCustomers(db.code)[0].sales.dept).empty() ? "" : "-" + TrimText(LoadCustomers(db.code)[0].sales.dept)));
+
+    // AP open items: what the Detailed Vendor Open Payables says is owed.
+    const rpt::Report payables = ApOpenPayables(db.code, ctx);
+    if (lastOf(payables, rpt::RowKind::Total)) CHECK(sum("ap_open_items", "owed") == grand(payables, 5));
+    else CHECK(sum("ap_open_items", "owed") == 0);
+    CHECK(rowsOfSource("ap_open_items").size() == LoadOpenItems(db.code).size());
+
+    // AR receipts: the Receipts Register.
+    const rpt::Report receipts = ArReceiptsRegister(db.code, ctx);
+    CHECK(sum("ar_receipts", "amount") == grand(receipts, 6));
+    CHECK(sum("ar_receipts", "discount") == grand(receipts, 7));
+
+    // Purchase lines: the expense lines of both kinds of voucher, as LoadApLines gives them.
+    std::int64_t lines = 0, expense = 0;
+    for (ApKind kind : {ApKind::Invoice, ApKind::Cash})
+        for (const ApVoucher& v : LoadApVouchers(db.code, kind))
+            for (const ApLine& l : LoadApLines(db.code, kind, v.number))
+                if (l.role == ApLineRole::Expense) {
+                    ++lines;
+                    expense += l.debit - l.credit;
+                }
+    CHECK(static_cast<std::int64_t>(rowsOfSource("purchase_lines").size()) == lines);
+    CHECK(sum("purchase_lines", "expense") == expense);
+
+    // The master lists.
+    for (const auto& [key, table] : std::vector<std::pair<const char*, const char*>>{
+             {"med_reps", "gl_medrp"}, {"products", "gl_itemm"}, {"doctors", "gl_drcod"}}) {
+        INFO(key);
+        cb4sqlite::Query n(db.code, std::string("SELECT count(*) FROM ") + table + " WHERE _deleted = 0");
+        REQUIRE(n.next());
+        CHECK(static_cast<std::int64_t>(rowsOfSource(key).size()) == n.integer(0));
+    }
+}
+
+TEST_CASE("Purchase lines read the original's cancellation without migrating it (S7-M4)", "[reportwriter]")
+{
+    FixtureDb db;   // no EnsureApTables: voucher 5 is still MODE "2", "Cancelled"
+    const ReportContext ctx = LoadReportContext(db.code, "20261110");
+    const Source& s = *FindSource("purchase_lines");
+    const size_t voucher = static_cast<size_t>(s.fieldIndex("voucher")), state = static_cast<size_t>(s.fieldIndex("state"));
+    int five = 0;
+    for (const SourceRow& r : s.rows(db.code, ctx))
+        if (r[voucher].number == 5) {
+            ++five;
+            CHECK(r[state].text == "Cancelled");
+        }
+    CHECK(five > 0);
+    cb4sqlite::Query q(db.code, "SELECT trim(mode) FROM ap_btch WHERE batchno = 5 AND _deleted = 0");
+    REQUIRE(q.next());
+    CHECK(q.text(0) == "2");   // left as it was
 }
